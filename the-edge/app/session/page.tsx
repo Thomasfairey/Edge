@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Session page — manages the full 6-phase daily loop.
- * Check-in → Learn → Retrieval → Simulate → Debrief → Deploy
+ * Session page — manages the full daily loop.
+ * Day 1:  Learn → Retrieval → Simulate → Debrief → Mission
+ * Day 2+: Learn → Retrieval → Simulate → Debrief → Check-in → Mission
  *
- * Light theme: white cards, indigo/violet gradients, Inter font.
- * Mobile-first: full-height flex, fixed bottom input, quick command pills,
- * bottom-sheet coach, keyboard handling, connectivity retry, localStorage persistence.
+ * Tiimo-inspired: phase-coloured backgrounds, super-rounded cards, soft pastels,
+ * emoji command circles, coloured score dots, confetti completion.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -24,18 +24,33 @@ import {
 // ---------------------------------------------------------------------------
 
 const SESSION_STORAGE_KEY = "edge-session-state";
-const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_MAX_AGE_MS = 30 * 60 * 1000;
 
-const PHASES: { key: SessionPhase; label: string }[] = [
-  { key: "checkin", label: "Check-in" },
-  { key: "lesson", label: "Learn" },
-  { key: "roleplay", label: "Simulate" },
-  { key: "debrief", label: "Debrief" },
-  { key: "mission", label: "Deploy" },
+const PHASES: { key: SessionPhase; label: string; color: string }[] = [
+  { key: "lesson", label: "Learn", color: "#B8D4E3" },
+  { key: "roleplay", label: "Sim", color: "#F2C4C4" },
+  { key: "debrief", label: "Brief", color: "#C5B8E8" },
+  { key: "mission", label: "Deploy", color: "#B8E0C8" },
 ];
 
+const PHASE_BG: Record<string, string> = {
+  lesson: "#EFF6FA",
+  retrieval: "#EFF6FA",
+  roleplay: "#FDF2F2",
+  debrief: "#F3F0FA",
+  mission: "#F0FAF4",
+};
+
+const PHASE_TINT: Record<string, string> = {
+  lesson: "#EFF6FA",
+  retrieval: "#EFF6FA",
+  roleplay: "#FDF2F2",
+  debrief: "#F3F0FA",
+  mission: "#F0FAF4",
+};
+
 // ---------------------------------------------------------------------------
-// Haptic utility
+// Helpers
 // ---------------------------------------------------------------------------
 
 function haptic(ms = 10) {
@@ -44,9 +59,11 @@ function haptic(ms = 10) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fetch with retry (for non-streaming endpoints)
-// ---------------------------------------------------------------------------
+function scoreCircleColor(score: number): string {
+  if (score >= 4) return "#6BC9A0";
+  if (score === 3) return "#F5C563";
+  return "#E88B8B";
+}
 
 async function fetchWithRetry(
   url: string,
@@ -70,10 +87,6 @@ async function fetchWithRetry(
   throw lastError;
 }
 
-// ---------------------------------------------------------------------------
-// Online status hook
-// ---------------------------------------------------------------------------
-
 function useOnlineStatus() {
   const [online, setOnline] = useState(true);
   useEffect(() => {
@@ -88,46 +101,35 @@ function useOnlineStatus() {
 }
 
 // ---------------------------------------------------------------------------
-// Phase indicator — dots + gradient accent line
+// Phase indicator — coloured dots per phase
 // ---------------------------------------------------------------------------
 
 function PhaseIndicator({
   current,
   completed,
-  skipCheckin,
 }: {
   current: SessionPhase;
   completed: Set<SessionPhase>;
-  skipCheckin: boolean;
 }) {
-  const phases = skipCheckin ? PHASES.filter((p) => p.key !== "checkin") : PHASES;
-  const currentIdx = phases.findIndex(
-    (p) => p.key === current || (current === "retrieval" && p.key === "lesson")
-  );
-
   return (
-    <div className="sticky top-0 z-50 bg-background pt-3 pb-2">
-      {/* Dots row */}
-      <div className="flex items-center justify-center gap-3 mb-2">
-        {phases.map((p, i) => {
+    <div className="sticky top-0 z-50 bg-[var(--background)] pt-3 pb-2 border-b border-[#F0EDE8]">
+      <div className="flex items-center justify-center gap-5">
+        {PHASES.map((p) => {
           const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
           const isDone = completed.has(p.key);
-          const isPulsing = current === "retrieval" && p.key === "lesson";
 
           return (
-            <div key={p.key} className="flex flex-col items-center gap-1">
+            <div key={p.key} className="flex flex-col items-center gap-1.5">
               <div
-                className={`h-2.5 w-2.5 rounded-full transition-all ${
-                  isDone
-                    ? "bg-success"
-                    : isActive
-                      ? `bg-accent ${isPulsing ? "pulse-dot-indicator" : ""}`
-                      : "bg-border"
-                }`}
+                className={`h-3 w-3 rounded-full transition-all ${isActive ? "phase-dot-active" : ""}`}
+                style={{
+                  backgroundColor: isDone || isActive ? p.color : "transparent",
+                  border: isDone || isActive ? "none" : `2px solid ${p.color}4D`,
+                }}
               />
               <span
-                className={`text-[9px] font-medium tracking-wider uppercase ${
-                  isActive ? "text-accent" : isDone ? "text-success" : "text-tertiary"
+                className={`text-sm font-medium ${
+                  isActive ? "text-primary" : isDone ? "text-secondary" : "text-tertiary"
                 }`}
               >
                 {p.label}
@@ -136,37 +138,26 @@ function PhaseIndicator({
           );
         })}
       </div>
-
-      {/* Gradient accent line showing progress */}
-      <div className="h-[3px] w-full bg-border/50 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500 ease-out"
-          style={{
-            width: `${((currentIdx + 1) / phases.length) * 100}%`,
-            background: "linear-gradient(90deg, var(--accent), var(--accent-violet))",
-          }}
-        />
-      </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Loading indicator
+// Loading dots
 // ---------------------------------------------------------------------------
 
 function LoadingDots() {
   return (
     <div className="flex items-center justify-center gap-1.5 py-4">
-      <span className="loading-dot h-2 w-2 rounded-full bg-accent/60" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-accent/60" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-accent/60" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-[#6C63FF]/50" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-[#6C63FF]/50" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-[#6C63FF]/50" />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Simple markdown renderer
+// Markdown renderer
 // ---------------------------------------------------------------------------
 
 function renderMarkdown(text: string): React.ReactNode[] {
@@ -177,13 +168,13 @@ function renderMarkdown(text: string): React.ReactNode[] {
   for (const line of lines) {
     if (line.startsWith("## ")) {
       elements.push(
-        <h2 key={key++} className="mb-2 mt-6 text-lg font-semibold text-primary first:mt-0">
+        <h2 key={key++} className="mb-2 mt-5 text-sm font-medium text-[#5B8BA8] first:mt-0">
           {line.slice(3)}
         </h2>
       );
     } else if (line.startsWith("### ")) {
       elements.push(
-        <h3 key={key++} className="mb-2 mt-4 text-base font-medium text-primary">
+        <h3 key={key++} className="mb-2 mt-4 text-sm font-medium text-[#5B8BA8]">
           {line.slice(4)}
         </h3>
       );
@@ -192,10 +183,10 @@ function renderMarkdown(text: string): React.ReactNode[] {
     } else {
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
       elements.push(
-        <p key={key++} className="text-sm leading-relaxed text-secondary">
+        <p key={key++} className="text-base leading-relaxed text-primary">
           {parts.map((part, i) =>
             part.startsWith("**") && part.endsWith("**") ? (
-              <strong key={i} className="font-semibold text-primary">
+              <strong key={i} className="font-semibold">
                 {part.slice(2, -2)}
               </strong>
             ) : (
@@ -210,13 +201,73 @@ function renderMarkdown(text: string): React.ReactNode[] {
 }
 
 // ---------------------------------------------------------------------------
-// Score color helper
+// Debrief markdown renderer (lavender styling)
 // ---------------------------------------------------------------------------
 
-function scoreColorClass(score: number): string {
-  if (score >= 4) return "text-success";
-  if (score === 3) return "text-warning";
-  return "text-danger";
+function renderDebriefMarkdown(text: string): React.ReactNode[] {
+  const lines = text.split("\n");
+  const elements: React.ReactNode[] = [];
+  let key = 0;
+
+  for (const line of lines) {
+    if (line.startsWith("## ") || line.startsWith("**") && line.endsWith("**")) {
+      const header = line.startsWith("## ") ? line.slice(3) : line.slice(2, -2);
+      elements.push(
+        <h2 key={key++} className="mb-2 mt-5 text-sm font-medium text-[#7B6BA8] first:mt-0">
+          {header}
+        </h2>
+      );
+    } else if (line.trim() === "") {
+      elements.push(<div key={key++} className="h-3" />);
+    } else {
+      const parts = line.split(/(\*\*[^*]+\*\*)/g);
+      elements.push(
+        <p key={key++} className="text-base leading-relaxed text-primary">
+          {parts.map((part, i) =>
+            part.startsWith("**") && part.endsWith("**") ? (
+              <strong key={i} className="font-semibold">
+                {part.slice(2, -2)}
+              </strong>
+            ) : (
+              part
+            )
+          )}
+        </p>
+      );
+    }
+  }
+  return elements;
+}
+
+// ---------------------------------------------------------------------------
+// Confetti component
+// ---------------------------------------------------------------------------
+
+function Confetti() {
+  const colors = ["#B8D4E3", "#F2C4C4", "#C5B8E8", "#B8E0C8"];
+  const dots = Array.from({ length: 10 }, (_, i) => ({
+    id: i,
+    color: colors[i % colors.length],
+    left: `${10 + Math.random() * 80}%`,
+    delay: `${Math.random() * 0.4}s`,
+  }));
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {dots.map((dot) => (
+        <div
+          key={dot.id}
+          className="confetti-dot"
+          style={{
+            backgroundColor: dot.color,
+            left: dot.left,
+            bottom: "40%",
+            animationDelay: dot.delay,
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -228,15 +279,14 @@ export default function SessionPage() {
   const online = useOnlineStatus();
 
   // Session state
-  const [currentPhase, setCurrentPhase] = useState<SessionPhase>("checkin");
+  const [currentPhase, setCurrentPhase] = useState<SessionPhase>("lesson");
   const [completedPhases, setCompletedPhases] = useState<Set<SessionPhase>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [skipCheckin, setSkipCheckin] = useState(false);
   const submittingRef = useRef(false);
   const [restored, setRestored] = useState(false);
 
-  // Data accumulated through the session
+  // Data
   const [dayNumber, setDayNumber] = useState(1);
   const [lastMission, setLastMission] = useState<string | null>(null);
   const [checkinOutcome, setCheckinOutcome] = useState<string | null>(null);
@@ -257,24 +307,27 @@ export default function SessionPage() {
   const [keyMoment, setKeyMoment] = useState("");
   const [mission, setMission] = useState<string | null>(null);
   const [rationale, setRationale] = useState<string | null>(null);
+
+  // Check-in state (within deploy phase)
+  const [checkinNeeded, setCheckinNeeded] = useState(false);
+  const [checkinDone, setCheckinDone] = useState(false);
+  const [checkinPillSelected, setCheckinPillSelected] = useState<"completed" | "tried" | null>(null);
   const [checkinResponse, setCheckinResponse] = useState<string | null>(null);
 
-  // Checkin pill state — expand input for "Nailed it" / "Tried it"
-  const [checkinPillSelected, setCheckinPillSelected] = useState<"completed" | "tried" | null>(null);
-
-  // Retrieval bridge state
+  // Retrieval bridge
   const [retrievalQuestion, setRetrievalQuestion] = useState<string | null>(null);
   const [retrievalResponse, setRetrievalResponse] = useState<string | null>(null);
   const [retrievalReady, setRetrievalReady] = useState(false);
 
   // Roleplay retry
   const [pendingRetry, setPendingRetry] = useState<string | null>(null);
-
-  // New message pill
   const [showNewMessagePill, setShowNewMessagePill] = useState(false);
 
-  // Phase transition animation
+  // Phase animation
   const [phaseAnimation, setPhaseAnimation] = useState<"enter" | "active" | "exit">("active");
+
+  // Completion
+  const [showConfetti, setShowConfetti] = useState(false);
 
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -284,7 +337,7 @@ export default function SessionPage() {
   const [resetNotice, setResetNotice] = useState(false);
 
   // ---------------------------------------------------------------------------
-  // Smart auto-scroll
+  // Auto-scroll
   // ---------------------------------------------------------------------------
 
   const isNearBottom = useCallback(() => {
@@ -301,87 +354,53 @@ export default function SessionPage() {
   }, [isNearBottom]);
 
   useEffect(() => {
-    if (isNearBottom()) {
-      scrollToBottom();
-    } else if (roleplayTranscript.length > 0) {
-      setShowNewMessagePill(true);
-    }
+    if (isNearBottom()) { scrollToBottom(); }
+    else if (roleplayTranscript.length > 0) { setShowNewMessagePill(true); }
   }, [roleplayTranscript, streamingText, scrollToBottom, isNearBottom]);
 
-  // Dismiss new message pill when user scrolls to bottom
   useEffect(() => {
     const el = chatContainerRef.current;
     if (!el) return;
-    const handleScroll = () => {
-      if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-        setShowNewMessagePill(false);
-      }
-    };
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
+    const h = () => { if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) setShowNewMessagePill(false); };
+    el.addEventListener("scroll", h, { passive: true });
+    return () => el.removeEventListener("scroll", h);
   }, [currentPhase]);
 
-  // Keyboard handling — scroll to bottom when virtual keyboard opens
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const handler = () => {
-      if (vv.height < window.innerHeight * 0.75) {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }
-    };
-    vv.addEventListener("resize", handler);
-    return () => vv.removeEventListener("resize", handler);
+    const h = () => { if (vv.height < window.innerHeight * 0.75) chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); };
+    vv.addEventListener("resize", h);
+    return () => vv.removeEventListener("resize", h);
   }, []);
 
-  // Replace history state on phase change
   useEffect(() => {
     window.history.replaceState(null, "", `/session?phase=${currentPhase}`);
   }, [currentPhase]);
 
-  // Auto-focus input after streaming completes
   useEffect(() => {
-    if (!isStreaming && currentPhase === "roleplay") {
-      inputRef.current?.focus();
-    }
+    if (!isStreaming && currentPhase === "roleplay") inputRef.current?.focus();
   }, [isStreaming, currentPhase]);
 
-  // Auto-dismiss restored banner
   useEffect(() => {
-    if (restored) {
-      const t = setTimeout(() => setRestored(false), 3000);
-      return () => clearTimeout(t);
-    }
+    if (restored) { const t = setTimeout(() => setRestored(false), 3000); return () => clearTimeout(t); }
   }, [restored]);
 
   // ---------------------------------------------------------------------------
-  // Session persistence (localStorage)
+  // Session persistence
   // ---------------------------------------------------------------------------
 
   function saveSession() {
     try {
-      const state = {
-        phase: currentPhase,
-        concept,
-        character,
-        lessonContent,
-        transcript: roleplayTranscript,
-        turnCount,
-        completedPhases: Array.from(completedPhases),
-        commandsUsed,
-        checkinOutcome,
-        skipCheckin,
-        dayNumber,
-        scenarioContext,
-        debriefContent,
-        scores,
-        behavioralWeaknessSummary,
-        keyMoment,
-        mission,
-        rationale,
-        timestamp: Date.now(),
-      };
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+        phase: currentPhase, concept, character, lessonContent,
+        transcript: roleplayTranscript, turnCount,
+        completedPhases: Array.from(completedPhases), commandsUsed,
+        checkinOutcome, checkinNeeded, checkinDone,
+        dayNumber, scenarioContext, debriefContent, scores,
+        behavioralWeaknessSummary, keyMoment, mission, rationale,
+        lastMission, timestamp: Date.now(),
+      }));
     } catch {}
   }
 
@@ -389,76 +408,56 @@ export default function SessionPage() {
     try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
   }
 
-  // Save after phase transitions and content loads
   useEffect(() => {
-    if (!isLoading && currentPhase !== "checkin") {
-      saveSession();
-    }
+    if (!isLoading) saveSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPhase, roleplayTranscript.length, turnCount, debriefContent, scores, mission]);
+  }, [currentPhase, roleplayTranscript.length, turnCount, debriefContent, scores, mission, checkinDone]);
 
   // ---------------------------------------------------------------------------
-  // Initialization — try restore, else check status
+  // Init
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    // Try to restore saved session
     try {
       const raw = localStorage.getItem(SESSION_STORAGE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw);
-        if (Date.now() - saved.timestamp < SESSION_MAX_AGE_MS) {
-          setCurrentPhase(saved.phase);
-          setConcept(saved.concept);
-          setCharacter(saved.character);
-          setLessonContent(saved.lessonContent);
-          setRoleplayTranscript(saved.transcript || []);
-          setTurnCount(saved.turnCount || 0);
-          setCompletedPhases(new Set(saved.completedPhases || []));
-          setCommandsUsed(saved.commandsUsed || []);
-          setCheckinOutcome(saved.checkinOutcome);
-          setSkipCheckin(saved.skipCheckin ?? false);
-          setDayNumber(saved.dayNumber || 1);
-          setScenarioContext(saved.scenarioContext || null);
-          if (saved.debriefContent) setDebriefContent(saved.debriefContent);
-          if (saved.scores) setScores(saved.scores);
-          if (saved.behavioralWeaknessSummary) setBehavioralWeaknessSummary(saved.behavioralWeaknessSummary);
-          if (saved.keyMoment) setKeyMoment(saved.keyMoment);
-          if (saved.mission) setMission(saved.mission);
-          if (saved.rationale) setRationale(saved.rationale);
-          setIsLoading(false);
-          setRestored(true);
-          return;
-        } else {
-          localStorage.removeItem(SESSION_STORAGE_KEY);
-        }
+        const s = JSON.parse(raw);
+        if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) {
+          setCurrentPhase(s.phase); setConcept(s.concept); setCharacter(s.character);
+          setLessonContent(s.lessonContent); setRoleplayTranscript(s.transcript || []);
+          setTurnCount(s.turnCount || 0); setCompletedPhases(new Set(s.completedPhases || []));
+          setCommandsUsed(s.commandsUsed || []); setCheckinOutcome(s.checkinOutcome);
+          setCheckinNeeded(s.checkinNeeded ?? false); setCheckinDone(s.checkinDone ?? false);
+          setDayNumber(s.dayNumber || 1); setScenarioContext(s.scenarioContext || null);
+          if (s.debriefContent) setDebriefContent(s.debriefContent);
+          if (s.scores) setScores(s.scores);
+          if (s.behavioralWeaknessSummary) setBehavioralWeaknessSummary(s.behavioralWeaknessSummary);
+          if (s.keyMoment) setKeyMoment(s.keyMoment);
+          if (s.mission) setMission(s.mission);
+          if (s.rationale) setRationale(s.rationale);
+          if (s.lastMission) setLastMission(s.lastMission);
+          setIsLoading(false); setRestored(true); return;
+        } else { localStorage.removeItem(SESSION_STORAGE_KEY); }
       }
     } catch {}
 
-    // Normal init — fetch status
+    // Always start with lesson — fetch status to check if checkin needed later
     fetch("/api/status")
       .then((res) => res.json())
       .then((data) => {
         setDayNumber(data.dayNumber);
-        if (!data.lastEntry) {
-          setSkipCheckin(true);
-          setCurrentPhase("lesson");
-          fetchLesson();
-        } else {
+        if (data.lastEntry) {
           setLastMission(data.lastEntry.mission);
-          setIsLoading(false);
+          setCheckinNeeded(true);
         }
-      })
-      .catch(() => {
-        setSkipCheckin(true);
-        setCurrentPhase("lesson");
         fetchLesson();
-      });
+      })
+      .catch(() => { fetchLesson(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Phase transition helper with animation
+  // Phase transition
   // ---------------------------------------------------------------------------
 
   function advancePhase(from: SessionPhase, to: SessionPhase) {
@@ -474,57 +473,19 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 0: Check-in
-  // ---------------------------------------------------------------------------
-
-  async function submitCheckin(outcomeType: "completed" | "tried" | "skipped", userOutcome?: string) {
-    if (!lastMission || submittingRef.current) return;
-    submittingRef.current = true;
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch("/api/checkin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ previousMission: lastMission, outcomeType, userOutcome }),
-      });
-
-      if (!res.ok) throw new Error("Check-in API failed");
-      const data = await res.json();
-
-      setCheckinResponse(data.response);
-      setCheckinOutcome(data.outcome);
-      setIsLoading(false);
-      submittingRef.current = false;
-
-      setTimeout(() => {
-        advancePhase("checkin", "lesson");
-        fetchLesson();
-      }, 2000);
-    } catch {
-      setError("Failed to submit. Try again.");
-      setIsLoading(false);
-      submittingRef.current = false;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Phase 1: Lesson
   // ---------------------------------------------------------------------------
 
   async function fetchLesson() {
     setIsLoading(true);
     setError(null);
-
     try {
       const res = await fetchWithRetry(
         "/api/lesson",
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
         5, 3000,
-        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+        (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
       );
-
       const data = await res.json();
       setConcept(data.concept);
       setLessonContent(data.lessonContent);
@@ -537,26 +498,22 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 1.5: Retrieval Bridge
+  // Retrieval Bridge
   // ---------------------------------------------------------------------------
 
   async function startRetrieval() {
     if (!concept) return;
     advancePhase("lesson", "retrieval");
     setIsLoading(true);
-
     try {
       const res = await fetchWithRetry(
         "/api/retrieval-bridge",
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concept }) },
-        5, 3000,
-        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+        5, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
       );
-
       const data = await res.json();
       setRetrievalQuestion(data.response);
-      setError(null);
-      setIsLoading(false);
+      setError(null); setIsLoading(false);
     } catch {
       setError("No connection. Your progress is saved \u2014 continue when back online.");
       setIsLoading(false);
@@ -567,29 +524,20 @@ export default function SessionPage() {
     if (!concept || submittingRef.current) return;
     submittingRef.current = true;
     setIsLoading(true);
-
     try {
       const res = await fetch("/api/retrieval-bridge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, userResponse }),
       });
-
-      if (!res.ok) throw new Error("Retrieval bridge API failed");
+      if (!res.ok) throw new Error("API failed");
       const data = await res.json();
-
       setRetrievalResponse(data.response);
       setRetrievalReady(data.ready);
-      setIsLoading(false);
-      submittingRef.current = false;
-
-      if (data.ready) {
-        setTimeout(() => { startRoleplay(); }, 1500);
-      }
+      setIsLoading(false); submittingRef.current = false;
+      if (data.ready) setTimeout(() => startRoleplay(), 1500);
     } catch {
       setError("Failed to evaluate response. Try again.");
-      setIsLoading(false);
-      submittingRef.current = false;
+      setIsLoading(false); submittingRef.current = false;
     }
   }
 
@@ -599,22 +547,17 @@ export default function SessionPage() {
 
   async function startRoleplay() {
     if (!concept) return;
-
     const { selectCharacter } = await import("@/lib/characters");
     const char = selectCharacter(concept);
     setCharacter(char);
-
     advancePhase("retrieval", "roleplay");
     setIsLoading(true);
-
     try {
       const res = await fetch("/api/roleplay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character: char, transcript: [], userMessage: null }),
       });
-
-      if (!res.ok) throw new Error("Roleplay API failed");
+      if (!res.ok) throw new Error("API failed");
       const sc = res.headers.get("X-Scenario-Context");
       if (sc) setScenarioContext(decodeURIComponent(sc));
       await streamRoleplayResponse(res, []);
@@ -628,98 +571,66 @@ export default function SessionPage() {
     if (!concept || !character || isStreaming || submittingRef.current) return;
     submittingRef.current = true;
     setPendingRetry(null);
-
-    const updatedTranscript: Message[] = [
-      ...roleplayTranscript,
-      { role: "user", content: userMessage },
-    ];
-    setRoleplayTranscript(updatedTranscript);
-    setTurnCount((prev) => prev + 1);
+    const updated: Message[] = [...roleplayTranscript, { role: "user", content: userMessage }];
+    setRoleplayTranscript(updated);
+    setTurnCount((p) => p + 1);
     setInputValue("");
     haptic();
-
     try {
       const res = await fetch("/api/roleplay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          concept,
-          character,
-          transcript: updatedTranscript,
-          userMessage: null,
-          scenarioContext,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ concept, character, transcript: updated, userMessage: null, scenarioContext }),
       });
-
-      if (!res.ok) throw new Error("Roleplay API failed");
-      await streamRoleplayResponse(res, updatedTranscript);
+      if (!res.ok) throw new Error("API failed");
+      await streamRoleplayResponse(res, updated);
     } catch {
       setRoleplayTranscript(roleplayTranscript);
-      setTurnCount((prev) => prev - 1);
+      setTurnCount((p) => p - 1);
       setPendingRetry(userMessage);
       submittingRef.current = false;
     }
   }
 
   async function streamRoleplayResponse(res: Response, currentTranscript: Message[]) {
-    setIsStreaming(true);
-    setStreamingText("");
-    setIsLoading(false);
-
+    setIsStreaming(true); setStreamingText(""); setIsLoading(false);
     const reader = res.body?.getReader();
     if (!reader) return;
-
     const decoder = new TextDecoder();
     let fullText = "";
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      fullText += chunk;
+      fullText += decoder.decode(value, { stream: true });
       setStreamingText(fullText);
     }
-
     setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
-    setStreamingText("");
-    setIsStreaming(false);
-    setTurnCount((prev) => prev + 1);
+    setStreamingText(""); setIsStreaming(false);
+    setTurnCount((p) => p + 1);
     submittingRef.current = false;
   }
 
   async function handleCoach() {
     if (!concept || roleplayTranscript.length === 0) return;
-    setCoachAdvice(null);
-    setCoachLoading(true);
-    setCommandsUsed((prev) => prev.includes("/coach") ? prev : [...prev, "/coach"]);
+    setCoachAdvice(null); setCoachLoading(true);
+    setCommandsUsed((p) => p.includes("/coach") ? p : [...p, "/coach"]);
     haptic();
-
     try {
       const res = await fetch("/api/coach", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transcript: roleplayTranscript, concept }),
       });
-
-      if (!res.ok) throw new Error("Coach API failed");
+      if (!res.ok) throw new Error("API failed");
       const data = await res.json();
       setCoachAdvice(data.advice);
-    } catch {
-      setCoachAdvice("Coach unavailable right now. Trust your instincts.");
-    } finally {
-      setCoachLoading(false);
-    }
+    } catch { setCoachAdvice("Coach unavailable right now. Trust your instincts."); }
+    finally { setCoachLoading(false); }
   }
 
   function handleReset() {
-    setCommandsUsed((prev) => [...prev, "/reset"]);
-    setRoleplayTranscript([]);
-    setTurnCount(0);
-    setStreamingText("");
-    setCoachAdvice(null);
-    setCoachLoading(false);
-    setResetNotice(true);
-    haptic();
+    setCommandsUsed((p) => [...p, "/reset"]);
+    setRoleplayTranscript([]); setTurnCount(0);
+    setStreamingText(""); setCoachAdvice(null); setCoachLoading(false);
+    setResetNotice(true); haptic();
     setTimeout(() => setResetNotice(false), 3000);
     startRoleplayFresh();
   }
@@ -727,43 +638,33 @@ export default function SessionPage() {
   async function startRoleplayFresh() {
     if (!concept || !character) return;
     setIsLoading(true);
-
     try {
       const res = await fetch("/api/roleplay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character, transcript: [], userMessage: null }),
       });
-
-      if (!res.ok) throw new Error("Roleplay API failed");
+      if (!res.ok) throw new Error("API failed");
       const sc = res.headers.get("X-Scenario-Context");
       if (sc) setScenarioContext(decodeURIComponent(sc));
       await streamRoleplayResponse(res, []);
-    } catch {
-      setError("Failed to reset scenario.");
-      setIsLoading(false);
-    }
+    } catch { setError("Failed to reset."); setIsLoading(false); }
   }
 
   function handleSkip() {
-    setCommandsUsed((prev) => [...prev, "/skip"]);
-    haptic();
-    advancePhase("roleplay", "debrief");
-    fetchDebrief();
+    setCommandsUsed((p) => [...p, "/skip"]); haptic();
+    advancePhase("roleplay", "debrief"); fetchDebrief();
   }
 
   function handleDone() {
-    haptic();
-    advancePhase("roleplay", "debrief");
-    fetchDebrief();
+    haptic(); advancePhase("roleplay", "debrief"); fetchDebrief();
   }
 
   function handleRoleplayInput(value: string) {
-    const trimmed = value.trim().toLowerCase();
-    if (trimmed === "/coach") { handleCoach(); setInputValue(""); }
-    else if (trimmed === "/reset") { handleReset(); setInputValue(""); }
-    else if (trimmed === "/skip") { handleSkip(); setInputValue(""); }
-    else if (trimmed === "/done") { handleDone(); setInputValue(""); }
+    const t = value.trim().toLowerCase();
+    if (t === "/coach") { handleCoach(); setInputValue(""); }
+    else if (t === "/reset") { handleReset(); setInputValue(""); }
+    else if (t === "/skip") { handleSkip(); setInputValue(""); }
+    else if (t === "/done") { handleDone(); setInputValue(""); }
     else { sendRoleplayMessage(value.trim()); }
   }
 
@@ -773,35 +674,23 @@ export default function SessionPage() {
 
   async function fetchDebrief() {
     if (!concept || !character) return;
-    setIsLoading(true);
-    setError(null);
-
+    setIsLoading(true); setError(null);
     try {
       const res = await fetchWithRetry(
         "/api/debrief",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: roleplayTranscript, concept, character, commandsUsed }),
-        },
-        5, 3000,
-        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+        { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript: roleplayTranscript, concept, character, commandsUsed }) },
+        5, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
       );
-
       const data = await res.json();
-
-      let displayContent = data.debriefContent;
-      const scoresIdx = displayContent.indexOf("---SCORES---");
-      if (scoresIdx !== -1) {
-        displayContent = displayContent.slice(0, scoresIdx).trim();
-      }
-
-      setDebriefContent(displayContent);
+      let display = data.debriefContent;
+      const idx = display.indexOf("---SCORES---");
+      if (idx !== -1) display = display.slice(0, idx).trim();
+      setDebriefContent(display);
       setScores(data.scores);
       setBehavioralWeaknessSummary(data.behavioralWeaknessSummary);
       setKeyMoment(data.keyMoment);
-      setError(null);
-      setIsLoading(false);
+      setError(null); setIsLoading(false);
     } catch {
       setError("No connection. Your progress is saved \u2014 continue when back online.");
       setIsLoading(false);
@@ -809,38 +698,62 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 4: Mission
+  // Phase 4: Deploy (check-in + mission)
   // ---------------------------------------------------------------------------
+
+  function enterDeploy() {
+    advancePhase("debrief", "mission");
+    // If day 2+, show check-in first. Otherwise go straight to mission.
+    if (checkinNeeded && !checkinDone) {
+      setIsLoading(false);
+    } else {
+      fetchMission();
+    }
+  }
+
+  async function submitCheckin(outcomeType: "completed" | "tried" | "skipped", userOutcome?: string) {
+    if (!lastMission || submittingRef.current) return;
+    submittingRef.current = true;
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/checkin", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previousMission: lastMission, outcomeType, userOutcome }),
+      });
+      if (!res.ok) throw new Error("Check-in API failed");
+      const data = await res.json();
+      setCheckinResponse(data.response);
+      setCheckinOutcome(data.type);
+      setCheckinDone(true);
+      setIsLoading(false);
+      submittingRef.current = false;
+      // After check-in, auto-advance to mission
+      setTimeout(() => { setCheckinResponse(null); fetchMission(); }, 2000);
+    } catch {
+      setError("Failed to submit. Try again.");
+      setIsLoading(false);
+      submittingRef.current = false;
+    }
+  }
 
   async function fetchMission() {
     if (!concept || !character || !scores || submittingRef.current) return;
     submittingRef.current = true;
-    advancePhase("debrief", "mission");
-    setIsLoading(true);
-    setError(null);
-
+    setIsLoading(true); setError(null);
     try {
       const res = await fetchWithRetry(
         "/api/mission",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }),
-        },
-        5, 3000,
-        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+        { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }) },
+        5, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
       );
-
       const data = await res.json();
-      setMission(data.mission);
-      setRationale(data.rationale);
-      setError(null);
-      setIsLoading(false);
+      setMission(data.mission); setRationale(data.rationale);
+      setError(null); setIsLoading(false);
       submittingRef.current = false;
     } catch {
       setError("No connection. Your progress is saved \u2014 continue when back online.");
-      setIsLoading(false);
-      submittingRef.current = false;
+      setIsLoading(false); submittingRef.current = false;
     }
   }
 
@@ -848,20 +761,15 @@ export default function SessionPage() {
   function completeSession() {
     if (sessionCompletedRef.current) return;
     sessionCompletedRef.current = true;
-    setCompletedPhases((prev) => new Set([...prev, "mission"]));
-    clearSession();
-    haptic();
+    setCompletedPhases((p) => new Set([...p, "mission"]));
+    setShowConfetti(true);
+    clearSession(); haptic();
     setTimeout(() => router.push("/"), 2000);
   }
 
-  // ---------------------------------------------------------------------------
-  // Error retry
-  // ---------------------------------------------------------------------------
-
   function retry() {
     setError(null);
-    if (currentPhase === "checkin") setIsLoading(false);
-    else if (currentPhase === "lesson") fetchLesson();
+    if (currentPhase === "lesson") fetchLesson();
     else if (currentPhase === "retrieval") startRetrieval();
     else if (currentPhase === "roleplay") startRoleplayFresh();
     else if (currentPhase === "debrief") fetchDebrief();
@@ -872,159 +780,53 @@ export default function SessionPage() {
   // Render
   // ---------------------------------------------------------------------------
 
-  const SCORE_DIMENSIONS: { key: keyof SessionScores; label: string }[] = [
-    { key: "technique_application", label: "Technique Application" },
-    { key: "tactical_awareness", label: "Tactical Awareness" },
-    { key: "frame_control", label: "Frame Control" },
-    { key: "emotional_regulation", label: "Emotional Regulation" },
-    { key: "strategic_outcome", label: "Strategic Outcome" },
+  const SCORE_DIMS: { key: keyof SessionScores; label: string }[] = [
+    { key: "technique_application", label: "TA" },
+    { key: "tactical_awareness", label: "TW" },
+    { key: "frame_control", label: "FC" },
+    { key: "emotional_regulation", label: "ER" },
+    { key: "strategic_outcome", label: "SO" },
   ];
 
   const isRoleplay = currentPhase === "roleplay";
-
-  const phaseClass =
-    phaseAnimation === "enter" ? "phase-enter" :
-    phaseAnimation === "active" ? "phase-active" :
-    "phase-exit";
+  const phaseBg = PHASE_BG[currentPhase] || "#FAF9F6";
+  const phaseClass = phaseAnimation === "enter" ? "phase-enter" : phaseAnimation === "active" ? "phase-active" : "phase-exit";
 
   return (
-    <div className="session-page flex flex-col h-dvh overflow-hidden">
-      {/* Sticky phase indicator */}
-      <PhaseIndicator current={currentPhase} completed={completedPhases} skipCheckin={skipCheckin} />
+    <div
+      className="session-page flex flex-col h-dvh overflow-hidden phase-bg-transition"
+      style={{ backgroundColor: phaseBg }}
+    >
+      <PhaseIndicator current={currentPhase} completed={completedPhases} />
 
       {/* Offline banner */}
       {!online && (
-        <div className="flex h-7 items-center justify-center bg-warning/10 text-xs font-medium text-warning">
+        <div className="flex h-7 items-center justify-center text-xs font-medium text-[#C4A24E]" style={{ backgroundColor: "#FFF8E7" }}>
           Offline — reconnecting...
         </div>
       )}
 
-      {/* Restored session notice */}
       {restored && (
-        <div className="flex h-7 items-center justify-center bg-accent-light text-xs font-medium text-accent">
+        <div className="flex h-7 items-center justify-center bg-[#EEEDFF] text-xs font-medium text-[#6C63FF]">
           Session restored
         </div>
       )}
 
-      {/* Scrollable content area */}
+      {/* Scrollable content */}
       <div ref={isRoleplay ? chatContainerRef : undefined} className="chat-container flex-1 overflow-y-auto px-4 sm:px-6">
-        <div className={`mx-auto max-w-lg py-4 sm:py-8 ${phaseClass}`}>
+        <div className={`mx-auto max-w-lg py-5 sm:py-8 ${phaseClass}`}>
 
-          {/* Error display */}
           {error && (
-            <div className="card mb-6 border border-danger/20 text-center">
-              <p className="text-sm text-danger">{error}</p>
-              <button
-                onClick={retry}
-                className="mt-2 min-h-[44px] text-xs font-semibold text-accent underline active:scale-95"
-              >
+            <div className="mb-5 rounded-3xl bg-white p-5 text-center shadow-[var(--shadow-soft)]">
+              <p className="text-sm text-[#E88B8B]">{error}</p>
+              <button onClick={retry} className="mt-2 min-h-[44px] text-xs font-medium text-[#6C63FF] underline active:scale-[0.97]">
                 Retry
               </button>
             </div>
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 0: CHECK-IN                                              */}
-          {/* ============================================================== */}
-          {currentPhase === "checkin" && (
-            <>
-              {lastMission && !checkinResponse && !isLoading && (
-                <div className="space-y-6">
-                  {/* Mission card */}
-                  <div className="card">
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
-                      Yesterday&apos;s Mission
-                    </p>
-                    <p className="text-sm leading-relaxed text-primary">
-                      {lastMission}
-                    </p>
-                  </div>
-
-                  {/* Outcome pills */}
-                  <div className="space-y-3">
-                    <p className="text-center text-sm font-medium text-secondary">
-                      How did it go?
-                    </p>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => setCheckinPillSelected("completed")}
-                        className={`flex-1 rounded-xl py-3.5 text-sm font-semibold transition-all active:scale-95 ${
-                          checkinPillSelected === "completed"
-                            ? "bg-accent text-white shadow-md"
-                            : "border border-border bg-surface text-primary hover:border-accent/30"
-                        }`}
-                      >
-                        Nailed it
-                      </button>
-                      <button
-                        onClick={() => setCheckinPillSelected("tried")}
-                        className={`flex-1 rounded-xl py-3.5 text-sm font-semibold transition-all active:scale-95 ${
-                          checkinPillSelected === "tried"
-                            ? "bg-accent text-white shadow-md"
-                            : "border border-border bg-surface text-primary hover:border-accent/30"
-                        }`}
-                      >
-                        Tried it
-                      </button>
-                      <button
-                        onClick={() => submitCheckin("skipped")}
-                        className="flex-1 rounded-xl border border-border bg-surface py-3.5 text-sm font-medium text-tertiary transition-all active:scale-95 hover:border-accent/30"
-                      >
-                        Skip
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expandable input for "Nailed it" / "Tried it" */}
-                  {checkinPillSelected && (
-                    <div className="animate-sparkle space-y-3">
-                      <input
-                        type="text"
-                        placeholder={
-                          checkinPillSelected === "completed"
-                            ? "What was the exact reaction?"
-                            : "What happened when you tried?"
-                        }
-                        className="w-full rounded-xl border border-border bg-surface px-4 py-3.5 text-sm text-primary placeholder-tertiary outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/10"
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && inputValue.trim()) {
-                            submitCheckin(checkinPillSelected, inputValue.trim());
-                          }
-                        }}
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => {
-                          if (inputValue.trim()) {
-                            submitCheckin(checkinPillSelected, inputValue.trim());
-                          }
-                        }}
-                        disabled={!inputValue.trim()}
-                        className="btn-gradient w-full py-3.5 text-sm disabled:opacity-40"
-                      >
-                        Submit
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Check-in response — fade out to lesson */}
-              {checkinResponse && (
-                <div className="card text-center">
-                  <p className="text-sm leading-relaxed text-secondary italic">{checkinResponse}</p>
-                  <div className="gradient-line mx-auto mt-4 w-32 overflow-hidden rounded-full opacity-0" style={{ animation: "gate-progress 2s ease-in-out forwards" }} />
-                </div>
-              )}
-
-              {isLoading && !checkinResponse && <LoadingDots />}
-            </>
-          )}
-
-          {/* ============================================================== */}
-          {/* PHASE 1: LEARN                                                 */}
+          {/* LEARN                                                           */}
           {/* ============================================================== */}
           {currentPhase === "lesson" && (
             <>
@@ -1038,26 +840,26 @@ export default function SessionPage() {
               {lessonContent && !isLoading && (
                 <>
                   {concept && (
-                    <div className="mb-6">
-                      <span className="inline-block rounded-full bg-accent-light px-3 py-1 text-xs font-medium text-accent">
+                    <div className="mb-4">
+                      <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-medium text-[#6C63FF]">
                         {concept.domain}
                       </span>
                       <h2 className="mt-3 text-xl font-semibold text-primary">
                         {concept.name}
-                        <span className="ml-2 text-sm font-normal text-tertiary">({concept.source})</span>
+                        <span className="ml-2 text-sm font-normal italic text-secondary">({concept.source})</span>
                       </h2>
                     </div>
                   )}
 
-                  <div className="card select-text mb-8">
+                  <div className="select-text mb-6 rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.lesson }}>
                     <div className="space-y-0">{renderMarkdown(lessonContent)}</div>
                   </div>
 
                   <button
                     onClick={startRetrieval}
-                    className="btn-gradient w-full py-4 text-base"
+                    className="w-full rounded-2xl bg-[#6C63FF] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
                   >
-                    Ready to Practice &rarr;
+                    Ready to practice &rarr;
                   </button>
                 </>
               )}
@@ -1065,7 +867,7 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 1.5: RETRIEVAL BRIDGE                                    */}
+          {/* RETRIEVAL                                                       */}
           {/* ============================================================== */}
           {currentPhase === "retrieval" && (
             <>
@@ -1077,19 +879,16 @@ export default function SessionPage() {
               )}
 
               {retrievalQuestion && (
-                <div className="space-y-6">
-                  <div className="card">
+                <div className="space-y-5">
+                  <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
                     <p className="text-center text-lg font-medium leading-relaxed text-primary">
                       {retrievalQuestion}
                     </p>
                   </div>
 
                   {retrievalResponse && (
-                    <div className="card text-center">
+                    <div className="rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-soft)]">
                       <p className="text-sm leading-relaxed text-secondary italic">{retrievalResponse}</p>
-                      {retrievalReady && (
-                        <div className="gradient-line mx-auto mt-4 w-32 overflow-hidden rounded-full opacity-0" style={{ animation: "gate-progress 1.5s ease-in-out forwards" }} />
-                      )}
                     </div>
                   )}
 
@@ -1098,27 +897,18 @@ export default function SessionPage() {
                       <input
                         type="text"
                         placeholder="Your answer..."
-                        className="w-full rounded-xl border border-border bg-surface px-4 py-3.5 text-sm text-primary placeholder-tertiary outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/10"
+                        className="w-full rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#6C63FF]/20"
+                        style={{ backgroundColor: PHASE_TINT.lesson }}
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && inputValue.trim()) {
-                            submitRetrievalResponse(inputValue.trim());
-                            setInputValue("");
-                          }
-                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
                         disabled={isLoading}
                         autoFocus
                       />
                       <button
-                        onClick={() => {
-                          if (inputValue.trim()) {
-                            submitRetrievalResponse(inputValue.trim());
-                            setInputValue("");
-                          }
-                        }}
+                        onClick={() => { if (inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
                         disabled={isLoading || !inputValue.trim()}
-                        className="btn-gradient w-full py-3.5 text-sm disabled:opacity-40"
+                        className="w-full rounded-2xl bg-[#6C63FF] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
                       >
                         {isLoading ? "Evaluating..." : "Submit"}
                       </button>
@@ -1127,10 +917,10 @@ export default function SessionPage() {
 
                   {retrievalResponse && !retrievalReady && (
                     <button
-                      onClick={startRoleplay}
-                      className="btn-gradient w-full py-4 text-base"
+                      onClick={() => startRoleplay()}
+                      className="w-full rounded-2xl bg-[#6C63FF] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
                     >
-                      Continue to Practice &rarr;
+                      Continue to practice &rarr;
                     </button>
                   )}
                 </div>
@@ -1139,38 +929,32 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 2: SIMULATE                                              */}
+          {/* SIMULATE                                                        */}
           {/* ============================================================== */}
           {currentPhase === "roleplay" && (
             <>
-              {/* Turn counter */}
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
-                <span className="rounded-full bg-accent-light px-2.5 py-0.5 text-[10px] font-medium text-accent">
-                  Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8
-                </span>
+                <span className="text-xs text-secondary">Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8</span>
               </div>
 
-              {/* Reset notice */}
               {resetNotice && (
-                <p className="mb-2 text-center text-xs text-secondary animate-pulse">
-                  Same concept. Fresh start.
-                </p>
+                <p className="mb-2 text-center text-xs text-secondary animate-pulse">Same concept. Fresh start.</p>
               )}
 
-              {/* Chat messages */}
               <div className="space-y-3 pb-4">
                 {roleplayTranscript.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                     <div
-                      className={`max-w-[85%] px-4 py-3 text-[15px] leading-relaxed ${
+                      className={`max-w-[85%] p-4 text-base leading-relaxed ${
                         msg.role === "user"
-                          ? "rounded-2xl rounded-tr-sm bg-accent-light text-primary"
-                          : "rounded-2xl rounded-tl-sm bg-surface text-primary shadow-sm"
+                          ? "rounded-3xl rounded-tr-lg"
+                          : "rounded-3xl rounded-tl-lg bg-white shadow-[var(--shadow-soft)]"
                       }`}
+                      style={msg.role === "user" ? { backgroundColor: "rgba(242,196,196,0.3)" } : undefined}
                     >
                       {i === 0 && msg.role === "assistant" && (
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-accent">
+                        <p className="mb-1 text-xs font-medium" style={{ color: "#D4908F" }}>
                           {character?.name}
                         </p>
                       )}
@@ -1179,17 +963,14 @@ export default function SessionPage() {
                   </div>
                 ))}
 
-                {/* Streaming text */}
                 {isStreaming && streamingText && (
                   <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-surface px-4 py-3 text-[15px] leading-relaxed text-primary shadow-sm">
+                    <div className="max-w-[85%] rounded-3xl rounded-tl-lg bg-white p-4 text-base leading-relaxed shadow-[var(--shadow-soft)]">
                       {roleplayTranscript.length === 0 && (
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-accent">
-                          {character?.name}
-                        </p>
+                        <p className="mb-1 text-xs font-medium" style={{ color: "#D4908F" }}>{character?.name}</p>
                       )}
                       {streamingText}
-                      <span className="inline-block animate-pulse text-accent">|</span>
+                      <span className="inline-block animate-pulse text-[#6C63FF]">|</span>
                     </div>
                   </div>
                 )}
@@ -1205,12 +986,12 @@ export default function SessionPage() {
                   </div>
                 )}
 
-                {/* Retry on network error */}
                 {pendingRetry && (
                   <div className="flex justify-center">
                     <button
-                      onClick={() => { sendRoleplayMessage(pendingRetry); }}
-                      className="min-h-[44px] rounded-full border border-warning/30 bg-warning/10 px-4 py-2 text-xs font-medium text-warning active:scale-95"
+                      onClick={() => sendRoleplayMessage(pendingRetry)}
+                      className="min-h-[44px] rounded-full px-4 py-2 text-xs font-medium active:scale-[0.97]"
+                      style={{ backgroundColor: "#FFF8E7", color: "#C4A24E" }}
                     >
                       Connection lost. Tap to retry &rarr;
                     </button>
@@ -1220,17 +1001,16 @@ export default function SessionPage() {
                 <div ref={chatEndRef} />
               </div>
 
-              {/* Turn 8+ prompt */}
               {Math.ceil(turnCount / 2) >= 8 && (
-                <p className="mb-2 text-center text-xs text-secondary">
-                  You can continue or type <span className="font-mono text-accent">/done</span> to wrap up
-                </p>
+                <div className="mb-2 rounded-2xl bg-white/70 px-4 py-2 text-center text-sm text-secondary">
+                  You can continue or tap &#10003; when ready
+                </div>
               )}
             </>
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 3: DEBRIEF                                               */}
+          {/* DEBRIEF                                                         */}
           {/* ============================================================== */}
           {currentPhase === "debrief" && (
             <>
@@ -1243,136 +1023,156 @@ export default function SessionPage() {
 
               {debriefContent && !isLoading && (
                 <>
-                  <div className="card select-text mb-6">
-                    <div className="space-y-0">{renderMarkdown(debriefContent)}</div>
-                  </div>
-
+                  {/* Score circles */}
                   {scores && (
-                    <div className="card mb-8">
-                      <h3 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
-                        Session Scores
-                      </h3>
-                      <div className="space-y-3">
-                        {SCORE_DIMENSIONS.map(({ key, label }) => {
-                          const score = scores[key];
+                    <div className="mb-5 rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)]">
+                      <div className="flex items-center justify-center gap-5">
+                        {SCORE_DIMS.map(({ key, label }) => {
+                          const s = scores[key];
                           return (
-                            <div key={key} className="flex items-center justify-between">
-                              <span className="text-sm text-primary">{label}</span>
-                              <div className="flex items-center gap-3">
-                                <span className={`font-mono text-lg font-bold ${scoreColorClass(score)}`}>
-                                  {score}
-                                </span>
-                                <div className="h-2 w-20 overflow-hidden rounded-full bg-border/50">
-                                  <div
-                                    className="h-full rounded-full transition-all"
-                                    style={{
-                                      width: `${(score / 5) * 100}%`,
-                                      background: score >= 4
-                                        ? "var(--success)"
-                                        : score === 3
-                                          ? "var(--warning)"
-                                          : "var(--danger)",
-                                    }}
-                                  />
-                                </div>
+                            <div key={key} className="flex flex-col items-center gap-1.5">
+                              <div
+                                className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold text-white"
+                                style={{ backgroundColor: scoreCircleColor(s) }}
+                              >
+                                {s}
                               </div>
+                              <span className="text-xs text-secondary">{label}</span>
                             </div>
                           );
                         })}
                       </div>
                     </div>
                   )}
+
+                  {/* Analysis card */}
+                  <div className="select-text mb-5 rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.debrief }}>
+                    <div className="space-y-0">{renderDebriefMarkdown(debriefContent)}</div>
+                  </div>
                 </>
               )}
             </>
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 4: DEPLOY                                                */}
+          {/* DEPLOY (check-in + mission)                                     */}
           {/* ============================================================== */}
           {currentPhase === "mission" && (
             <>
-              {isLoading && (
+              {/* Check-in card (Day 2+, before mission loads) */}
+              {checkinNeeded && !checkinDone && !isLoading && !mission && (
+                <div className="animate-fade-in-up space-y-5">
+                  <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+                    <p className="mb-3 text-sm text-secondary">Before your next mission...</p>
+                    <p className="mb-1 text-sm text-secondary">Yesterday you were asked to:</p>
+                    <p className="mb-5 text-base font-medium leading-relaxed text-primary">
+                      &ldquo;{lastMission}&rdquo;
+                    </p>
+                    <p className="mb-4 text-sm font-medium text-primary">How did it go?</p>
+
+                    {/* Outcome pills */}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setCheckinPillSelected("completed")}
+                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97] ${
+                          checkinPillSelected === "completed" ? "ring-2 ring-[#6C63FF]" : ""
+                        }`}
+                        style={{ backgroundColor: "#B8E0C8", color: "#2D6A4F" }}
+                      >
+                        &#10003; Nailed it
+                      </button>
+                      <button
+                        onClick={() => setCheckinPillSelected("tried")}
+                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97] ${
+                          checkinPillSelected === "tried" ? "ring-2 ring-[#6C63FF]" : ""
+                        }`}
+                        style={{ backgroundColor: "#F5E6B8", color: "#8B7024" }}
+                      >
+                        ~ Tried it
+                      </button>
+                      <button
+                        onClick={() => submitCheckin("skipped")}
+                        className="flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97]"
+                        style={{ backgroundColor: "#F0EDE8", color: "#8E8C99" }}
+                      >
+                        &#10005; Skip
+                      </button>
+                    </div>
+
+                    {/* Expandable input */}
+                    {checkinPillSelected && (
+                      <div className="mt-4 animate-fade-in-up space-y-3">
+                        <input
+                          type="text"
+                          placeholder={checkinPillSelected === "completed" ? "What was the exact reaction?" : "What happened when you tried?"}
+                          className="w-full rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#6C63FF]/20"
+                          style={{ backgroundColor: PHASE_TINT.mission }}
+                          value={inputValue}
+                          onChange={(e) => setInputValue(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) submitCheckin(checkinPillSelected, inputValue.trim()); }}
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => { if (inputValue.trim()) submitCheckin(checkinPillSelected, inputValue.trim()); }}
+                          disabled={!inputValue.trim()}
+                          className="w-full rounded-2xl bg-[#6C63FF] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                        >
+                          Submit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Check-in response (brief display before mission) */}
+              {checkinResponse && (
+                <div className="animate-fade-in-up rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-soft)]">
+                  <p className="text-sm leading-relaxed text-secondary italic">{checkinResponse}</p>
+                </div>
+              )}
+
+              {/* Loading mission */}
+              {isLoading && !checkinResponse && (
                 <div className="text-center">
                   <p className="mb-2 text-sm text-secondary">Assigning your mission...</p>
                   <LoadingDots />
                 </div>
               )}
 
-              {mission && !isLoading && (
-                <>
-                  {/* Mission card with gradient left border */}
-                  <div className="relative mb-6 overflow-hidden rounded-2xl bg-surface p-6" style={{ boxShadow: "var(--shadow-elevated)" }}>
-                    <div className="absolute inset-y-0 left-0 w-1" style={{ background: "linear-gradient(180deg, var(--accent), var(--accent-violet))" }} />
-                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
-                      Your Mission
-                    </p>
-                    <p className="text-base leading-relaxed text-primary">{mission}</p>
-                  </div>
+              {/* Mission card */}
+              {mission && !isLoading && !checkinResponse && (
+                <div className="animate-fade-in-up relative">
+                  <p className="mb-3 text-sm font-medium" style={{ color: "#5A9A7A" }}>Your mission</p>
 
-                  {rationale && (
-                    <p className="mb-8 text-sm leading-relaxed text-tertiary italic">{rationale}</p>
-                  )}
+                  <div className="mb-5 rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.mission }}>
+                    <p className="text-lg font-medium leading-relaxed text-primary">{mission}</p>
+                    {rationale && (
+                      <>
+                        <div className="my-4 border-t" style={{ borderColor: "rgba(184,224,200,0.3)" }} />
+                        <p className="text-sm text-secondary">{rationale}</p>
+                      </>
+                    )}
+                  </div>
 
                   {!completedPhases.has("mission") ? (
                     <button
                       onClick={completeSession}
-                      className="w-full rounded-xl bg-success py-4 text-base font-semibold text-white transition-all active:scale-95"
+                      className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+                      style={{ backgroundColor: "#6BC9A0" }}
                     >
-                      Session Complete
+                      Session complete &#10003;
                     </button>
                   ) : (
-                    <div className="animate-sparkle space-y-4 text-center">
-                      <p className="text-lg font-semibold text-success">Day {dayNumber} complete.</p>
-
-                      {scores && (
-                        <div className="card text-left">
-                          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
-                            Session Summary
-                          </p>
-                          {concept && (
-                            <p className="mb-2 text-xs text-secondary">
-                              Concept: <span className="font-medium text-primary">{concept.name}</span>
-                            </p>
-                          )}
-                          <div className="mb-2 flex items-center justify-between text-xs">
-                            <span className="text-secondary">Average Score</span>
-                            <span className={`font-mono font-bold ${scoreColorClass(
-                              Math.round(
-                                (scores.technique_application + scores.tactical_awareness +
-                                 scores.frame_control + scores.emotional_regulation +
-                                 scores.strategic_outcome) / 5
-                              )
-                            )}`}>
-                              {((scores.technique_application + scores.tactical_awareness +
-                                 scores.frame_control + scores.emotional_regulation +
-                                 scores.strategic_outcome) / 5).toFixed(1)}/5
-                            </span>
-                          </div>
-                          {(() => {
-                            const dims = SCORE_DIMENSIONS.map(d => ({ ...d, score: scores[d.key] }));
-                            const strongest = dims.reduce((a, b) => b.score > a.score ? b : a);
-                            const weakest = dims.reduce((a, b) => b.score < a.score ? b : a);
-                            return (
-                              <div className="space-y-1 text-xs">
-                                <div className="flex justify-between">
-                                  <span className="text-secondary">Strongest</span>
-                                  <span className="text-success">{strongest.label} ({strongest.score}/5)</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-secondary">Focus area</span>
-                                  <span className="text-danger">{weakest.label} ({weakest.score}/5)</span>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )}
-
-                      <p className="text-sm text-tertiary">See you tomorrow.</p>
+                    <div className="animate-completion relative text-center">
+                      {showConfetti && <Confetti />}
+                      <p className="text-lg font-semibold" style={{ color: "#6BC9A0" }}>
+                        Day {dayNumber} complete &#10003;
+                      </p>
+                      <p className="mt-2 text-sm text-tertiary">See you tomorrow.</p>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </>
           )}
@@ -1381,14 +1181,14 @@ export default function SessionPage() {
       </div>
 
       {/* ================================================================== */}
-      {/* Sticky continue button (debrief only)                              */}
+      {/* Sticky continue button (debrief)                                    */}
       {/* ================================================================== */}
       {currentPhase === "debrief" && debriefContent && !isLoading && (
-        <div className="border-t border-border bg-background px-4 pb-safe pt-3 pb-3">
+        <div className="border-t border-[#F0EDE8] px-4 pb-safe pt-3 pb-3" style={{ backgroundColor: PHASE_BG.debrief }}>
           <div className="mx-auto max-w-lg">
             <button
-              onClick={fetchMission}
-              className="btn-gradient w-full py-4 text-base"
+              onClick={enterDeploy}
+              className="w-full rounded-2xl bg-[#6C63FF] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
             >
               Continue &rarr;
             </button>
@@ -1397,108 +1197,87 @@ export default function SessionPage() {
       )}
 
       {/* ================================================================== */}
-      {/* Fixed bottom input bar (roleplay only)                             */}
+      {/* Fixed bottom bar (roleplay)                                         */}
       {/* ================================================================== */}
       {isRoleplay && !completedPhases.has("roleplay") && (
-        <div className="bottom-bar border-t border-border bg-background px-4 pt-2">
-          {/* Quick command pills (mobile only) */}
-          <div className="mb-2 flex gap-2 sm:hidden">
-            {[
-              { label: "/c", handler: handleCoach },
-              { label: "/r", handler: handleReset },
-              { label: "/s", handler: handleSkip },
-              { label: "/d", handler: handleDone },
-            ].map(({ label, handler }) => (
-              <button
-                key={label}
-                onClick={handler}
-                className="min-h-[44px] min-w-[44px] rounded-full border border-border bg-surface px-3 font-mono text-xs text-secondary active:scale-95 hover:border-accent/30"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
+        <div className="bottom-bar rounded-t-3xl bg-white px-3 pt-3 shadow-[var(--shadow-elevated)]">
           {/* Input + send */}
-          <div className="flex gap-2 pb-2">
+          <div className="flex gap-2 mb-2">
             <input
               ref={inputRef}
               type="text"
               placeholder="Type your response..."
-              className="flex-1 rounded-full border border-border bg-surface px-4 py-3 text-sm text-primary placeholder-tertiary outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/10"
+              className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#6C63FF]/20"
+              style={{ backgroundColor: PHASE_TINT.roleplay }}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && inputValue.trim() && !isStreaming) {
-                  handleRoleplayInput(inputValue);
-                }
-              }}
+              onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim() && !isStreaming) handleRoleplayInput(inputValue); }}
               disabled={isStreaming || isLoading}
             />
             <button
-              onClick={() => {
-                if (inputValue.trim() && !isStreaming) {
-                  handleRoleplayInput(inputValue);
-                }
-              }}
+              onClick={() => { if (inputValue.trim() && !isStreaming) handleRoleplayInput(inputValue); }}
               disabled={isStreaming || isLoading || !inputValue.trim()}
-              className="flex h-[44px] w-[44px] items-center justify-center rounded-full text-white transition-all active:scale-95 disabled:opacity-40"
-              style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-violet))" }}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-[#6C63FF] text-white transition-transform active:scale-[0.97] disabled:opacity-40"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                 <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.289Z" />
               </svg>
             </button>
           </div>
+
+          {/* Command circles row */}
+          <div className="flex items-center justify-center gap-4 pb-2">
+            <button onClick={handleCoach} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#FFF8E7" }} title="Coach">
+              &#128161;
+            </button>
+            <button onClick={handleReset} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#EFF6FA" }} title="Reset">
+              &#128260;
+            </button>
+            <button onClick={handleSkip} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#F0EDE8" }} title="Skip">
+              &#9197;
+            </button>
+            <button onClick={handleDone} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#F0FAF4" }} title="Done">
+              &#10003;
+            </button>
+          </div>
         </div>
       )}
 
-      {/* "New message" pill */}
+      {/* New message pill */}
       {showNewMessagePill && isRoleplay && (
         <button
-          onClick={() => {
-            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            setShowNewMessagePill(false);
-          }}
-          className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-white shadow-lg active:scale-95"
+          onClick={() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); setShowNewMessagePill(false); }}
+          className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full bg-[#6C63FF] px-3 py-1 text-xs font-medium text-white shadow-[var(--shadow-soft)] active:scale-[0.97]"
         >
-          &darr; New message
+          &darr; New
         </button>
       )}
 
       {/* ================================================================== */}
-      {/* Coach panel — bottom sheet on mobile, side panel on desktop         */}
+      {/* Coach panel — warm cream bottom sheet                               */}
       {/* ================================================================== */}
       {(coachAdvice || coachLoading) && (
         <>
-          {/* Backdrop (mobile) */}
           <div
-            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm sm:hidden"
+            className="fixed inset-0 z-40 bg-black/10 sm:hidden"
             onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
           />
-
-          {/* Panel */}
-          <div className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-2xl border-t border-border bg-surface p-6 shadow-2xl sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-t-0">
-            {/* Drag handle (mobile) */}
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border sm:hidden" />
-
+          <div
+            className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-3xl p-5 shadow-[var(--shadow-elevated)] sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-[#F0EDE8]"
+            style={{ backgroundColor: "#FFF8E7" }}
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#E0DED8] sm:hidden" />
             <div className="mb-4 flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
-                Mentor
-              </span>
+              <span className="text-sm font-medium" style={{ color: "#C4A24E" }}>Mentor</span>
               <button
                 onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lg text-tertiary hover:text-primary active:scale-95"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lg text-secondary hover:text-primary active:scale-[0.97]"
               >
                 &times;
               </button>
             </div>
-            {coachLoading ? (
-              <LoadingDots />
-            ) : (
-              <div className="text-sm leading-relaxed text-secondary">
-                {renderMarkdown(coachAdvice!)}
-              </div>
+            {coachLoading ? <LoadingDots /> : (
+              <div className="text-base leading-relaxed text-primary">{renderMarkdown(coachAdvice!)}</div>
             )}
           </div>
         </>

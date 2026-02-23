@@ -1,4 +1,4 @@
-const CACHE_NAME = "edge-v1";
+const CACHE_NAME = "edge-v3";
 const APP_SHELL = ["/", "/session", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
 // Install — pre-cache app shell

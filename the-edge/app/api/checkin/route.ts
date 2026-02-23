@@ -1,8 +1,7 @@
 /**
- * Phase 0: Check-in — accountability check with pill-based outcomes.
+ * Check-in — mission accountability, called at end of session before new mission (Day 2+).
  * POST { previousMission: string, outcomeType: 'completed' | 'tried' | 'skipped', userOutcome?: string }
- * Returns { response: string, outcome: "EXECUTED" | "UNCLEAR" | "SKIPPED" }
- * Reference: PRD Section 3.2
+ * Returns { response: string, type: string }
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -31,8 +30,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      response: "No worries. Let\u2019s learn.",
-      outcome: "SKIPPED",
+      response: "No problem. The mission you\u2019re about to get will give you a clean shot.",
+      type: "SKIPPED",
     });
   }
 
@@ -51,24 +50,23 @@ export async function POST(req: NextRequest) {
   );
 
   // Parse the [CHECKIN_TYPE: ...] tag
-  const outcomeMatch = rawResponse.match(
-    /\[CHECKIN_TYPE:\s*(EXECUTED|UNCLEAR)\]/
+  const typeMatch = rawResponse.match(
+    /\[CHECKIN_TYPE:\s*(\w+)\]/
   );
-  const outcome = (outcomeMatch?.[1] ?? "UNCLEAR") as "EXECUTED" | "UNCLEAR";
+  const type = typeMatch?.[1] ?? outcomeType.toUpperCase();
 
   // Strip the tag from the display response
   const response = rawResponse
-    .replace(/\[CHECKIN_TYPE:\s*(EXECUTED|UNCLEAR)\]/, "")
+    .replace(/\[CHECKIN_TYPE:\s*\w+\]/, "")
     .trim();
 
   // Update the most recent ledger entry's mission_outcome
   const entries = getLedger();
   if (entries.length > 0) {
-    entries[entries.length - 1].mission_outcome =
-      outcome === "EXECUTED" ? (userOutcome || "Executed") : "UNCLEAR";
+    entries[entries.length - 1].mission_outcome = userOutcome || outcomeType;
     const ledgerPath = path.join(process.cwd(), "data", "ledger.json");
     fs.writeFileSync(ledgerPath, JSON.stringify(entries, null, 2), "utf-8");
   }
 
-  return NextResponse.json({ response, outcome });
+  return NextResponse.json({ response, type });
 }

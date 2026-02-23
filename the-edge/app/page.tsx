@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Home page — session launcher with pentagon radar chart and streak.
- * Light theme, mobile-first, Inter font, indigo/violet gradients.
+ * Home page — session launcher with progress ring and score circles.
+ * Tiimo-inspired: warm cream, soft purple accent, DM Sans, generous whitespace.
  */
 
 import { useEffect, useState } from "react";
@@ -16,158 +16,66 @@ interface StatusData {
   streakCount: number;
 }
 
-const DIMENSIONS: { key: keyof SessionScores; label: string; abbr: string }[] = [
-  { key: "technique_application", label: "Technique", abbr: "TA" },
-  { key: "tactical_awareness", label: "Tactical", abbr: "TW" },
-  { key: "frame_control", label: "Frame", abbr: "FC" },
-  { key: "emotional_regulation", label: "Emotional", abbr: "ER" },
-  { key: "strategic_outcome", label: "Strategic", abbr: "SO" },
+const DIMENSIONS: { key: keyof SessionScores; label: string }[] = [
+  { key: "technique_application", label: "TA" },
+  { key: "tactical_awareness", label: "TW" },
+  { key: "frame_control", label: "FC" },
+  { key: "emotional_regulation", label: "ER" },
+  { key: "strategic_outcome", label: "SO" },
 ];
 
+function scoreCircleColor(score: number): string {
+  if (score >= 4) return "#6BC9A0";
+  if (score === 3) return "#F5C563";
+  return "#E88B8B";
+}
+
 // ---------------------------------------------------------------------------
-// Pentagon radar chart — 5 vertices, SVG 200x200
+// Progress Ring — SVG circle showing overall average
 // ---------------------------------------------------------------------------
 
-function PentagonRadar({ scores }: { scores: SessionScores | null }) {
-  const cx = 100;
-  const cy = 100;
-  const maxR = 80;
-  const levels = 5;
-
-  // Pentagon vertices: start from top, go clockwise
-  const angleOffset = -Math.PI / 2;
-  const angles = DIMENSIONS.map((_, i) => angleOffset + (2 * Math.PI * i) / 5);
-
-  function polarToXY(angle: number, r: number): [number, number] {
-    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
-  }
-
-  function polygonPoints(r: number): string {
-    return angles.map((a) => polarToXY(a, r).join(",")).join(" ");
-  }
-
-  // Data polygon
-  const scoreValues = scores
-    ? DIMENSIONS.map((d) => scores[d.key])
-    : [0, 0, 0, 0, 0];
-
-  const dataPoints = angles
-    .map((a, i) => {
-      const r = (scoreValues[i] / levels) * maxR;
-      return polarToXY(a, r).join(",");
-    })
-    .join(" ");
+function ProgressRing({ average, hasData }: { average: number; hasData: boolean }) {
+  const size = 160;
+  const strokeWidth = 8;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = hasData ? (average / 5) * circumference : 0;
 
   return (
-    <svg viewBox="0 0 200 200" className="w-full max-w-[220px] mx-auto">
-      {/* Grid levels */}
-      {[1, 2, 3, 4, 5].map((level) => (
-        <polygon
-          key={level}
-          points={polygonPoints((level / levels) * maxR)}
+    <div className="relative mx-auto" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="rotate-[-90deg]">
+        {/* Background ring */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
           fill="none"
-          stroke="var(--border)"
-          strokeWidth={level === 5 ? "1" : "0.5"}
-          opacity={level === 5 ? 1 : 0.5}
+          stroke="#F0EDE8"
+          strokeWidth={strokeWidth}
         />
-      ))}
-
-      {/* Axis lines */}
-      {angles.map((a, i) => {
-        const [x, y] = polarToXY(a, maxR);
-        return (
-          <line
-            key={i}
-            x1={cx}
-            y1={cy}
-            x2={x}
-            y2={y}
-            stroke="var(--border)"
-            strokeWidth="0.5"
-            opacity="0.5"
+        {/* Progress ring */}
+        {hasData && (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="#6C63FF"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference - progress}
+            style={{ transition: "stroke-dashoffset 800ms ease-out" }}
           />
-        );
-      })}
-
-      {/* Data fill */}
-      {scores && (
-        <polygon
-          points={dataPoints}
-          fill="url(#radarGradient)"
-          fillOpacity="0.2"
-          stroke="url(#radarStroke)"
-          strokeWidth="2"
-        />
-      )}
-
-      {/* Data dots */}
-      {scores &&
-        angles.map((a, i) => {
-          const r = (scoreValues[i] / levels) * maxR;
-          const [x, y] = polarToXY(a, r);
-          return (
-            <circle
-              key={i}
-              cx={x}
-              cy={y}
-              r="3"
-              fill="var(--accent)"
-              stroke="white"
-              strokeWidth="1.5"
-            />
-          );
-        })}
-
-      {/* Labels */}
-      {angles.map((a, i) => {
-        const labelR = maxR + 16;
-        const [x, y] = polarToXY(a, labelR);
-        return (
-          <text
-            key={i}
-            x={x}
-            y={y}
-            textAnchor="middle"
-            dominantBaseline="central"
-            className="fill-secondary text-[9px] font-medium"
-          >
-            {DIMENSIONS[i].abbr}
-          </text>
-        );
-      })}
-
-      {/* Score values at vertices */}
-      {scores &&
-        angles.map((a, i) => {
-          const r = (scoreValues[i] / levels) * maxR;
-          const [x, y] = polarToXY(a, r);
-          const offsetY = y < cy ? -10 : 10;
-          return (
-            <text
-              key={`v-${i}`}
-              x={x}
-              y={y + offsetY}
-              textAnchor="middle"
-              dominantBaseline="central"
-              className="fill-accent text-[10px] font-bold"
-            >
-              {scoreValues[i]}
-            </text>
-          );
-        })}
-
-      {/* Gradient defs */}
-      <defs>
-        <linearGradient id="radarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="var(--accent)" />
-          <stop offset="100%" stopColor="var(--accent-violet)" />
-        </linearGradient>
-        <linearGradient id="radarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="var(--accent)" />
-          <stop offset="100%" stopColor="var(--accent-violet)" />
-        </linearGradient>
-      </defs>
-    </svg>
+        )}
+      </svg>
+      {/* Centre number */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-4xl font-bold text-primary">
+          {hasData ? average.toFixed(1) : "\u2013"}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -183,7 +91,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(true);
 
-  // Online/offline tracking
   useEffect(() => {
     setOnline(navigator.onLine);
     const goOnline = () => setOnline(true);
@@ -215,90 +122,74 @@ export default function Home() {
   const dayNumber = status?.dayNumber ?? 1;
   const recentScores = status?.recentScores ?? [];
   const streakCount = status?.streakCount ?? 0;
-
-  // Get the latest scores for the radar chart
   const latestScores = recentScores.length > 0 ? recentScores[recentScores.length - 1] : null;
 
-  // Compute averages
-  const avgScore = latestScores
-    ? (
-        (latestScores.technique_application +
-          latestScores.tactical_awareness +
-          latestScores.frame_control +
-          latestScores.emotional_regulation +
-          latestScores.strategic_outcome) / 5
-      ).toFixed(1)
-    : null;
+  const average = latestScores
+    ? (latestScores.technique_application +
+       latestScores.tactical_awareness +
+       latestScores.frame_control +
+       latestScores.emotional_regulation +
+       latestScores.strategic_outcome) / 5
+    : 0;
+
+  const hasData = latestScores !== null;
 
   return (
     <main className="mx-auto max-w-[720px] px-4 py-8 sm:px-6 sm:py-12">
-      <div className="flex min-h-[85vh] flex-col items-center justify-center">
-        {/* Title */}
-        <h1 className="mb-1 text-3xl font-semibold tracking-tight text-primary sm:text-4xl">
-          The Edge
-        </h1>
-        <p className="mb-8 font-mono text-sm tracking-widest text-secondary">
-          DAY {loading ? "\u2014" : dayNumber}
-        </p>
-
-        {/* Pentagon radar chart card */}
-        <div className="card mb-6 w-full max-w-sm">
-          <h2 className="mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
-            Performance Profile
-          </h2>
-
-          <PentagonRadar scores={latestScores} />
-
-          {latestScores && avgScore && (
-            <div className="mt-4 flex items-center justify-center gap-6 border-t border-border pt-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-accent">{avgScore}</p>
-                <p className="text-[10px] font-medium text-tertiary uppercase tracking-wider">Average</p>
-              </div>
-              <div className="h-8 w-px bg-border" />
-              <div className="text-center">
-                <p className="text-2xl font-bold text-primary">{recentScores.length}</p>
-                <p className="text-[10px] font-medium text-tertiary uppercase tracking-wider">Sessions</p>
-              </div>
-              {streakCount > 0 && (
-                <>
-                  <div className="h-8 w-px bg-border" />
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-warning">{streakCount}</p>
-                    <p className="text-[10px] font-medium text-tertiary uppercase tracking-wider">Streak</p>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {!latestScores && (
-            <p className="mt-4 text-center text-sm text-tertiary">
-              Complete your first session to see your profile
-            </p>
-          )}
+      <div className="flex min-h-[85vh] flex-col items-center justify-center gap-8">
+        {/* Title + day */}
+        <div className="text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-primary">
+            the edge
+          </h1>
+          <p className="mt-1 text-base text-secondary">
+            {loading ? "\u2014" : (
+              <>
+                Day {dayNumber}
+                {streakCount > 0 && <> &middot; <span className="text-score-mid">&#128293;</span> {streakCount}-day streak</>}
+              </>
+            )}
+          </p>
         </div>
 
-        {/* Session launcher — gradient CTA */}
+        {/* Progress ring */}
+        <ProgressRing average={average} hasData={hasData} />
+
+        {/* Score circles row */}
+        <div className="flex items-center justify-center gap-5">
+          {DIMENSIONS.map(({ key, label }) => {
+            const score = latestScores ? latestScores[key] : null;
+            return (
+              <div key={key} className="flex flex-col items-center gap-1.5">
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
+                  style={{
+                    backgroundColor: score !== null ? scoreCircleColor(score) : "#E0DED8",
+                  }}
+                >
+                  {score !== null ? score : "\u2013"}
+                </div>
+                <span className="text-xs text-secondary">{label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Empty state message */}
+        {!hasData && !loading && (
+          <p className="text-base text-secondary">
+            &#127793; Your first session
+          </p>
+        )}
+
+        {/* Begin session button — solid purple, no gradient */}
         <button
           onClick={() => { if (online) router.push("/session"); }}
           disabled={!online}
-          className="btn-gradient mb-6 w-full max-w-sm px-10 py-4 text-lg"
+          className="w-full max-w-sm rounded-2xl bg-[#6C63FF] px-10 py-4 text-lg font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
         >
-          {online ? "Begin Session" : "Offline"}
+          {online ? "Begin session" : "Offline"}
         </button>
-
-        {/* Streak / motivation */}
-        {streakCount > 0 && (
-          <p className="text-sm text-secondary">
-            {streakCount} day streak — keep going
-          </p>
-        )}
-        {streakCount === 0 && !loading && (
-          <p className="text-sm text-tertiary">
-            Start your streak today
-          </p>
-        )}
       </div>
     </main>
   );

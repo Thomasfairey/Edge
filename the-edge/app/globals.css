@@ -1,37 +1,64 @@
 @import "tailwindcss";
 
+/* ================================================================ */
+/* Tiimo-inspired design tokens                                      */
+/* ================================================================ */
+
 :root {
-  --background: #FAFAF8;
+  /* Core backgrounds */
+  --background: #FAF9F6;
   --surface: #FFFFFF;
-  --border: #E5E7EB;
-  --border-accent: #C7D2FE;
-  --text-primary: #1A1A2E;
-  --text-secondary: #6B7280;
-  --text-tertiary: #9CA3AF;
-  --accent: #6366F1;
-  --accent-violet: #8B5CF6;
-  --accent-light: #EEF2FF;
-  --success: #10B981;
-  --warning: #F59E0B;
-  --danger: #EF4444;
-  --shadow-card: 0 1px 3px rgba(99,102,241,0.04), 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-elevated: 0 4px 20px rgba(99,102,241,0.08), 0 2px 8px rgba(0,0,0,0.06);
+  --border: #F0EDE8;
+
+  /* Text hierarchy */
+  --text-primary: #2D2B3D;
+  --text-secondary: #8E8C99;
+  --text-tertiary: #B5B3BD;
+
+  /* Phase colours */
+  --phase-learn: #B8D4E3;
+  --phase-learn-tint: #EFF6FA;
+  --phase-learn-muted: #5B8BA8;
+  --phase-simulate: #F2C4C4;
+  --phase-simulate-tint: #FDF2F2;
+  --phase-simulate-muted: #D4908F;
+  --phase-debrief: #C5B8E8;
+  --phase-debrief-tint: #F3F0FA;
+  --phase-debrief-muted: #7B6BA8;
+  --phase-deploy: #B8E0C8;
+  --phase-deploy-tint: #F0FAF4;
+  --phase-deploy-muted: #5A9A7A;
+
+  /* Accent */
+  --accent: #6C63FF;
+  --accent-light: #EEEDFF;
+
+  /* Scores */
+  --score-high: #6BC9A0;
+  --score-mid: #F5C563;
+  --score-low: #E88B8B;
+
+  /* Coach */
+  --coach-bg: #FFF8E7;
+  --coach-muted: #C4A24E;
+
+  /* Shadows */
+  --shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.04);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-border: var(--border);
-  --color-border-accent: var(--border-accent);
   --color-primary: var(--text-primary);
   --color-secondary: var(--text-secondary);
   --color-tertiary: var(--text-tertiary);
   --color-accent: var(--accent);
-  --color-accent-violet: var(--accent-violet);
   --color-accent-light: var(--accent-light);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
+  --color-score-high: var(--score-high);
+  --color-score-mid: var(--score-mid);
+  --color-score-low: var(--score-low);
 }
 
 body {
@@ -59,37 +86,45 @@ body {
 .loading-dot:nth-child(2) { animation: pulse-dot 1.4s infinite 0.2s; }
 .loading-dot:nth-child(3) { animation: pulse-dot 1.4s infinite 0.4s; }
 
-@keyframes gate-progress {
-  0% { width: 0%; }
-  100% { width: 100%; }
+@keyframes phase-dot-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+.phase-dot-active { animation: phase-dot-pulse 2s ease-in-out infinite; }
+
+@keyframes fade-in-up {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up { animation: fade-in-up 300ms ease-out forwards; }
+
+@keyframes completion-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+.animate-completion { animation: completion-pop 400ms ease-out; }
+
+/* Confetti dots */
+@keyframes confetti-drift {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(0.5); }
+}
+.confetti-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: confetti-drift 1.2s ease-out forwards;
 }
 
 /* Phase transitions */
-.phase-enter { opacity: 0; transform: translateY(10px); }
+.phase-enter { opacity: 0; transform: translateY(8px); }
 .phase-active { opacity: 1; transform: translateY(0); transition: all 300ms ease-out; }
 .phase-exit { opacity: 0; transition: opacity 200ms ease-in; }
 
-/* Sparkle for session complete */
-@keyframes sparkle {
-  0% { opacity: 0; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.05); }
-  100% { opacity: 1; transform: scale(1); }
-}
-.animate-sparkle { animation: sparkle 600ms ease-out forwards; }
-
-/* Pulse for phase indicator */
-@keyframes indicator-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
-  50% { box-shadow: 0 0 0 4px rgba(99,102,241,0); }
-}
-.pulse-dot-indicator { animation: indicator-pulse 2s ease-in-out infinite; }
-
-/* Card collapse */
-@keyframes collapse {
-  0% { max-height: 500px; opacity: 1; margin-bottom: 1.5rem; }
-  100% { max-height: 0; opacity: 0; margin-bottom: 0; overflow: hidden; }
-}
-.animate-collapse { animation: collapse 300ms ease-in forwards; }
+/* Phase background transitions */
+.phase-bg-transition { transition: background-color 500ms ease; }
 
 /* ================================================================ */
 /* Mobile-first PWA styles                                          */
@@ -114,7 +149,7 @@ button, [role="button"], .phase-indicator { -webkit-user-select: none; user-sele
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Selection */
-::selection { background: rgba(99,102,241,0.2); color: var(--text-primary); }
+::selection { background: rgba(108, 99, 255, 0.15); color: var(--text-primary); }
 
 /* Dark autofill override */
 input:-webkit-autofill {
@@ -122,31 +157,13 @@ input:-webkit-autofill {
   -webkit-text-fill-color: var(--text-primary);
 }
 
-/* Gradient button utility */
-.btn-gradient {
-  background: linear-gradient(135deg, var(--accent), var(--accent-violet));
-  color: white;
-  font-weight: 600;
-  border-radius: 0.75rem;
-  transition: all 150ms;
-}
-.btn-gradient:active { transform: scale(0.98); }
-.btn-gradient:disabled { opacity: 0.4; }
-
-/* Gradient line */
-.gradient-line {
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-violet));
-}
-
-/* Card utility */
+/* Card utility — Tiimo style */
 .card {
   background: var(--surface);
-  border-radius: 1rem;
-  box-shadow: var(--shadow-card);
-  padding: 1.25rem;
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-soft);
+  padding: 1.5rem;
 }
-.card:hover { box-shadow: var(--shadow-elevated); }
 
 /* Thinner scrollbar on mobile */
 @media (max-width: 768px) {
