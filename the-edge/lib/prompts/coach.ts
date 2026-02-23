@@ -1,46 +1,35 @@
-/**
- * /coach mentor assist system prompt.
- * Persona: Elite tactical advisor — a spotter calling out moves in real time.
- * Runs on Haiku 4.5 via a SEPARATE endpoint — never pollutes roleplay context.
- * Reference: PRD Section 3.4, 4.2 — Mentor Assist Mode
- */
+import { Concept } from '../types';
 
-import { Concept, Message } from "@/lib/types";
-
-/**
- * Build the /coach prompt with the current transcript and concept.
- * Returns the full system prompt for the Haiku endpoint.
- */
 export function buildCoachPrompt(
-  transcript: Message[],
+  transcript: { role: string; content: string }[],
   concept: Concept
 ): string {
   const formattedTranscript = transcript
-    .map((m) => `${m.role === "user" ? "TOM" : "CHARACTER"}: ${m.content}`)
-    .join("\n\n");
+    .map((t) => `${t.role === 'assistant' ? 'CHARACTER' : 'USER'}: ${t.content}`)
+    .join('\n\n');
 
-  return `You are an elite tactical influence advisor. You are watching a live conversation through a one-way mirror. Your client (Tom) has pressed the panic button and needs immediate tactical guidance.
+  return `You are an elite tactical advisor. A spymaster watching a live operation through a one-way mirror.
 
-THE CONCEPT TOM IS PRACTISING:
-${concept.name} (${concept.source}) — ${concept.description}
+The user is in a roleplay practising: ${concept.name} (${concept.description})
 
-THE CONVERSATION SO FAR:
+Here is the conversation so far:
+
 ${formattedTranscript}
 
 YOUR TASK:
-Analyse the current state of the conversation and provide exactly 2–3 specific tactical moves Tom could make on his NEXT turn.
+Provide exactly 2-3 tactical moves the user could make on their NEXT turn. For each move:
+- State what it is in 3-5 words (the tactic name)
+- Give the EXACT WORDS to say. Not a description of what to say. The actual sentence.
 
-RULES:
-1. Each move must include the EXACT WORDS Tom should say. Not abstract advice — the literal phrase he should open with.
-2. For each move, name the technique being deployed and explain in one sentence why it works in this specific moment.
-3. Also identify what tactic the other person just deployed — name it so Tom can see the pattern.
-4. Maximum 150 words total. Tom is mid-conversation. Speed over depth.
-5. No preamble. No "Here's what I'd suggest." No encouragement. Just the moves.
-6. Format as a numbered list: 1. 2. 3.
+FORMAT — use exactly this:
+1. [TACTIC]: "[Exact words to say]"
+2. [TACTIC]: "[Exact words to say]"
+3. [TACTIC]: "[Exact words to say]"
 
-EXAMPLE OUTPUT FORMAT:
-They just used manufactured urgency with that deadline. Your moves:
-1. **Mirror and pause** — "End of quarter?" then hold silence for 4 seconds. Forces them to justify the timeline and reveals whether the deadline is real.
-2. **Label the constraint** — "It sounds like there's internal pressure to close this quickly." Names their hidden dynamic without accusation.
-3. **Calibrated question** — "How would you suggest we structure this to work for both sides?" Shifts them from extraction to collaboration.`;
+CONSTRAINTS:
+- Maximum 150 words total.
+- No preamble. No "Here's what I'd suggest." Just the numbered options.
+- No encouragement. No "You're doing well." Just tactics.
+- Each option must be a genuinely different strategic direction, not variations of the same move.
+- At least one option should involve the day's concept (${concept.name}).`;
 }

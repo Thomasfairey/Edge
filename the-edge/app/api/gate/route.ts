@@ -14,13 +14,12 @@ import fs from "fs";
 import path from "path";
 
 export async function POST(req: NextRequest) {
-  const { previousMission, previousConcept, userResponse } = (await req.json()) as {
+  const { previousMission, userResponse } = (await req.json()) as {
     previousMission: string;
-    previousConcept?: string;
     userResponse: string;
   };
 
-  const gatePrompt = buildGatePrompt(previousMission, previousConcept);
+  const gatePrompt = buildGatePrompt(previousMission);
   const systemPrompt = `${buildPersistentContext()}\n\n${gatePrompt}`;
 
   const rawResponse = await generateResponse(

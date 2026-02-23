@@ -16,7 +16,6 @@ import {
   CharacterArchetype,
   SessionScores,
   Message,
-  LedgerEntry,
 } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -44,7 +43,9 @@ function PhaseIndicator({
   return (
     <div className="mb-8 flex items-center justify-center gap-1 text-[10px] font-mono tracking-wider sm:gap-2 sm:text-xs">
       {phases.map((p, i) => {
-        const isActive = p.key === current;
+        // During retrieval, LEARN stays highlighted with a pulse
+        const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
+        const isPulsing = current === "retrieval" && p.key === "lesson";
         const isDone = completed.has(p.key);
         return (
           <span key={p.key} className="flex items-center gap-2">
@@ -52,7 +53,7 @@ function PhaseIndicator({
             <span
               className={
                 isActive
-                  ? "text-accent font-bold"
+                  ? `text-accent font-bold${isPulsing ? " animate-pulse" : ""}`
                   : isDone
                     ? "text-success"
                     : "text-secondary/40"
@@ -160,7 +161,6 @@ export default function SessionPage() {
   // Data accumulated through the session
   const [dayNumber, setDayNumber] = useState(1);
   const [lastMission, setLastMission] = useState<string | null>(null);
-  const [lastConcept, setLastConcept] = useState<string | null>(null);
   const [gateOutcome, setGateOutcome] = useState<string | null>(null);
   const [concept, setConcept] = useState<Concept | null>(null);
   const [character, setCharacter] = useState<CharacterArchetype | null>(null);
@@ -180,6 +180,11 @@ export default function SessionPage() {
   const [mission, setMission] = useState<string | null>(null);
   const [rationale, setRationale] = useState<string | null>(null);
   const [gateResponse, setGateResponse] = useState<string | null>(null);
+
+  // Retrieval bridge state
+  const [retrievalQuestion, setRetrievalQuestion] = useState<string | null>(null);
+  const [retrievalResponse, setRetrievalResponse] = useState<string | null>(null);
+  const [retrievalReady, setRetrievalReady] = useState(false);
 
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -234,7 +239,6 @@ export default function SessionPage() {
         } else {
           // Day 2+ — show gate
           setLastMission(data.lastEntry.mission);
-          setLastConcept(data.lastEntry.concept ?? null);
           setIsLoading(false);
         }
       })
@@ -270,7 +274,7 @@ export default function SessionPage() {
       const res = await fetch("/api/gate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ previousMission: lastMission, previousConcept: lastConcept, userResponse }),
+        body: JSON.stringify({ previousMission: lastMission, userResponse }),
       });
 
       if (!res.ok) throw new Error("Gate API failed");
@@ -320,6 +324,66 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
+  // Phase 1.5: Retrieval Bridge
+  // ---------------------------------------------------------------------------
+
+  async function startRetrieval() {
+    if (!concept) return;
+    advancePhase("lesson", "retrieval");
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/retrieval-bridge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ concept }),
+      });
+
+      if (!res.ok) throw new Error("Retrieval bridge API failed");
+      const data = await res.json();
+
+      setRetrievalQuestion(data.response);
+      setIsLoading(false);
+    } catch {
+      setError("Failed to load retrieval question. Try again.");
+      setIsLoading(false);
+    }
+  }
+
+  async function submitRetrievalResponse(userResponse: string) {
+    if (!concept || submittingRef.current) return;
+    submittingRef.current = true;
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/retrieval-bridge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ concept, userResponse }),
+      });
+
+      if (!res.ok) throw new Error("Retrieval bridge API failed");
+      const data = await res.json();
+
+      setRetrievalResponse(data.response);
+      setRetrievalReady(data.ready);
+      setIsLoading(false);
+      submittingRef.current = false;
+
+      // Auto-advance to roleplay after 1.5s when ready
+      if (data.ready) {
+        setTimeout(() => {
+          startRoleplay();
+        }, 1500);
+      }
+    } catch {
+      setError("Failed to evaluate response. Try again.");
+      setIsLoading(false);
+      submittingRef.current = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Phase 2: Roleplay
   // ---------------------------------------------------------------------------
 
@@ -331,7 +395,7 @@ export default function SessionPage() {
     const char = selectCharacter(concept);
     setCharacter(char);
 
-    advancePhase("lesson", "roleplay");
+    advancePhase("retrieval", "roleplay");
     setIsLoading(true);
 
     try {
@@ -611,6 +675,7 @@ export default function SessionPage() {
     setError(null);
     if (currentPhase === "gate") setIsLoading(false);
     else if (currentPhase === "lesson") fetchLesson();
+    else if (currentPhase === "retrieval") startRetrieval();
     else if (currentPhase === "roleplay") startRoleplayFresh();
     else if (currentPhase === "debrief") fetchDebrief();
     else if (currentPhase === "mission" && concept && character && scores)
@@ -657,13 +722,6 @@ export default function SessionPage() {
         <div className="mx-auto max-w-lg">
           {lastMission && !gateResponse && (
             <>
-              {/* Yesterday's concept — retrieval cue */}
-              {lastConcept && (
-                <p className="mb-4 text-center text-sm text-secondary">
-                  Yesterday you practiced <span className="font-semibold text-foreground">{lastConcept}</span>
-                </p>
-              )}
-
               {/* Yesterday's mission */}
               <div className="mb-6 rounded-lg border-l-4 border-accent bg-surface p-4">
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-secondary">
@@ -753,33 +811,96 @@ export default function SessionPage() {
               {/* Lesson content */}
               <div className="mb-8 space-y-0">{renderMarkdown(lessonContent)}</div>
 
-              {/* Deployment brief — bridges knowing-doing gap */}
-              {concept && (
-                <div className="mb-6 rounded-lg border border-border bg-surface/50 p-4">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
-                    Deployment Brief
-                  </p>
-                  <p className="mb-3 text-sm leading-relaxed text-foreground/80">
-                    In the next simulation, deploy <span className="font-semibold text-foreground">{concept.name}</span> against a live character. You&apos;ll be scored on:
-                  </p>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-secondary">
-                    <span>Technique Application</span>
-                    <span>Tactical Awareness</span>
-                    <span>Frame Control</span>
-                    <span>Emotional Regulation</span>
-                    <span>Strategic Outcome</span>
-                  </div>
-                </div>
-              )}
-
               {/* Advance button */}
               <button
-                onClick={startRoleplay}
+                onClick={startRetrieval}
                 className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
               >
                 Ready to Practice &rarr;
               </button>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* PHASE 1.5: RETRIEVAL BRIDGE                                      */}
+      {/* ================================================================ */}
+      {currentPhase === "retrieval" && (
+        <div className="mx-auto max-w-lg">
+          {isLoading && !retrievalQuestion && (
+            <div className="text-center">
+              <p className="mb-2 text-sm text-secondary">
+                One moment...
+              </p>
+              <LoadingDots />
+            </div>
+          )}
+
+          {retrievalQuestion && (
+            <div className="space-y-6">
+              {/* Question */}
+              <p className="text-center text-lg font-medium leading-relaxed text-foreground">
+                {retrievalQuestion}
+              </p>
+
+              {/* Evaluation response */}
+              {retrievalResponse && (
+                <div className="text-center">
+                  <p className="text-sm leading-relaxed text-secondary italic">
+                    {retrievalResponse}
+                  </p>
+                  {retrievalReady && (
+                    <div className="mx-auto mt-4 h-1 w-32 overflow-hidden rounded-full bg-border">
+                      <div className="h-full animate-[gate-progress_1.5s_ease-in-out_forwards] rounded-full bg-accent" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Input — only show if not yet answered or if not ready */}
+              {!retrievalResponse && (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Your answer..."
+                    className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/60 outline-none focus:border-accent/50"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && inputValue.trim()) {
+                        submitRetrievalResponse(inputValue.trim());
+                        setInputValue("");
+                      }
+                    }}
+                    disabled={isLoading}
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => {
+                      if (inputValue.trim()) {
+                        submitRetrievalResponse(inputValue.trim());
+                        setInputValue("");
+                      }
+                    }}
+                    disabled={isLoading || !inputValue.trim()}
+                    className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+                  >
+                    {isLoading ? "Evaluating..." : "Submit"}
+                  </button>
+                </div>
+              )}
+
+              {/* Manual advance if not ready after evaluation */}
+              {retrievalResponse && !retrievalReady && (
+                <button
+                  onClick={startRoleplay}
+                  className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+                >
+                  Continue to Practice &rarr;
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
