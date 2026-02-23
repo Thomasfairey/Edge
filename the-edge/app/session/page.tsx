@@ -4,8 +4,8 @@
  * Session page — manages the full 5-phase daily loop.
  * Gate → Learn → Simulate → Debrief → Deploy
  *
- * All session state lives in React state. Each API call receives
- * only the data it needs. No server-side session.
+ * Mobile-first: full-height flex, fixed bottom input, quick command pills,
+ * bottom-sheet coach, keyboard handling, connectivity retry, localStorage persistence.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -19,16 +19,76 @@ import {
 } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
-// Phase indicator
+// Constants
 // ---------------------------------------------------------------------------
 
-const PHASES: { key: SessionPhase; label: string }[] = [
-  { key: "gate", label: "GATE" },
-  { key: "lesson", label: "LEARN" },
-  { key: "roleplay", label: "SIMULATE" },
-  { key: "debrief", label: "DEBRIEF" },
-  { key: "mission", label: "DEPLOY" },
+const SESSION_STORAGE_KEY = "edge-session-state";
+const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+
+const PHASES: { key: SessionPhase; label: string; abbr: string }[] = [
+  { key: "gate", label: "GATE", abbr: "G" },
+  { key: "lesson", label: "LEARN", abbr: "L" },
+  { key: "roleplay", label: "SIMULATE", abbr: "S" },
+  { key: "debrief", label: "DEBRIEF", abbr: "De" },
+  { key: "mission", label: "DEPLOY", abbr: "Go" },
 ];
+
+// ---------------------------------------------------------------------------
+// Haptic utility
+// ---------------------------------------------------------------------------
+
+function haptic(ms = 10) {
+  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+    navigator.vibrate(ms);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch with retry (for non-streaming endpoints)
+// ---------------------------------------------------------------------------
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 5,
+  delay = 3000,
+  onAttempt?: (attempt: number) => void
+): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let i = 1; i <= maxRetries; i++) {
+    try {
+      onAttempt?.(i);
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+      throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastError = e as Error;
+      if (i < maxRetries) await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
+}
+
+// ---------------------------------------------------------------------------
+// Online status hook
+// ---------------------------------------------------------------------------
+
+function useOnlineStatus() {
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+  return online;
+}
+
+// ---------------------------------------------------------------------------
+// Phase indicator — sticky, abbreviated on mobile
+// ---------------------------------------------------------------------------
 
 function PhaseIndicator({
   current,
@@ -41,14 +101,13 @@ function PhaseIndicator({
 }) {
   const phases = skipGate ? PHASES.filter((p) => p.key !== "gate") : PHASES;
   return (
-    <div className="mb-8 flex items-center justify-center gap-1 text-[10px] font-mono tracking-wider sm:gap-2 sm:text-xs">
+    <div className="sticky top-0 z-50 flex h-10 items-center justify-center gap-1 bg-background font-mono text-[10px] tracking-wider sm:gap-2 sm:text-xs">
       {phases.map((p, i) => {
-        // During retrieval, LEARN stays highlighted with a pulse
         const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
         const isPulsing = current === "retrieval" && p.key === "lesson";
         const isDone = completed.has(p.key);
         return (
-          <span key={p.key} className="flex items-center gap-2">
+          <span key={p.key} className="flex items-center gap-1 sm:gap-2">
             {i > 0 && <span className="text-border">&rarr;</span>}
             <span
               className={
@@ -60,7 +119,8 @@ function PhaseIndicator({
               }
             >
               {isDone ? "\u2713 " : ""}
-              {p.label}
+              <span className="sm:hidden">{p.abbr}</span>
+              <span className="hidden sm:inline">{p.label}</span>
             </span>
           </span>
         );
@@ -95,10 +155,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
   for (const line of lines) {
     if (line.startsWith("## ")) {
       elements.push(
-        <h2
-          key={key++}
-          className="mb-2 mt-6 text-lg font-bold text-foreground first:mt-0"
-        >
+        <h2 key={key++} className="mb-2 mt-6 text-lg font-bold text-foreground first:mt-0">
           {line.slice(3)}
         </h2>
       );
@@ -111,7 +168,6 @@ function renderMarkdown(text: string): React.ReactNode[] {
     } else if (line.trim() === "") {
       elements.push(<div key={key++} className="h-3" />);
     } else {
-      // Handle bold (**text**) inline
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
       elements.push(
         <p key={key++} className="text-sm leading-relaxed text-foreground/90">
@@ -147,16 +203,16 @@ function scoreColorClass(score: number): string {
 
 export default function SessionPage() {
   const router = useRouter();
+  const online = useOnlineStatus();
 
   // Session state
   const [currentPhase, setCurrentPhase] = useState<SessionPhase>("gate");
-  const [completedPhases, setCompletedPhases] = useState<Set<SessionPhase>>(
-    new Set()
-  );
+  const [completedPhases, setCompletedPhases] = useState<Set<SessionPhase>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [skipGate, setSkipGate] = useState(false);
   const submittingRef = useRef(false);
+  const [restored, setRestored] = useState(false);
 
   // Data accumulated through the session
   const [dayNumber, setDayNumber] = useState(1);
@@ -186,6 +242,12 @@ export default function SessionPage() {
   const [retrievalResponse, setRetrievalResponse] = useState<string | null>(null);
   const [retrievalReady, setRetrievalReady] = useState(false);
 
+  // Roleplay retry
+  const [pendingRetry, setPendingRetry] = useState<string | null>(null);
+
+  // New message pill
+  const [showNewMessagePill, setShowNewMessagePill] = useState(false);
+
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -193,7 +255,10 @@ export default function SessionPage() {
   const [inputValue, setInputValue] = useState("");
   const [resetNotice, setResetNotice] = useState(false);
 
-  // Smart auto-scroll: only scroll if user is already at/near bottom
+  // ---------------------------------------------------------------------------
+  // Smart auto-scroll
+  // ---------------------------------------------------------------------------
+
   const isNearBottom = useCallback(() => {
     const el = chatContainerRef.current;
     if (!el) return true;
@@ -203,14 +268,46 @@ export default function SessionPage() {
   const scrollToBottom = useCallback(() => {
     if (isNearBottom()) {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      setShowNewMessagePill(false);
     }
   }, [isNearBottom]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [roleplayTranscript, streamingText, scrollToBottom]);
+    if (isNearBottom()) {
+      scrollToBottom();
+    } else if (roleplayTranscript.length > 0) {
+      setShowNewMessagePill(true);
+    }
+  }, [roleplayTranscript, streamingText, scrollToBottom, isNearBottom]);
 
-  // Replace history state on phase change to prevent back-button re-entry
+  // Dismiss new message pill when user scrolls to bottom
+  // Re-run when entering roleplay (chatContainerRef attaches only in roleplay)
+  useEffect(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+        setShowNewMessagePill(false);
+      }
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [currentPhase]);
+
+  // Keyboard handling — scroll to bottom when virtual keyboard opens
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const handler = () => {
+      if (vv.height < window.innerHeight * 0.75) {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    };
+    vv.addEventListener("resize", handler);
+    return () => vv.removeEventListener("resize", handler);
+  }, []);
+
+  // Replace history state on phase change
   useEffect(() => {
     window.history.replaceState(null, "", `/session?phase=${currentPhase}`);
   }, [currentPhase]);
@@ -222,22 +319,105 @@ export default function SessionPage() {
     }
   }, [isStreaming, currentPhase]);
 
+  // Auto-dismiss restored banner
+  useEffect(() => {
+    if (restored) {
+      const t = setTimeout(() => setRestored(false), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [restored]);
+
   // ---------------------------------------------------------------------------
-  // Initialization — check if Day 1 (skip gate) or Day 2+ (show gate)
+  // Session persistence (localStorage)
+  // ---------------------------------------------------------------------------
+
+  function saveSession() {
+    try {
+      const state = {
+        phase: currentPhase,
+        concept,
+        character,
+        lessonContent,
+        transcript: roleplayTranscript,
+        turnCount,
+        completedPhases: Array.from(completedPhases),
+        commandsUsed,
+        gateOutcome,
+        skipGate,
+        dayNumber,
+        scenarioContext,
+        debriefContent,
+        scores,
+        behavioralWeaknessSummary,
+        keyMoment,
+        mission,
+        rationale,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state));
+    } catch {}
+  }
+
+  function clearSession() {
+    try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
+  }
+
+  // Save after phase transitions and content loads
+  useEffect(() => {
+    if (!isLoading && currentPhase !== "gate") {
+      saveSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPhase, roleplayTranscript.length, turnCount, debriefContent, scores, mission]);
+
+  // ---------------------------------------------------------------------------
+  // Initialization — try restore, else check status
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
+    // Try to restore saved session
+    try {
+      const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (Date.now() - saved.timestamp < SESSION_MAX_AGE_MS) {
+          setCurrentPhase(saved.phase);
+          setConcept(saved.concept);
+          setCharacter(saved.character);
+          setLessonContent(saved.lessonContent);
+          setRoleplayTranscript(saved.transcript || []);
+          setTurnCount(saved.turnCount || 0);
+          setCompletedPhases(new Set(saved.completedPhases || []));
+          setCommandsUsed(saved.commandsUsed || []);
+          setGateOutcome(saved.gateOutcome);
+          setSkipGate(saved.skipGate ?? false);
+          setDayNumber(saved.dayNumber || 1);
+          setScenarioContext(saved.scenarioContext || null);
+          if (saved.debriefContent) setDebriefContent(saved.debriefContent);
+          if (saved.scores) setScores(saved.scores);
+          if (saved.behavioralWeaknessSummary) setBehavioralWeaknessSummary(saved.behavioralWeaknessSummary);
+          if (saved.keyMoment) setKeyMoment(saved.keyMoment);
+          if (saved.mission) setMission(saved.mission);
+          if (saved.rationale) setRationale(saved.rationale);
+          setIsLoading(false);
+          setRestored(true);
+          return;
+        } else {
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+        }
+      }
+    } catch {}
+
+    // Normal init — fetch status
     fetch("/api/status")
       .then((res) => res.json())
       .then((data) => {
         setDayNumber(data.dayNumber);
         if (!data.lastEntry) {
-          // Day 1 — skip gate, go straight to lesson
           setSkipGate(true);
           setCurrentPhase("lesson");
           fetchLesson();
         } else {
-          // Day 2+ — show gate
           setLastMission(data.lastEntry.mission);
           setIsLoading(false);
         }
@@ -258,6 +438,7 @@ export default function SessionPage() {
     setCompletedPhases((prev) => new Set([...prev, from]));
     setCurrentPhase(to);
     setError(null);
+    haptic();
   }
 
   // ---------------------------------------------------------------------------
@@ -283,8 +464,8 @@ export default function SessionPage() {
       setGateResponse(data.response);
       setGateOutcome(data.outcome);
       setIsLoading(false);
+      submittingRef.current = false;
 
-      // Auto-advance after 2 seconds
       setTimeout(() => {
         advancePhase("gate", "lesson");
         fetchLesson();
@@ -305,20 +486,20 @@ export default function SessionPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/lesson", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
+      const res = await fetchWithRetry(
+        "/api/lesson",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+        5, 3000,
+        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+      );
 
-      if (!res.ok) throw new Error("Lesson API failed");
       const data = await res.json();
-
       setConcept(data.concept);
       setLessonContent(data.lessonContent);
+      setError(null);
       setIsLoading(false);
     } catch {
-      setError("Failed to load lesson. Try again.");
+      setError("No connection. Your progress is saved \u2014 continue when back online.");
       setIsLoading(false);
     }
   }
@@ -333,19 +514,19 @@ export default function SessionPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("/api/retrieval-bridge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concept }),
-      });
+      const res = await fetchWithRetry(
+        "/api/retrieval-bridge",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concept }) },
+        5, 3000,
+        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+      );
 
-      if (!res.ok) throw new Error("Retrieval bridge API failed");
       const data = await res.json();
-
       setRetrievalQuestion(data.response);
+      setError(null);
       setIsLoading(false);
     } catch {
-      setError("Failed to load retrieval question. Try again.");
+      setError("No connection. Your progress is saved \u2014 continue when back online.");
       setIsLoading(false);
     }
   }
@@ -370,11 +551,8 @@ export default function SessionPage() {
       setIsLoading(false);
       submittingRef.current = false;
 
-      // Auto-advance to roleplay after 1.5s when ready
       if (data.ready) {
-        setTimeout(() => {
-          startRoleplay();
-        }, 1500);
+        setTimeout(() => { startRoleplay(); }, 1500);
       }
     } catch {
       setError("Failed to evaluate response. Try again.");
@@ -390,7 +568,6 @@ export default function SessionPage() {
   async function startRoleplay() {
     if (!concept) return;
 
-    // Select character via the concepts module mapping
     const { selectCharacter } = await import("@/lib/characters");
     const char = selectCharacter(concept);
     setCharacter(char);
@@ -402,21 +579,12 @@ export default function SessionPage() {
       const res = await fetch("/api/roleplay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          concept,
-          character: char,
-          transcript: [],
-          userMessage: null,
-        }),
+        body: JSON.stringify({ concept, character: char, transcript: [], userMessage: null }),
       });
 
       if (!res.ok) throw new Error("Roleplay API failed");
-
-      // Read scenario context from header
       const sc = res.headers.get("X-Scenario-Context");
       if (sc) setScenarioContext(decodeURIComponent(sc));
-
-      // Stream the opening line
       await streamRoleplayResponse(res, []);
     } catch {
       setError("Failed to start roleplay. Try again.");
@@ -427,6 +595,7 @@ export default function SessionPage() {
   async function sendRoleplayMessage(userMessage: string) {
     if (!concept || !character || isStreaming || submittingRef.current) return;
     submittingRef.current = true;
+    setPendingRetry(null);
 
     const updatedTranscript: Message[] = [
       ...roleplayTranscript,
@@ -435,6 +604,7 @@ export default function SessionPage() {
     setRoleplayTranscript(updatedTranscript);
     setTurnCount((prev) => prev + 1);
     setInputValue("");
+    haptic();
 
     try {
       const res = await fetch("/api/roleplay", {
@@ -444,7 +614,7 @@ export default function SessionPage() {
           concept,
           character,
           transcript: updatedTranscript,
-          userMessage: null, // already appended to transcript
+          userMessage: null,
           scenarioContext,
         }),
       });
@@ -452,15 +622,15 @@ export default function SessionPage() {
       if (!res.ok) throw new Error("Roleplay API failed");
       await streamRoleplayResponse(res, updatedTranscript);
     } catch {
-      setError("Failed to get response. Try again.");
+      // Revert optimistic update, offer retry
+      setRoleplayTranscript(roleplayTranscript);
+      setTurnCount((prev) => prev - 1);
+      setPendingRetry(userMessage);
       submittingRef.current = false;
     }
   }
 
-  async function streamRoleplayResponse(
-    res: Response,
-    currentTranscript: Message[]
-  ) {
+  async function streamRoleplayResponse(res: Response, currentTranscript: Message[]) {
     setIsStreaming(true);
     setStreamingText("");
     setIsLoading(false);
@@ -479,11 +649,7 @@ export default function SessionPage() {
       setStreamingText(fullText);
     }
 
-    // Add the complete response to transcript
-    setRoleplayTranscript([
-      ...currentTranscript,
-      { role: "assistant", content: fullText },
-    ]);
+    setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
     setStreamingText("");
     setIsStreaming(false);
     setTurnCount((prev) => prev + 1);
@@ -494,9 +660,8 @@ export default function SessionPage() {
     if (!concept || roleplayTranscript.length === 0) return;
     setCoachAdvice(null);
     setCoachLoading(true);
-    setCommandsUsed((prev) =>
-      prev.includes("/coach") ? prev : [...prev, "/coach"]
-    );
+    setCommandsUsed((prev) => prev.includes("/coach") ? prev : [...prev, "/coach"]);
+    haptic();
 
     try {
       const res = await fetch("/api/coach", {
@@ -523,6 +688,7 @@ export default function SessionPage() {
     setCoachAdvice(null);
     setCoachLoading(false);
     setResetNotice(true);
+    haptic();
     setTimeout(() => setResetNotice(false), 3000);
     startRoleplayFresh();
   }
@@ -535,12 +701,7 @@ export default function SessionPage() {
       const res = await fetch("/api/roleplay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          concept,
-          character,
-          transcript: [],
-          userMessage: null,
-        }),
+        body: JSON.stringify({ concept, character, transcript: [], userMessage: null }),
       });
 
       if (!res.ok) throw new Error("Roleplay API failed");
@@ -555,32 +716,24 @@ export default function SessionPage() {
 
   function handleSkip() {
     setCommandsUsed((prev) => [...prev, "/skip"]);
+    haptic();
     advancePhase("roleplay", "debrief");
     fetchDebrief();
   }
 
   function handleDone() {
+    haptic();
     advancePhase("roleplay", "debrief");
     fetchDebrief();
   }
 
   function handleRoleplayInput(value: string) {
     const trimmed = value.trim().toLowerCase();
-    if (trimmed === "/coach") {
-      handleCoach();
-      setInputValue("");
-    } else if (trimmed === "/reset") {
-      handleReset();
-      setInputValue("");
-    } else if (trimmed === "/skip") {
-      handleSkip();
-      setInputValue("");
-    } else if (trimmed === "/done") {
-      handleDone();
-      setInputValue("");
-    } else {
-      sendRoleplayMessage(value.trim());
-    }
+    if (trimmed === "/coach") { handleCoach(); setInputValue(""); }
+    else if (trimmed === "/reset") { handleReset(); setInputValue(""); }
+    else if (trimmed === "/skip") { handleSkip(); setInputValue(""); }
+    else if (trimmed === "/done") { handleDone(); setInputValue(""); }
+    else { sendRoleplayMessage(value.trim()); }
   }
 
   // ---------------------------------------------------------------------------
@@ -593,21 +746,19 @@ export default function SessionPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/debrief", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript: roleplayTranscript,
-          concept,
-          character,
-          commandsUsed,
-        }),
-      });
+      const res = await fetchWithRetry(
+        "/api/debrief",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript: roleplayTranscript, concept, character, commandsUsed }),
+        },
+        5, 3000,
+        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+      );
 
-      if (!res.ok) throw new Error("Debrief API failed");
       const data = await res.json();
 
-      // Strip the ---SCORES--- and ---LEDGER--- blocks from display
       let displayContent = data.debriefContent;
       const scoresIdx = displayContent.indexOf("---SCORES---");
       if (scoresIdx !== -1) {
@@ -618,9 +769,10 @@ export default function SessionPage() {
       setScores(data.scores);
       setBehavioralWeaknessSummary(data.behavioralWeaknessSummary);
       setKeyMoment(data.keyMoment);
+      setError(null);
       setIsLoading(false);
     } catch {
-      setError("Failed to generate debrief. Try again.");
+      setError("No connection. Your progress is saved \u2014 continue when back online.");
       setIsLoading(false);
     }
   }
@@ -630,40 +782,44 @@ export default function SessionPage() {
   // ---------------------------------------------------------------------------
 
   async function fetchMission() {
-    if (!concept || !character || !scores) return;
+    if (!concept || !character || !scores || submittingRef.current) return;
+    submittingRef.current = true;
     advancePhase("debrief", "mission");
     setIsLoading(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/mission", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          concept,
-          character,
-          scores,
-          behavioralWeaknessSummary,
-          keyMoment,
-          commandsUsed,
-          gateOutcome,
-        }),
-      });
+      const res = await fetchWithRetry(
+        "/api/mission",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, gateOutcome }),
+        },
+        5, 3000,
+        (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
+      );
 
-      if (!res.ok) throw new Error("Mission API failed");
       const data = await res.json();
-
       setMission(data.mission);
       setRationale(data.rationale);
+      setError(null);
       setIsLoading(false);
+      submittingRef.current = false;
     } catch {
-      setError("Failed to generate mission. Try again.");
+      setError("No connection. Your progress is saved \u2014 continue when back online.");
       setIsLoading(false);
+      submittingRef.current = false;
     }
   }
 
+  const sessionCompletedRef = useRef(false);
   function completeSession() {
+    if (sessionCompletedRef.current) return;
+    sessionCompletedRef.current = true;
     setCompletedPhases((prev) => new Set([...prev, "mission"]));
+    clearSession();
+    haptic();
     setTimeout(() => router.push("/"), 2000);
   }
 
@@ -678,320 +834,505 @@ export default function SessionPage() {
     else if (currentPhase === "retrieval") startRetrieval();
     else if (currentPhase === "roleplay") startRoleplayFresh();
     else if (currentPhase === "debrief") fetchDebrief();
-    else if (currentPhase === "mission" && concept && character && scores)
-      fetchMission();
+    else if (currentPhase === "mission" && concept && character && scores) fetchMission();
   }
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
-  const SCORE_DIMENSIONS: { key: keyof SessionScores; label: string }[] = [
-    { key: "technique_application", label: "Technique Application" },
-    { key: "tactical_awareness", label: "Tactical Awareness" },
-    { key: "frame_control", label: "Frame Control" },
-    { key: "emotional_regulation", label: "Emotional Regulation" },
-    { key: "strategic_outcome", label: "Strategic Outcome" },
+  const SCORE_DIMENSIONS: { key: keyof SessionScores; label: string; abbr: string }[] = [
+    { key: "technique_application", label: "Technique Application", abbr: "TA" },
+    { key: "tactical_awareness", label: "Tactical Awareness", abbr: "TW" },
+    { key: "frame_control", label: "Frame Control", abbr: "FC" },
+    { key: "emotional_regulation", label: "Emotional Regulation", abbr: "ER" },
+    { key: "strategic_outcome", label: "Strategic Outcome", abbr: "SO" },
   ];
 
+  const isRoleplay = currentPhase === "roleplay";
+
   return (
-    <div className="min-h-[85vh]">
-      <PhaseIndicator
-        current={currentPhase}
-        completed={completedPhases}
-        skipGate={skipGate}
-      />
+    <div className="flex flex-col h-dvh overflow-hidden" style={{ overscrollBehaviorY: "contain" }}>
+      {/* Sticky phase indicator */}
+      <PhaseIndicator current={currentPhase} completed={completedPhases} skipGate={skipGate} />
 
-      {/* Error display */}
-      {error && (
-        <div className="mb-6 rounded-lg border border-accent/30 bg-accent/10 p-4 text-center">
-          <p className="text-sm text-accent">{error}</p>
-          <button
-            onClick={retry}
-            className="mt-2 text-xs font-semibold text-accent underline"
-          >
-            Retry
-          </button>
+      {/* Offline banner */}
+      {!online && (
+        <div className="flex h-6 items-center justify-center bg-amber/20 text-xs font-mono text-amber">
+          Offline
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* PHASE 0: GATE                                                    */}
-      {/* ================================================================ */}
-      {currentPhase === "gate" && (
-        <div className="mx-auto max-w-lg">
-          {lastMission && !gateResponse && (
-            <>
-              {/* Yesterday's mission */}
-              <div className="mb-6 rounded-lg border-l-4 border-accent bg-surface p-4">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-secondary">
-                  Yesterday&apos;s Mission
-                </p>
-                <p className="text-sm leading-relaxed text-foreground">
-                  {lastMission}
-                </p>
-              </div>
-
-              {/* Input */}
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="What happened when you executed this?"
-                  className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/60 outline-none focus:border-accent/50"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && inputValue.trim()) {
-                      submitGate(inputValue.trim());
-                    }
-                  }}
-                  disabled={isLoading}
-                  autoFocus
-                />
-                <button
-                  onClick={() => {
-                    if (inputValue.trim()) submitGate(inputValue.trim());
-                  }}
-                  disabled={isLoading || !inputValue.trim()}
-                  className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
-                >
-                  {isLoading ? "Submitting..." : "Submit"}
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Gate response */}
-          {gateResponse && (
-            <div className="text-center">
-              <p className="text-sm leading-relaxed text-secondary italic">
-                {gateResponse}
-              </p>
-              <div className="mx-auto mt-4 h-1 w-32 overflow-hidden rounded-full bg-border">
-                <div className="h-full animate-[gate-progress_2s_ease-in-out_forwards] rounded-full bg-accent" />
-              </div>
-            </div>
-          )}
-
-          {isLoading && !gateResponse && <LoadingDots />}
+      {/* Restored session notice */}
+      {restored && (
+        <div className="flex h-6 items-center justify-center bg-accent-blue/30 text-xs font-mono text-secondary">
+          Session restored
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* PHASE 1: LEARN                                                   */}
-      {/* ================================================================ */}
-      {currentPhase === "lesson" && (
-        <div className="mx-auto max-w-lg">
-          {isLoading && (
-            <div className="text-center">
-              <p className="mb-2 text-sm text-secondary">
-                Preparing today&apos;s lesson...
-              </p>
-              <LoadingDots />
+      {/* Scrollable content area */}
+      <div ref={isRoleplay ? chatContainerRef : undefined} className="flex-1 overflow-y-auto scroll-touch px-4 sm:px-6">
+        <div className="mx-auto max-w-lg py-4 sm:py-8">
+
+          {/* Error display */}
+          {error && (
+            <div className="mb-6 rounded-lg border border-accent/30 bg-accent/10 p-4 text-center">
+              <p className="text-sm text-accent">{error}</p>
+              <button
+                onClick={retry}
+                className="mt-2 min-h-[44px] text-xs font-semibold text-accent underline active:scale-95"
+              >
+                Retry
+              </button>
             </div>
           )}
 
-          {lessonContent && !isLoading && (
+          {/* ============================================================== */}
+          {/* PHASE 0: GATE                                                   */}
+          {/* ============================================================== */}
+          {currentPhase === "gate" && (
             <>
-              {/* Concept badge */}
-              {concept && (
-                <div className="mb-6">
-                  <span className="inline-block rounded-full border border-border bg-surface px-3 py-1 font-mono text-xs text-secondary">
-                    {concept.domain}
-                  </span>
-                  <h2 className="mt-2 text-xl font-bold text-foreground">
-                    {concept.name}
-                    <span className="ml-2 text-sm font-normal text-secondary">
-                      ({concept.source})
-                    </span>
-                  </h2>
+              {lastMission && !gateResponse && (
+                <>
+                  <div className="mb-6 rounded-lg border-l-4 border-accent bg-surface p-4">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-secondary">
+                      Yesterday&apos;s Mission
+                    </p>
+                    <p className="text-sm leading-relaxed text-foreground">
+                      {lastMission}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      placeholder="What happened when you executed this?"
+                      className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/60 outline-none focus:border-accent/50"
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && inputValue.trim()) {
+                          submitGate(inputValue.trim());
+                        }
+                      }}
+                      disabled={isLoading}
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => { if (inputValue.trim()) submitGate(inputValue.trim()); }}
+                      disabled={isLoading || !inputValue.trim()}
+                      className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity active:scale-95 disabled:opacity-40"
+                    >
+                      {isLoading ? "Submitting..." : "Submit"}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {gateResponse && (
+                <div className="text-center">
+                  <p className="text-sm leading-relaxed text-secondary italic">{gateResponse}</p>
+                  <div className="mx-auto mt-4 h-1 w-32 overflow-hidden rounded-full bg-border">
+                    <div className="h-full animate-[gate-progress_2s_ease-in-out_forwards] rounded-full bg-accent" />
+                  </div>
                 </div>
               )}
 
-              {/* Lesson content */}
-              <div className="mb-8 space-y-0">{renderMarkdown(lessonContent)}</div>
-
-              {/* Advance button */}
-              <button
-                onClick={startRetrieval}
-                className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
-              >
-                Ready to Practice &rarr;
-              </button>
+              {isLoading && !gateResponse && <LoadingDots />}
             </>
           )}
-        </div>
-      )}
 
-      {/* ================================================================ */}
-      {/* PHASE 1.5: RETRIEVAL BRIDGE                                      */}
-      {/* ================================================================ */}
-      {currentPhase === "retrieval" && (
-        <div className="mx-auto max-w-lg">
-          {isLoading && !retrievalQuestion && (
-            <div className="text-center">
-              <p className="mb-2 text-sm text-secondary">
-                One moment...
-              </p>
-              <LoadingDots />
-            </div>
-          )}
-
-          {retrievalQuestion && (
-            <div className="space-y-6">
-              {/* Question */}
-              <p className="text-center text-lg font-medium leading-relaxed text-foreground">
-                {retrievalQuestion}
-              </p>
-
-              {/* Evaluation response */}
-              {retrievalResponse && (
+          {/* ============================================================== */}
+          {/* PHASE 1: LEARN                                                  */}
+          {/* ============================================================== */}
+          {currentPhase === "lesson" && (
+            <>
+              {isLoading && (
                 <div className="text-center">
-                  <p className="text-sm leading-relaxed text-secondary italic">
-                    {retrievalResponse}
-                  </p>
-                  {retrievalReady && (
-                    <div className="mx-auto mt-4 h-1 w-32 overflow-hidden rounded-full bg-border">
-                      <div className="h-full animate-[gate-progress_1.5s_ease-in-out_forwards] rounded-full bg-accent" />
+                  <p className="mb-2 text-sm text-secondary">Preparing today&apos;s lesson...</p>
+                  <LoadingDots />
+                </div>
+              )}
+
+              {lessonContent && !isLoading && (
+                <>
+                  {concept && (
+                    <div className="mb-6">
+                      <span className="inline-block rounded-full border border-border bg-surface px-3 py-1 font-mono text-xs text-secondary">
+                        {concept.domain}
+                      </span>
+                      <h2 className="mt-2 text-xl font-bold text-foreground">
+                        {concept.name}
+                        <span className="ml-2 text-sm font-normal text-secondary">({concept.source})</span>
+                      </h2>
                     </div>
                   )}
-                </div>
-              )}
 
-              {/* Input — only show if not yet answered or if not ready */}
-              {!retrievalResponse && (
-                <div className="space-y-3">
-                  <input
-                    type="text"
-                    placeholder="Your answer..."
-                    className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/60 outline-none focus:border-accent/50"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && inputValue.trim()) {
-                        submitRetrievalResponse(inputValue.trim());
-                        setInputValue("");
-                      }
-                    }}
-                    disabled={isLoading}
-                    autoFocus
-                  />
+                  <div className="select-text mb-8 space-y-0">{renderMarkdown(lessonContent)}</div>
+
                   <button
-                    onClick={() => {
-                      if (inputValue.trim()) {
-                        submitRetrievalResponse(inputValue.trim());
-                        setInputValue("");
-                      }
-                    }}
-                    disabled={isLoading || !inputValue.trim()}
-                    className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+                    onClick={startRetrieval}
+                    className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-95"
                   >
-                    {isLoading ? "Evaluating..." : "Submit"}
+                    Ready to Practice &rarr;
                   </button>
+                </>
+              )}
+            </>
+          )}
+
+          {/* ============================================================== */}
+          {/* PHASE 1.5: RETRIEVAL BRIDGE                                     */}
+          {/* ============================================================== */}
+          {currentPhase === "retrieval" && (
+            <>
+              {isLoading && !retrievalQuestion && (
+                <div className="text-center">
+                  <p className="mb-2 text-sm text-secondary">One moment...</p>
+                  <LoadingDots />
                 </div>
               )}
 
-              {/* Manual advance if not ready after evaluation */}
-              {retrievalResponse && !retrievalReady && (
-                <button
-                  onClick={startRoleplay}
-                  className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
-                >
-                  Continue to Practice &rarr;
-                </button>
+              {retrievalQuestion && (
+                <div className="space-y-6">
+                  <p className="text-center text-lg font-medium leading-relaxed text-foreground">
+                    {retrievalQuestion}
+                  </p>
+
+                  {retrievalResponse && (
+                    <div className="text-center">
+                      <p className="text-sm leading-relaxed text-secondary italic">{retrievalResponse}</p>
+                      {retrievalReady && (
+                        <div className="mx-auto mt-4 h-1 w-32 overflow-hidden rounded-full bg-border">
+                          <div className="h-full animate-[gate-progress_1.5s_ease-in-out_forwards] rounded-full bg-accent" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!retrievalResponse && (
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder="Your answer..."
+                        className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/60 outline-none focus:border-accent/50"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && inputValue.trim()) {
+                            submitRetrievalResponse(inputValue.trim());
+                            setInputValue("");
+                          }
+                        }}
+                        disabled={isLoading}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          if (inputValue.trim()) {
+                            submitRetrievalResponse(inputValue.trim());
+                            setInputValue("");
+                          }
+                        }}
+                        disabled={isLoading || !inputValue.trim()}
+                        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity active:scale-95 disabled:opacity-40"
+                      >
+                        {isLoading ? "Evaluating..." : "Submit"}
+                      </button>
+                    </div>
+                  )}
+
+                  {retrievalResponse && !retrievalReady && (
+                    <button
+                      onClick={startRoleplay}
+                      className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-95"
+                    >
+                      Continue to Practice &rarr;
+                    </button>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )}
+
+          {/* ============================================================== */}
+          {/* PHASE 2: SIMULATE                                               */}
+          {/* ============================================================== */}
+          {currentPhase === "roleplay" && (
+            <>
+              {/* Turn counter */}
+              <div className="mb-4 flex items-center justify-between text-xs font-mono text-secondary">
+                <span>{character?.name ?? "Character"}</span>
+                <span>Turn {Math.max(1, Math.ceil(turnCount / 2))} of ~8</span>
+              </div>
+
+              {/* Reset notice */}
+              {resetNotice && (
+                <p className="mb-2 text-center text-xs text-secondary animate-pulse">
+                  Same concept. Fresh start.
+                </p>
+              )}
+
+              {/* Chat messages — flow directly in scrollable area */}
+              <div className="space-y-3 pb-4">
+                {roleplayTranscript.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[85%] px-4 py-3 text-base leading-relaxed ${
+                        msg.role === "user"
+                          ? "rounded-2xl rounded-tr-sm bg-accent/10 border border-accent/20 text-foreground"
+                          : "rounded-2xl rounded-tl-sm bg-surface text-foreground/90"
+                      }`}
+                    >
+                      {i === 0 && msg.role === "assistant" && (
+                        <p className="mb-1 text-xs uppercase tracking-wider text-secondary">
+                          {character?.name}
+                        </p>
+                      )}
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Streaming text */}
+                {isStreaming && streamingText && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-surface/60 px-4 py-3 text-base leading-relaxed text-foreground/90">
+                      {roleplayTranscript.length === 0 && (
+                        <p className="mb-1 text-xs uppercase tracking-wider text-secondary">
+                          {character?.name}
+                        </p>
+                      )}
+                      {streamingText}
+                      <span className="inline-block animate-pulse text-accent">|</span>
+                    </div>
+                  </div>
+                )}
+
+                {isLoading && !isStreaming && (
+                  <div className="py-2">
+                    <p className="mb-2 text-xs text-secondary">
+                      {roleplayTranscript.length === 0
+                        ? `Setting up scenario with ${character?.name ?? "character"}...`
+                        : `${character?.name ?? "Character"} is thinking...`}
+                    </p>
+                    <LoadingDots />
+                  </div>
+                )}
+
+                {/* Retry on network error */}
+                {pendingRetry && (
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => { sendRoleplayMessage(pendingRetry); }}
+                      className="min-h-[44px] rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-xs text-accent active:scale-95"
+                    >
+                      Connection lost. Tap to retry &rarr;
+                    </button>
+                  </div>
+                )}
+
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Turn 8+ prompt */}
+              {Math.ceil(turnCount / 2) >= 8 && (
+                <p className="mb-2 text-center text-xs text-secondary">
+                  You can continue or type <span className="font-mono text-accent">/done</span> to wrap up
+                </p>
+              )}
+            </>
+          )}
+
+          {/* ============================================================== */}
+          {/* PHASE 3: DEBRIEF                                                */}
+          {/* ============================================================== */}
+          {currentPhase === "debrief" && (
+            <>
+              {isLoading && (
+                <div className="text-center">
+                  <p className="mb-2 text-sm text-secondary">Analysing your performance...</p>
+                  <LoadingDots />
+                </div>
+              )}
+
+              {debriefContent && !isLoading && (
+                <>
+                  <div className="select-text mb-8 space-y-0">{renderMarkdown(debriefContent)}</div>
+
+                  {scores && (
+                    <div className="mb-8 rounded-lg border border-border bg-surface p-5">
+                      <h3 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
+                        Session Scores
+                      </h3>
+                      <div className="space-y-3">
+                        {SCORE_DIMENSIONS.map(({ key, label }) => {
+                          const score = scores[key];
+                          return (
+                            <div key={key} className="flex items-center justify-between">
+                              <span className="text-sm text-foreground">{label}</span>
+                              <div className="flex items-center gap-3">
+                                <span className={`font-mono text-2xl font-bold ${scoreColorClass(score)}`}>
+                                  {score}
+                                </span>
+                                <div className="h-2 w-20 overflow-hidden rounded-full bg-border">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      score >= 4 ? "bg-success" : score === 3 ? "bg-amber" : "bg-accent"
+                                    }`}
+                                    style={{ width: `${(score / 5) * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                </>
+              )}
+            </>
+          )}
+
+          {/* ============================================================== */}
+          {/* PHASE 4: DEPLOY                                                 */}
+          {/* ============================================================== */}
+          {currentPhase === "mission" && (
+            <>
+              {isLoading && (
+                <div className="text-center">
+                  <p className="mb-2 text-sm text-secondary">Assigning your mission...</p>
+                  <LoadingDots />
+                </div>
+              )}
+
+              {mission && !isLoading && (
+                <>
+                  <div className="mb-6 rounded-lg border-t-4 border-accent bg-surface p-6">
+                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
+                      Your Mission
+                    </p>
+                    <p className="text-base leading-relaxed text-foreground">{mission}</p>
+                  </div>
+
+                  {rationale && (
+                    <p className="mb-8 text-sm leading-relaxed text-secondary italic">{rationale}</p>
+                  )}
+
+                  {!completedPhases.has("mission") ? (
+                    <button
+                      onClick={completeSession}
+                      className="w-full rounded-lg border border-border bg-surface px-6 py-4 text-base font-semibold text-foreground transition-all hover:bg-surface/80 active:scale-95"
+                    >
+                      Session Complete
+                    </button>
+                  ) : (
+                    <div className="space-y-4 text-center">
+                      <p className="text-sm font-semibold text-success">Day {dayNumber} complete.</p>
+
+                      {scores && (
+                        <div className="rounded-lg border border-border bg-surface p-4 text-left">
+                          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
+                            Session Summary
+                          </p>
+                          {concept && (
+                            <p className="mb-2 text-xs text-secondary">
+                              Concept: <span className="text-foreground">{concept.name}</span>
+                            </p>
+                          )}
+                          <div className="mb-2 flex items-center justify-between text-xs">
+                            <span className="text-secondary">Average Score</span>
+                            <span className={`font-mono font-bold ${scoreColorClass(
+                              Math.round(
+                                (scores.technique_application + scores.tactical_awareness +
+                                 scores.frame_control + scores.emotional_regulation +
+                                 scores.strategic_outcome) / 5
+                              )
+                            )}`}>
+                              {((scores.technique_application + scores.tactical_awareness +
+                                 scores.frame_control + scores.emotional_regulation +
+                                 scores.strategic_outcome) / 5).toFixed(1)}/5
+                            </span>
+                          </div>
+                          {(() => {
+                            const dims = SCORE_DIMENSIONS.map(d => ({ ...d, score: scores[d.key] }));
+                            const strongest = dims.reduce((a, b) => b.score > a.score ? b : a);
+                            const weakest = dims.reduce((a, b) => b.score < a.score ? b : a);
+                            return (
+                              <div className="space-y-1 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-secondary">Strongest</span>
+                                  <span className="text-success">{strongest.label} ({strongest.score}/5)</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-secondary">Focus area</span>
+                                  <span className="text-accent">{weakest.label} ({weakest.score}/5)</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      <p className="text-xs text-secondary">See you tomorrow.</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+        </div>
+      </div>
+
+      {/* ================================================================== */}
+      {/* Sticky continue button (debrief only)                              */}
+      {/* ================================================================== */}
+      {currentPhase === "debrief" && debriefContent && !isLoading && (
+        <div className="border-t border-border bg-background px-4 pb-safe pt-3 pb-3">
+          <div className="mx-auto max-w-lg">
+            <button
+              onClick={fetchMission}
+              className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-95"
+            >
+              Continue &rarr;
+            </button>
+          </div>
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* PHASE 2: SIMULATE                                                */}
-      {/* ================================================================ */}
-      {currentPhase === "roleplay" && (
-        <div className="relative mx-auto max-w-lg">
-          {/* Turn counter */}
-          <div className="mb-4 flex items-center justify-between text-xs font-mono text-secondary">
-            <span>{character?.name ?? "Character"}</span>
-            <span>Turn {Math.max(1, Math.ceil(turnCount / 2))} of ~8</span>
-          </div>
-
-          {/* Reset notice */}
-          {resetNotice && (
-            <p className="mb-2 text-center text-xs text-secondary animate-pulse">
-              Same concept. Fresh start.
-            </p>
-          )}
-
-          {/* Chat messages */}
-          <div ref={chatContainerRef} className="mb-4 max-h-[55vh] space-y-3 overflow-y-auto rounded-lg border border-border bg-background p-3">
-            {roleplayTranscript.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+      {/* ================================================================== */}
+      {/* Fixed bottom input bar (roleplay only)                             */}
+      {/* ================================================================== */}
+      {isRoleplay && !completedPhases.has("roleplay") && (
+        <div className="border-t border-border bg-background px-4 pb-safe pt-2">
+          {/* Quick command pills (mobile only) */}
+          <div className="mb-2 flex gap-2 sm:hidden">
+            {[
+              { label: "/c", handler: handleCoach },
+              { label: "/r", handler: handleReset },
+              { label: "/s", handler: handleSkip },
+              { label: "/d", handler: handleDone },
+            ].map(({ label, handler }) => (
+              <button
+                key={label}
+                onClick={handler}
+                className="min-h-[44px] min-w-[44px] rounded-full border border-border bg-surface px-3 font-mono text-xs text-secondary active:scale-95"
               >
-                <div
-                  className={`max-w-[85%] rounded-lg px-4 py-3 text-sm leading-relaxed ${
-                    msg.role === "user"
-                      ? "bg-accent/15 text-foreground border border-accent/20"
-                      : "bg-surface text-foreground/90"
-                  }`}
-                >
-                  {i === 0 && msg.role === "assistant" && (
-                    <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-accent">
-                      {character?.name}
-                    </p>
-                  )}
-                  {msg.content}
-                </div>
-              </div>
+                {label}
+              </button>
             ))}
-
-            {/* Streaming text */}
-            {isStreaming && streamingText && (
-              <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-lg bg-surface/60 px-4 py-3 text-sm leading-relaxed text-foreground/90">
-                  {roleplayTranscript.length === 0 && (
-                    <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-accent">
-                      {character?.name}
-                    </p>
-                  )}
-                  {streamingText}
-                  <span className="inline-block animate-pulse text-accent">
-                    |
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {isLoading && !isStreaming && (
-              <div className="py-2">
-                <p className="mb-2 text-xs text-secondary">
-                  {roleplayTranscript.length === 0
-                    ? `Setting up scenario with ${character?.name ?? "character"}...`
-                    : `${character?.name ?? "Character"} is thinking...`}
-                </p>
-                <LoadingDots />
-              </div>
-            )}
-            <div ref={chatEndRef} />
           </div>
 
-          {/* Turn 8+ prompt */}
-          {Math.ceil(turnCount / 2) >= 8 && (
-            <p className="mb-2 text-center text-xs text-secondary">
-              You can continue or type{" "}
-              <span className="font-mono text-accent">/done</span> to wrap up
-            </p>
-          )}
-
-          {/* Chat input */}
-          <div className="flex gap-2">
+          {/* Input + send */}
+          <div className="flex gap-2 pb-2">
             <input
               ref={inputRef}
               type="text"
-              placeholder="Type your response... (/coach /done /skip /reset)"
-              className="flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/40 outline-none focus:border-accent/50"
+              placeholder="Type your response..."
+              className="flex-1 rounded-full border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/40 outline-none focus:border-accent/50"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => {
@@ -1000,7 +1341,6 @@ export default function SessionPage() {
                 }
               }}
               disabled={isStreaming || isLoading}
-              autoFocus
             />
             <button
               onClick={() => {
@@ -1009,212 +1349,65 @@ export default function SessionPage() {
                 }
               }}
               disabled={isStreaming || isLoading || !inputValue.trim()}
-              className="rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-accent text-white transition-opacity active:scale-95 disabled:opacity-40"
             >
-              Send
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.289Z" />
+              </svg>
             </button>
           </div>
-
-          {/* Coach panel — slide-in from right */}
-          {(coachAdvice || coachLoading) && (
-            <div className="fixed inset-y-0 right-0 z-50 w-80 max-w-[90vw] overflow-y-auto border-l border-border bg-accent-blue p-6 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground/70">
-                  Mentor
-                </span>
-                <button
-                  onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
-                  className="text-sm text-secondary hover:text-foreground"
-                >
-                  &times;
-                </button>
-              </div>
-              {coachLoading ? (
-                <LoadingDots />
-              ) : (
-                <div className="text-sm leading-relaxed text-foreground/90">
-                  {renderMarkdown(coachAdvice!)}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* PHASE 3: DEBRIEF                                                 */}
-      {/* ================================================================ */}
-      {currentPhase === "debrief" && (
-        <div className="mx-auto max-w-lg">
-          {isLoading && (
-            <div className="text-center">
-              <p className="mb-2 text-sm text-secondary">
-                Analysing your performance...
-              </p>
-              <LoadingDots />
-            </div>
-          )}
+      {/* "New message" pill */}
+      {showNewMessagePill && isRoleplay && (
+        <button
+          onClick={() => {
+            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            setShowNewMessagePill(false);
+          }}
+          className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full border border-border bg-surface px-4 py-2 text-xs font-mono text-accent shadow-lg active:scale-95"
+        >
+          &darr; New message
+        </button>
+      )}
 
-          {debriefContent && !isLoading && (
-            <>
-              {/* Debrief analysis */}
-              <div className="mb-8 space-y-0">{renderMarkdown(debriefContent)}</div>
+      {/* ================================================================== */}
+      {/* Coach panel — bottom sheet on mobile, side panel on desktop         */}
+      {/* ================================================================== */}
+      {(coachAdvice || coachLoading) && (
+        <>
+          {/* Backdrop (mobile) */}
+          <div
+            className="fixed inset-0 z-40 bg-black/50 sm:hidden"
+            onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
+          />
 
-              {/* Score card */}
-              {scores && (
-                <div className="mb-8 rounded-lg border border-border bg-surface p-5">
-                  <h3 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
-                    Session Scores
-                  </h3>
-                  <div className="space-y-3">
-                    {SCORE_DIMENSIONS.map(({ key, label }) => {
-                      const score = scores[key];
-                      return (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between"
-                        >
-                          <span className="text-sm text-foreground">
-                            {label}
-                          </span>
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`font-mono text-2xl font-bold ${scoreColorClass(score)}`}
-                            >
-                              {score}
-                            </span>
-                            <div className="h-2 w-20 overflow-hidden rounded-full bg-border">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  score >= 4
-                                    ? "bg-success"
-                                    : score === 3
-                                      ? "bg-amber"
-                                      : "bg-accent"
-                                }`}
-                                style={{ width: `${(score / 5) * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+          {/* Panel */}
+          <div className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-2xl border-t border-border bg-accent-blue p-6 shadow-2xl sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-t-0">
+            {/* Drag handle (mobile) */}
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-foreground/20 sm:hidden" />
 
-              {/* Advance button */}
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground/70">
+                Mentor
+              </span>
               <button
-                onClick={fetchMission}
-                className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+                onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-sm text-secondary hover:text-foreground active:scale-95"
               >
-                Continue &rarr;
+                &times;
               </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ================================================================ */}
-      {/* PHASE 4: DEPLOY                                                  */}
-      {/* ================================================================ */}
-      {currentPhase === "mission" && (
-        <div className="mx-auto max-w-lg">
-          {isLoading && (
-            <div className="text-center">
-              <p className="mb-2 text-sm text-secondary">
-                Assigning your mission...
-              </p>
-              <LoadingDots />
             </div>
-          )}
-
-          {mission && !isLoading && (
-            <>
-              {/* Mission card */}
-              <div className="mb-6 rounded-lg border-t-4 border-accent bg-surface p-6">
-                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
-                  Your Mission
-                </p>
-                <p className="text-base leading-relaxed text-foreground">
-                  {mission}
-                </p>
+            {coachLoading ? (
+              <LoadingDots />
+            ) : (
+              <div className="text-sm leading-relaxed text-foreground/90">
+                {renderMarkdown(coachAdvice!)}
               </div>
-
-              {/* Rationale */}
-              {rationale && (
-                <p className="mb-8 text-sm leading-relaxed text-secondary italic">
-                  {rationale}
-                </p>
-              )}
-
-              {/* Complete button */}
-              {!completedPhases.has("mission") ? (
-                <button
-                  onClick={completeSession}
-                  className="w-full rounded-lg border border-border bg-surface px-6 py-4 text-base font-semibold text-foreground transition-all hover:bg-surface/80"
-                >
-                  Session Complete
-                </button>
-              ) : (
-                <div className="space-y-4 text-center">
-                  <p className="text-sm font-semibold text-success">
-                    Day {dayNumber} complete.
-                  </p>
-
-                  {/* Session summary */}
-                  {scores && (
-                    <div className="rounded-lg border border-border bg-surface p-4 text-left">
-                      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
-                        Session Summary
-                      </p>
-                      {concept && (
-                        <p className="mb-2 text-xs text-secondary">
-                          Concept: <span className="text-foreground">{concept.name}</span>
-                        </p>
-                      )}
-                      <div className="mb-2 flex items-center justify-between text-xs">
-                        <span className="text-secondary">Average Score</span>
-                        <span className={`font-mono font-bold ${scoreColorClass(
-                          Math.round(
-                            (scores.technique_application + scores.tactical_awareness +
-                             scores.frame_control + scores.emotional_regulation +
-                             scores.strategic_outcome) / 5
-                          )
-                        )}`}>
-                          {((scores.technique_application + scores.tactical_awareness +
-                             scores.frame_control + scores.emotional_regulation +
-                             scores.strategic_outcome) / 5).toFixed(1)}/5
-                        </span>
-                      </div>
-                      {(() => {
-                        const dims = SCORE_DIMENSIONS.map(d => ({ ...d, score: scores[d.key] }));
-                        const strongest = dims.reduce((a, b) => b.score > a.score ? b : a);
-                        const weakest = dims.reduce((a, b) => b.score < a.score ? b : a);
-                        return (
-                          <div className="space-y-1 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-secondary">Strongest</span>
-                              <span className="text-success">{strongest.label} ({strongest.score}/5)</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-secondary">Focus area</span>
-                              <span className="text-accent">{weakest.label} ({weakest.score}/5)</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  <p className="text-xs text-secondary">
-                    See you tomorrow.
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
