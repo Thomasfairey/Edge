@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const rawResponse = await generateResponse(
     systemPrompt,
     [{ role: "user", content: userResponse }],
-    PHASE_CONFIG.gate
+    PHASE_CONFIG.checkin
   );
 
   const ready = rawResponse.includes("Let's go.");

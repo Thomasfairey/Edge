@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Home page — session launcher with competency scores and streak.
- * Mobile-first: compact layout, 2-col score grid, offline support.
+ * Home page — session launcher with pentagon radar chart and streak.
+ * Light theme, mobile-first, Inter font, indigo/violet gradients.
  */
 
 import { useEffect, useState } from "react";
@@ -17,30 +17,163 @@ interface StatusData {
 }
 
 const DIMENSIONS: { key: keyof SessionScores; label: string; abbr: string }[] = [
-  { key: "technique_application", label: "Technique Application", abbr: "TA" },
-  { key: "tactical_awareness", label: "Tactical Awareness", abbr: "TW" },
-  { key: "frame_control", label: "Frame Control", abbr: "FC" },
-  { key: "emotional_regulation", label: "Emotional Regulation", abbr: "ER" },
-  { key: "strategic_outcome", label: "Strategic Outcome", abbr: "SO" },
+  { key: "technique_application", label: "Technique", abbr: "TA" },
+  { key: "tactical_awareness", label: "Tactical", abbr: "TW" },
+  { key: "frame_control", label: "Frame", abbr: "FC" },
+  { key: "emotional_regulation", label: "Emotional", abbr: "ER" },
+  { key: "strategic_outcome", label: "Strategic", abbr: "SO" },
 ];
 
-function scoreColor(score: number): string {
-  if (score >= 4) return "text-success";
-  if (score === 3) return "text-amber";
-  return "text-accent";
+// ---------------------------------------------------------------------------
+// Pentagon radar chart — 5 vertices, SVG 200x200
+// ---------------------------------------------------------------------------
+
+function PentagonRadar({ scores }: { scores: SessionScores | null }) {
+  const cx = 100;
+  const cy = 100;
+  const maxR = 80;
+  const levels = 5;
+
+  // Pentagon vertices: start from top, go clockwise
+  const angleOffset = -Math.PI / 2;
+  const angles = DIMENSIONS.map((_, i) => angleOffset + (2 * Math.PI * i) / 5);
+
+  function polarToXY(angle: number, r: number): [number, number] {
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+  }
+
+  function polygonPoints(r: number): string {
+    return angles.map((a) => polarToXY(a, r).join(",")).join(" ");
+  }
+
+  // Data polygon
+  const scoreValues = scores
+    ? DIMENSIONS.map((d) => scores[d.key])
+    : [0, 0, 0, 0, 0];
+
+  const dataPoints = angles
+    .map((a, i) => {
+      const r = (scoreValues[i] / levels) * maxR;
+      return polarToXY(a, r).join(",");
+    })
+    .join(" ");
+
+  return (
+    <svg viewBox="0 0 200 200" className="w-full max-w-[220px] mx-auto">
+      {/* Grid levels */}
+      {[1, 2, 3, 4, 5].map((level) => (
+        <polygon
+          key={level}
+          points={polygonPoints((level / levels) * maxR)}
+          fill="none"
+          stroke="var(--border)"
+          strokeWidth={level === 5 ? "1" : "0.5"}
+          opacity={level === 5 ? 1 : 0.5}
+        />
+      ))}
+
+      {/* Axis lines */}
+      {angles.map((a, i) => {
+        const [x, y] = polarToXY(a, maxR);
+        return (
+          <line
+            key={i}
+            x1={cx}
+            y1={cy}
+            x2={x}
+            y2={y}
+            stroke="var(--border)"
+            strokeWidth="0.5"
+            opacity="0.5"
+          />
+        );
+      })}
+
+      {/* Data fill */}
+      {scores && (
+        <polygon
+          points={dataPoints}
+          fill="url(#radarGradient)"
+          fillOpacity="0.2"
+          stroke="url(#radarStroke)"
+          strokeWidth="2"
+        />
+      )}
+
+      {/* Data dots */}
+      {scores &&
+        angles.map((a, i) => {
+          const r = (scoreValues[i] / levels) * maxR;
+          const [x, y] = polarToXY(a, r);
+          return (
+            <circle
+              key={i}
+              cx={x}
+              cy={y}
+              r="3"
+              fill="var(--accent)"
+              stroke="white"
+              strokeWidth="1.5"
+            />
+          );
+        })}
+
+      {/* Labels */}
+      {angles.map((a, i) => {
+        const labelR = maxR + 16;
+        const [x, y] = polarToXY(a, labelR);
+        return (
+          <text
+            key={i}
+            x={x}
+            y={y}
+            textAnchor="middle"
+            dominantBaseline="central"
+            className="fill-secondary text-[9px] font-medium"
+          >
+            {DIMENSIONS[i].abbr}
+          </text>
+        );
+      })}
+
+      {/* Score values at vertices */}
+      {scores &&
+        angles.map((a, i) => {
+          const r = (scoreValues[i] / levels) * maxR;
+          const [x, y] = polarToXY(a, r);
+          const offsetY = y < cy ? -10 : 10;
+          return (
+            <text
+              key={`v-${i}`}
+              x={x}
+              y={y + offsetY}
+              textAnchor="middle"
+              dominantBaseline="central"
+              className="fill-accent text-[10px] font-bold"
+            >
+              {scoreValues[i]}
+            </text>
+          );
+        })}
+
+      {/* Gradient defs */}
+      <defs>
+        <linearGradient id="radarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="var(--accent)" />
+          <stop offset="100%" stopColor="var(--accent-violet)" />
+        </linearGradient>
+        <linearGradient id="radarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="var(--accent)" />
+          <stop offset="100%" stopColor="var(--accent-violet)" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
 }
 
-function trendArrow(scores: number[]): string {
-  if (scores.length < 2) return "";
-  const recent = scores.slice(-3);
-  const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const older = scores.slice(0, -3);
-  if (older.length === 0) return "";
-  const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
-  if (avg > olderAvg + 0.3) return "\u2191";
-  if (avg < olderAvg - 0.3) return "\u2193";
-  return "\u2192";
-}
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 const CACHE_KEY = "edge-status-cache";
 
@@ -68,11 +201,9 @@ export default function Home() {
       .then((res) => res.json())
       .then((data) => {
         setStatus(data);
-        // Cache for offline use
         try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
       })
       .catch(() => {
-        // Try cached data when offline
         try {
           const cached = localStorage.getItem(CACHE_KEY);
           if (cached) setStatus(JSON.parse(cached));
@@ -85,115 +216,89 @@ export default function Home() {
   const recentScores = status?.recentScores ?? [];
   const streakCount = status?.streakCount ?? 0;
 
+  // Get the latest scores for the radar chart
+  const latestScores = recentScores.length > 0 ? recentScores[recentScores.length - 1] : null;
+
+  // Compute averages
+  const avgScore = latestScores
+    ? (
+        (latestScores.technique_application +
+          latestScores.tactical_awareness +
+          latestScores.frame_control +
+          latestScores.emotional_regulation +
+          latestScores.strategic_outcome) / 5
+      ).toFixed(1)
+    : null;
+
   return (
     <main className="mx-auto max-w-[720px] px-4 py-8 sm:px-6 sm:py-12">
       <div className="flex min-h-[85vh] flex-col items-center justify-center">
-        {/* Title — compact on mobile, large on desktop */}
-        <h1 className="mb-1 text-2xl font-light tracking-widest text-foreground sm:text-5xl sm:font-bold sm:tracking-tight">
-          THE EDGE
+        {/* Title */}
+        <h1 className="mb-1 text-3xl font-semibold tracking-tight text-primary sm:text-4xl">
+          The Edge
         </h1>
-        <p className="mb-10 font-mono text-sm tracking-widest text-secondary">
+        <p className="mb-8 font-mono text-sm tracking-widest text-secondary">
           DAY {loading ? "\u2014" : dayNumber}
         </p>
 
-        {/* Session launcher */}
+        {/* Pentagon radar chart card */}
+        <div className="card mb-6 w-full max-w-sm">
+          <h2 className="mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
+            Performance Profile
+          </h2>
+
+          <PentagonRadar scores={latestScores} />
+
+          {latestScores && avgScore && (
+            <div className="mt-4 flex items-center justify-center gap-6 border-t border-border pt-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-accent">{avgScore}</p>
+                <p className="text-[10px] font-medium text-tertiary uppercase tracking-wider">Average</p>
+              </div>
+              <div className="h-8 w-px bg-border" />
+              <div className="text-center">
+                <p className="text-2xl font-bold text-primary">{recentScores.length}</p>
+                <p className="text-[10px] font-medium text-tertiary uppercase tracking-wider">Sessions</p>
+              </div>
+              {streakCount > 0 && (
+                <>
+                  <div className="h-8 w-px bg-border" />
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-warning">{streakCount}</p>
+                    <p className="text-[10px] font-medium text-tertiary uppercase tracking-wider">Streak</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {!latestScores && (
+            <p className="mt-4 text-center text-sm text-tertiary">
+              Complete your first session to see your profile
+            </p>
+          )}
+        </div>
+
+        {/* Session launcher — gradient CTA */}
         <button
           onClick={() => { if (online) router.push("/session"); }}
           disabled={!online}
-          className="mb-12 w-full rounded-lg bg-accent px-10 py-4 text-lg font-semibold text-white transition-all hover:brightness-110 active:scale-95 disabled:opacity-40 sm:w-auto"
+          className="btn-gradient mb-6 w-full max-w-sm px-10 py-4 text-lg"
         >
-          {online ? "BEGIN SESSION" : "Offline"}
+          {online ? "Begin Session" : "Offline"}
         </button>
 
-        {/* Competency scores — 2-col grid on mobile, list on desktop */}
-        <div className="mb-6 w-full max-w-md rounded-lg border border-border bg-surface p-4 sm:p-5">
-          <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
-            Competency Scores
-          </h2>
-
-          {/* Mobile: 2-column grid */}
-          <div className="grid grid-cols-2 gap-3 sm:hidden">
-            {DIMENSIONS.map(({ key, abbr }) => {
-              const allScores = recentScores.map((s) => s[key]);
-              const latest = allScores.length > 0 ? allScores[allScores.length - 1] : null;
-              const trend = trendArrow(allScores);
-              return (
-                <div key={key} className="flex items-center justify-between rounded-md bg-background/50 px-3 py-2">
-                  <span className="font-mono text-xs text-secondary">{abbr}</span>
-                  <div className="flex items-center gap-1.5 font-mono text-sm">
-                    {latest !== null ? (
-                      <>
-                        <span className={scoreColor(latest)}>{latest}</span>
-                        {trend && (
-                          <span className={
-                            trend === "\u2191" ? "text-success" :
-                            trend === "\u2193" ? "text-accent" : "text-secondary"
-                          }>{trend}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-secondary">{"\u2014"}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Desktop: full labels list */}
-          <div className="hidden space-y-3 sm:block">
-            {DIMENSIONS.map(({ key, label }) => {
-              const allScores = recentScores.map((s) => s[key]);
-              const latest = allScores.length > 0 ? allScores[allScores.length - 1] : null;
-              const avg =
-                allScores.length > 0
-                  ? (allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(1)
-                  : null;
-              const trend = trendArrow(allScores);
-
-              return (
-                <div key={key} className="flex items-center justify-between">
-                  <span className="text-sm text-foreground">{label}</span>
-                  <div className="flex items-center gap-3 font-mono text-sm">
-                    {latest !== null ? (
-                      <>
-                        <span className={scoreColor(latest)}>{latest}</span>
-                        <span className="text-secondary">{avg}</span>
-                        {trend && (
-                          <span
-                            className={
-                              trend === "\u2191"
-                                ? "text-success"
-                                : trend === "\u2193"
-                                  ? "text-accent"
-                                  : "text-secondary"
-                            }
-                          >
-                            {trend}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-secondary">{"\u2014"}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Streak counter */}
-        <p className="font-mono text-sm text-secondary">
-          {streakCount > 0 ? (
-            <>
-              <span className="text-amber">{"\uD83D\uDD25"}</span> Day{" "}
-              {streakCount} streak
-            </>
-          ) : (
-            "Start your streak"
-          )}
-        </p>
+        {/* Streak / motivation */}
+        {streakCount > 0 && (
+          <p className="text-sm text-secondary">
+            {streakCount} day streak — keep going
+          </p>
+        )}
+        {streakCount === 0 && !loading && (
+          <p className="text-sm text-tertiary">
+            Start your streak today
+          </p>
+        )}
       </div>
     </main>
   );

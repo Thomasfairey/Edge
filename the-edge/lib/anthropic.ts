@@ -42,7 +42,7 @@ export const MODELS = {
 // ---------------------------------------------------------------------------
 
 export const PHASE_CONFIG = {
-  gate: { model: MODELS.PRIMARY, max_tokens: 200, temperature: 0.7 },
+  checkin: { model: MODELS.PRIMARY, max_tokens: 200, temperature: 0.7 },
   lesson: { model: MODELS.PRIMARY, max_tokens: 1200, temperature: 0.8 },
   roleplay: { model: MODELS.PRIMARY, max_tokens: 400, temperature: 0.9 },
   coach: { model: MODELS.FAST, max_tokens: 300, temperature: 0.7 },
@@ -213,7 +213,7 @@ export function streamResponse(
 
 /**
  * Generate a complete Anthropic response and return the full text.
- * Used for phases where streaming isn't needed (gate, debrief scoring, mission).
+ * Used for phases where streaming isn't needed (checkin, debrief scoring, mission).
  * Handles rate-limit retry (once, 2s delay) and 60s timeout.
  */
 export async function generateResponse(

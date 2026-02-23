@@ -1,10 +1,16 @@
 /**
- * Root layout — dark minimal PWA shell.
- * Each page controls its own container (session needs full-height flex).
+ * Root layout — light premium PWA shell with Inter font.
+ * Each page controls its own container.
  */
 
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -12,7 +18,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#0A0A0F",
+  themeColor: "#6366F1",
 };
 
 export const metadata: Metadata = {
@@ -21,7 +27,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "The Edge",
   },
 };
@@ -42,11 +48,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" style={{ backgroundColor: "#0A0A0F", colorScheme: "dark" }}>
+    <html lang="en" style={{ backgroundColor: "#FAFAF8", colorScheme: "light" }}>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
-      <body className="bg-background text-foreground antialiased">
+      <body className={`${inter.className} bg-background text-primary antialiased`}>
         {children}
         <ServiceWorkerRegistration />
       </body>

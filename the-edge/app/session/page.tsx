@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Session page — manages the full 5-phase daily loop.
- * Gate → Learn → Simulate → Debrief → Deploy
+ * Session page — manages the full 6-phase daily loop.
+ * Check-in → Learn → Retrieval → Simulate → Debrief → Deploy
  *
+ * Light theme: white cards, indigo/violet gradients, Inter font.
  * Mobile-first: full-height flex, fixed bottom input, quick command pills,
  * bottom-sheet coach, keyboard handling, connectivity retry, localStorage persistence.
  */
@@ -25,12 +26,12 @@ import {
 const SESSION_STORAGE_KEY = "edge-session-state";
 const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
-const PHASES: { key: SessionPhase; label: string; abbr: string }[] = [
-  { key: "gate", label: "GATE", abbr: "G" },
-  { key: "lesson", label: "LEARN", abbr: "L" },
-  { key: "roleplay", label: "SIMULATE", abbr: "S" },
-  { key: "debrief", label: "DEBRIEF", abbr: "De" },
-  { key: "mission", label: "DEPLOY", abbr: "Go" },
+const PHASES: { key: SessionPhase; label: string }[] = [
+  { key: "checkin", label: "Check-in" },
+  { key: "lesson", label: "Learn" },
+  { key: "roleplay", label: "Simulate" },
+  { key: "debrief", label: "Debrief" },
+  { key: "mission", label: "Deploy" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -87,44 +88,65 @@ function useOnlineStatus() {
 }
 
 // ---------------------------------------------------------------------------
-// Phase indicator — sticky, abbreviated on mobile
+// Phase indicator — dots + gradient accent line
 // ---------------------------------------------------------------------------
 
 function PhaseIndicator({
   current,
   completed,
-  skipGate,
+  skipCheckin,
 }: {
   current: SessionPhase;
   completed: Set<SessionPhase>;
-  skipGate: boolean;
+  skipCheckin: boolean;
 }) {
-  const phases = skipGate ? PHASES.filter((p) => p.key !== "gate") : PHASES;
+  const phases = skipCheckin ? PHASES.filter((p) => p.key !== "checkin") : PHASES;
+  const currentIdx = phases.findIndex(
+    (p) => p.key === current || (current === "retrieval" && p.key === "lesson")
+  );
+
   return (
-    <div className="sticky top-0 z-50 flex h-10 items-center justify-center gap-1 bg-background font-mono text-[10px] tracking-wider sm:gap-2 sm:text-xs">
-      {phases.map((p, i) => {
-        const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
-        const isPulsing = current === "retrieval" && p.key === "lesson";
-        const isDone = completed.has(p.key);
-        return (
-          <span key={p.key} className="flex items-center gap-1 sm:gap-2">
-            {i > 0 && <span className="text-border">&rarr;</span>}
-            <span
-              className={
-                isActive
-                  ? `text-accent font-bold${isPulsing ? " animate-pulse" : ""}`
-                  : isDone
-                    ? "text-success"
-                    : "text-secondary/40"
-              }
-            >
-              {isDone ? "\u2713 " : ""}
-              <span className="sm:hidden">{p.abbr}</span>
-              <span className="hidden sm:inline">{p.label}</span>
-            </span>
-          </span>
-        );
-      })}
+    <div className="sticky top-0 z-50 bg-background pt-3 pb-2">
+      {/* Dots row */}
+      <div className="flex items-center justify-center gap-3 mb-2">
+        {phases.map((p, i) => {
+          const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
+          const isDone = completed.has(p.key);
+          const isPulsing = current === "retrieval" && p.key === "lesson";
+
+          return (
+            <div key={p.key} className="flex flex-col items-center gap-1">
+              <div
+                className={`h-2.5 w-2.5 rounded-full transition-all ${
+                  isDone
+                    ? "bg-success"
+                    : isActive
+                      ? `bg-accent ${isPulsing ? "pulse-dot-indicator" : ""}`
+                      : "bg-border"
+                }`}
+              />
+              <span
+                className={`text-[9px] font-medium tracking-wider uppercase ${
+                  isActive ? "text-accent" : isDone ? "text-success" : "text-tertiary"
+                }`}
+              >
+                {p.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Gradient accent line showing progress */}
+      <div className="h-[3px] w-full bg-border/50 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500 ease-out"
+          style={{
+            width: `${((currentIdx + 1) / phases.length) * 100}%`,
+            background: "linear-gradient(90deg, var(--accent), var(--accent-violet))",
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -135,10 +157,10 @@ function PhaseIndicator({
 
 function LoadingDots() {
   return (
-    <div className="flex items-center gap-1 py-4">
-      <span className="loading-dot h-2 w-2 rounded-full bg-secondary" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-secondary" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-secondary" />
+    <div className="flex items-center justify-center gap-1.5 py-4">
+      <span className="loading-dot h-2 w-2 rounded-full bg-accent/60" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-accent/60" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-accent/60" />
     </div>
   );
 }
@@ -155,13 +177,13 @@ function renderMarkdown(text: string): React.ReactNode[] {
   for (const line of lines) {
     if (line.startsWith("## ")) {
       elements.push(
-        <h2 key={key++} className="mb-2 mt-6 text-lg font-bold text-foreground first:mt-0">
+        <h2 key={key++} className="mb-2 mt-6 text-lg font-semibold text-primary first:mt-0">
           {line.slice(3)}
         </h2>
       );
     } else if (line.startsWith("### ")) {
       elements.push(
-        <h3 key={key++} className="mb-2 mt-4 text-base font-semibold text-foreground">
+        <h3 key={key++} className="mb-2 mt-4 text-base font-medium text-primary">
           {line.slice(4)}
         </h3>
       );
@@ -170,10 +192,10 @@ function renderMarkdown(text: string): React.ReactNode[] {
     } else {
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
       elements.push(
-        <p key={key++} className="text-sm leading-relaxed text-foreground/90">
+        <p key={key++} className="text-sm leading-relaxed text-secondary">
           {parts.map((part, i) =>
             part.startsWith("**") && part.endsWith("**") ? (
-              <strong key={i} className="font-semibold text-foreground">
+              <strong key={i} className="font-semibold text-primary">
                 {part.slice(2, -2)}
               </strong>
             ) : (
@@ -193,8 +215,8 @@ function renderMarkdown(text: string): React.ReactNode[] {
 
 function scoreColorClass(score: number): string {
   if (score >= 4) return "text-success";
-  if (score === 3) return "text-amber";
-  return "text-accent";
+  if (score === 3) return "text-warning";
+  return "text-danger";
 }
 
 // ---------------------------------------------------------------------------
@@ -206,18 +228,18 @@ export default function SessionPage() {
   const online = useOnlineStatus();
 
   // Session state
-  const [currentPhase, setCurrentPhase] = useState<SessionPhase>("gate");
+  const [currentPhase, setCurrentPhase] = useState<SessionPhase>("checkin");
   const [completedPhases, setCompletedPhases] = useState<Set<SessionPhase>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [skipGate, setSkipGate] = useState(false);
+  const [skipCheckin, setSkipCheckin] = useState(false);
   const submittingRef = useRef(false);
   const [restored, setRestored] = useState(false);
 
   // Data accumulated through the session
   const [dayNumber, setDayNumber] = useState(1);
   const [lastMission, setLastMission] = useState<string | null>(null);
-  const [gateOutcome, setGateOutcome] = useState<string | null>(null);
+  const [checkinOutcome, setCheckinOutcome] = useState<string | null>(null);
   const [concept, setConcept] = useState<Concept | null>(null);
   const [character, setCharacter] = useState<CharacterArchetype | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
@@ -235,7 +257,10 @@ export default function SessionPage() {
   const [keyMoment, setKeyMoment] = useState("");
   const [mission, setMission] = useState<string | null>(null);
   const [rationale, setRationale] = useState<string | null>(null);
-  const [gateResponse, setGateResponse] = useState<string | null>(null);
+  const [checkinResponse, setCheckinResponse] = useState<string | null>(null);
+
+  // Checkin pill state — expand input for "Nailed it" / "Tried it"
+  const [checkinPillSelected, setCheckinPillSelected] = useState<"completed" | "tried" | null>(null);
 
   // Retrieval bridge state
   const [retrievalQuestion, setRetrievalQuestion] = useState<string | null>(null);
@@ -247,6 +272,9 @@ export default function SessionPage() {
 
   // New message pill
   const [showNewMessagePill, setShowNewMessagePill] = useState(false);
+
+  // Phase transition animation
+  const [phaseAnimation, setPhaseAnimation] = useState<"enter" | "active" | "exit">("active");
 
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -281,7 +309,6 @@ export default function SessionPage() {
   }, [roleplayTranscript, streamingText, scrollToBottom, isNearBottom]);
 
   // Dismiss new message pill when user scrolls to bottom
-  // Re-run when entering roleplay (chatContainerRef attaches only in roleplay)
   useEffect(() => {
     const el = chatContainerRef.current;
     if (!el) return;
@@ -342,8 +369,8 @@ export default function SessionPage() {
         turnCount,
         completedPhases: Array.from(completedPhases),
         commandsUsed,
-        gateOutcome,
-        skipGate,
+        checkinOutcome,
+        skipCheckin,
         dayNumber,
         scenarioContext,
         debriefContent,
@@ -364,7 +391,7 @@ export default function SessionPage() {
 
   // Save after phase transitions and content loads
   useEffect(() => {
-    if (!isLoading && currentPhase !== "gate") {
+    if (!isLoading && currentPhase !== "checkin") {
       saveSession();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -389,8 +416,8 @@ export default function SessionPage() {
           setTurnCount(saved.turnCount || 0);
           setCompletedPhases(new Set(saved.completedPhases || []));
           setCommandsUsed(saved.commandsUsed || []);
-          setGateOutcome(saved.gateOutcome);
-          setSkipGate(saved.skipGate ?? false);
+          setCheckinOutcome(saved.checkinOutcome);
+          setSkipCheckin(saved.skipCheckin ?? false);
           setDayNumber(saved.dayNumber || 1);
           setScenarioContext(saved.scenarioContext || null);
           if (saved.debriefContent) setDebriefContent(saved.debriefContent);
@@ -414,7 +441,7 @@ export default function SessionPage() {
       .then((data) => {
         setDayNumber(data.dayNumber);
         if (!data.lastEntry) {
-          setSkipGate(true);
+          setSkipCheckin(true);
           setCurrentPhase("lesson");
           fetchLesson();
         } else {
@@ -423,7 +450,7 @@ export default function SessionPage() {
         }
       })
       .catch(() => {
-        setSkipGate(true);
+        setSkipCheckin(true);
         setCurrentPhase("lesson");
         fetchLesson();
       });
@@ -431,43 +458,48 @@ export default function SessionPage() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Phase transition helper
+  // Phase transition helper with animation
   // ---------------------------------------------------------------------------
 
   function advancePhase(from: SessionPhase, to: SessionPhase) {
-    setCompletedPhases((prev) => new Set([...prev, from]));
-    setCurrentPhase(to);
-    setError(null);
-    haptic();
+    setPhaseAnimation("exit");
+    setTimeout(() => {
+      setCompletedPhases((prev) => new Set([...prev, from]));
+      setCurrentPhase(to);
+      setError(null);
+      setPhaseAnimation("enter");
+      haptic();
+      setTimeout(() => setPhaseAnimation("active"), 50);
+    }, 200);
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 0: Gate
+  // Phase 0: Check-in
   // ---------------------------------------------------------------------------
 
-  async function submitGate(userResponse: string) {
+  async function submitCheckin(outcomeType: "completed" | "tried" | "skipped", userOutcome?: string) {
     if (!lastMission || submittingRef.current) return;
     submittingRef.current = true;
     setIsLoading(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/gate", {
+      const res = await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ previousMission: lastMission, userResponse }),
+        body: JSON.stringify({ previousMission: lastMission, outcomeType, userOutcome }),
       });
 
-      if (!res.ok) throw new Error("Gate API failed");
+      if (!res.ok) throw new Error("Check-in API failed");
       const data = await res.json();
 
-      setGateResponse(data.response);
-      setGateOutcome(data.outcome);
+      setCheckinResponse(data.response);
+      setCheckinOutcome(data.outcome);
       setIsLoading(false);
       submittingRef.current = false;
 
       setTimeout(() => {
-        advancePhase("gate", "lesson");
+        advancePhase("checkin", "lesson");
         fetchLesson();
       }, 2000);
     } catch {
@@ -622,7 +654,6 @@ export default function SessionPage() {
       if (!res.ok) throw new Error("Roleplay API failed");
       await streamRoleplayResponse(res, updatedTranscript);
     } catch {
-      // Revert optimistic update, offer retry
       setRoleplayTranscript(roleplayTranscript);
       setTurnCount((prev) => prev - 1);
       setPendingRetry(userMessage);
@@ -794,7 +825,7 @@ export default function SessionPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, gateOutcome }),
+          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }),
         },
         5, 3000,
         (attempt) => { if (attempt > 1) setError(`Reconnecting... (attempt ${attempt}/5)`); }
@@ -829,7 +860,7 @@ export default function SessionPage() {
 
   function retry() {
     setError(null);
-    if (currentPhase === "gate") setIsLoading(false);
+    if (currentPhase === "checkin") setIsLoading(false);
     else if (currentPhase === "lesson") fetchLesson();
     else if (currentPhase === "retrieval") startRetrieval();
     else if (currentPhase === "roleplay") startRoleplayFresh();
@@ -841,43 +872,48 @@ export default function SessionPage() {
   // Render
   // ---------------------------------------------------------------------------
 
-  const SCORE_DIMENSIONS: { key: keyof SessionScores; label: string; abbr: string }[] = [
-    { key: "technique_application", label: "Technique Application", abbr: "TA" },
-    { key: "tactical_awareness", label: "Tactical Awareness", abbr: "TW" },
-    { key: "frame_control", label: "Frame Control", abbr: "FC" },
-    { key: "emotional_regulation", label: "Emotional Regulation", abbr: "ER" },
-    { key: "strategic_outcome", label: "Strategic Outcome", abbr: "SO" },
+  const SCORE_DIMENSIONS: { key: keyof SessionScores; label: string }[] = [
+    { key: "technique_application", label: "Technique Application" },
+    { key: "tactical_awareness", label: "Tactical Awareness" },
+    { key: "frame_control", label: "Frame Control" },
+    { key: "emotional_regulation", label: "Emotional Regulation" },
+    { key: "strategic_outcome", label: "Strategic Outcome" },
   ];
 
   const isRoleplay = currentPhase === "roleplay";
 
+  const phaseClass =
+    phaseAnimation === "enter" ? "phase-enter" :
+    phaseAnimation === "active" ? "phase-active" :
+    "phase-exit";
+
   return (
-    <div className="flex flex-col h-dvh overflow-hidden" style={{ overscrollBehaviorY: "contain" }}>
+    <div className="session-page flex flex-col h-dvh overflow-hidden">
       {/* Sticky phase indicator */}
-      <PhaseIndicator current={currentPhase} completed={completedPhases} skipGate={skipGate} />
+      <PhaseIndicator current={currentPhase} completed={completedPhases} skipCheckin={skipCheckin} />
 
       {/* Offline banner */}
       {!online && (
-        <div className="flex h-6 items-center justify-center bg-amber/20 text-xs font-mono text-amber">
-          Offline
+        <div className="flex h-7 items-center justify-center bg-warning/10 text-xs font-medium text-warning">
+          Offline — reconnecting...
         </div>
       )}
 
       {/* Restored session notice */}
       {restored && (
-        <div className="flex h-6 items-center justify-center bg-accent-blue/30 text-xs font-mono text-secondary">
+        <div className="flex h-7 items-center justify-center bg-accent-light text-xs font-medium text-accent">
           Session restored
         </div>
       )}
 
       {/* Scrollable content area */}
-      <div ref={isRoleplay ? chatContainerRef : undefined} className="flex-1 overflow-y-auto scroll-touch px-4 sm:px-6">
-        <div className="mx-auto max-w-lg py-4 sm:py-8">
+      <div ref={isRoleplay ? chatContainerRef : undefined} className="chat-container flex-1 overflow-y-auto px-4 sm:px-6">
+        <div className={`mx-auto max-w-lg py-4 sm:py-8 ${phaseClass}`}>
 
           {/* Error display */}
           {error && (
-            <div className="mb-6 rounded-lg border border-accent/30 bg-accent/10 p-4 text-center">
-              <p className="text-sm text-accent">{error}</p>
+            <div className="card mb-6 border border-danger/20 text-center">
+              <p className="text-sm text-danger">{error}</p>
               <button
                 onClick={retry}
                 className="mt-2 min-h-[44px] text-xs font-semibold text-accent underline active:scale-95"
@@ -888,62 +924,107 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 0: GATE                                                   */}
+          {/* PHASE 0: CHECK-IN                                              */}
           {/* ============================================================== */}
-          {currentPhase === "gate" && (
+          {currentPhase === "checkin" && (
             <>
-              {lastMission && !gateResponse && (
-                <>
-                  <div className="mb-6 rounded-lg border-l-4 border-accent bg-surface p-4">
-                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-secondary">
+              {lastMission && !checkinResponse && !isLoading && (
+                <div className="space-y-6">
+                  {/* Mission card */}
+                  <div className="card">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
                       Yesterday&apos;s Mission
                     </p>
-                    <p className="text-sm leading-relaxed text-foreground">
+                    <p className="text-sm leading-relaxed text-primary">
                       {lastMission}
                     </p>
                   </div>
 
+                  {/* Outcome pills */}
                   <div className="space-y-3">
-                    <input
-                      type="text"
-                      placeholder="What happened when you executed this?"
-                      className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/60 outline-none focus:border-accent/50"
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && inputValue.trim()) {
-                          submitGate(inputValue.trim());
-                        }
-                      }}
-                      disabled={isLoading}
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => { if (inputValue.trim()) submitGate(inputValue.trim()); }}
-                      disabled={isLoading || !inputValue.trim()}
-                      className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity active:scale-95 disabled:opacity-40"
-                    >
-                      {isLoading ? "Submitting..." : "Submit"}
-                    </button>
+                    <p className="text-center text-sm font-medium text-secondary">
+                      How did it go?
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setCheckinPillSelected("completed")}
+                        className={`flex-1 rounded-xl py-3.5 text-sm font-semibold transition-all active:scale-95 ${
+                          checkinPillSelected === "completed"
+                            ? "bg-accent text-white shadow-md"
+                            : "border border-border bg-surface text-primary hover:border-accent/30"
+                        }`}
+                      >
+                        Nailed it
+                      </button>
+                      <button
+                        onClick={() => setCheckinPillSelected("tried")}
+                        className={`flex-1 rounded-xl py-3.5 text-sm font-semibold transition-all active:scale-95 ${
+                          checkinPillSelected === "tried"
+                            ? "bg-accent text-white shadow-md"
+                            : "border border-border bg-surface text-primary hover:border-accent/30"
+                        }`}
+                      >
+                        Tried it
+                      </button>
+                      <button
+                        onClick={() => submitCheckin("skipped")}
+                        className="flex-1 rounded-xl border border-border bg-surface py-3.5 text-sm font-medium text-tertiary transition-all active:scale-95 hover:border-accent/30"
+                      >
+                        Skip
+                      </button>
+                    </div>
                   </div>
-                </>
-              )}
 
-              {gateResponse && (
-                <div className="text-center">
-                  <p className="text-sm leading-relaxed text-secondary italic">{gateResponse}</p>
-                  <div className="mx-auto mt-4 h-1 w-32 overflow-hidden rounded-full bg-border">
-                    <div className="h-full animate-[gate-progress_2s_ease-in-out_forwards] rounded-full bg-accent" />
-                  </div>
+                  {/* Expandable input for "Nailed it" / "Tried it" */}
+                  {checkinPillSelected && (
+                    <div className="animate-sparkle space-y-3">
+                      <input
+                        type="text"
+                        placeholder={
+                          checkinPillSelected === "completed"
+                            ? "What was the exact reaction?"
+                            : "What happened when you tried?"
+                        }
+                        className="w-full rounded-xl border border-border bg-surface px-4 py-3.5 text-sm text-primary placeholder-tertiary outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/10"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && inputValue.trim()) {
+                            submitCheckin(checkinPillSelected, inputValue.trim());
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          if (inputValue.trim()) {
+                            submitCheckin(checkinPillSelected, inputValue.trim());
+                          }
+                        }}
+                        disabled={!inputValue.trim()}
+                        className="btn-gradient w-full py-3.5 text-sm disabled:opacity-40"
+                      >
+                        Submit
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {isLoading && !gateResponse && <LoadingDots />}
+              {/* Check-in response — fade out to lesson */}
+              {checkinResponse && (
+                <div className="card text-center">
+                  <p className="text-sm leading-relaxed text-secondary italic">{checkinResponse}</p>
+                  <div className="gradient-line mx-auto mt-4 w-32 overflow-hidden rounded-full opacity-0" style={{ animation: "gate-progress 2s ease-in-out forwards" }} />
+                </div>
+              )}
+
+              {isLoading && !checkinResponse && <LoadingDots />}
             </>
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 1: LEARN                                                  */}
+          {/* PHASE 1: LEARN                                                 */}
           {/* ============================================================== */}
           {currentPhase === "lesson" && (
             <>
@@ -958,21 +1039,23 @@ export default function SessionPage() {
                 <>
                   {concept && (
                     <div className="mb-6">
-                      <span className="inline-block rounded-full border border-border bg-surface px-3 py-1 font-mono text-xs text-secondary">
+                      <span className="inline-block rounded-full bg-accent-light px-3 py-1 text-xs font-medium text-accent">
                         {concept.domain}
                       </span>
-                      <h2 className="mt-2 text-xl font-bold text-foreground">
+                      <h2 className="mt-3 text-xl font-semibold text-primary">
                         {concept.name}
-                        <span className="ml-2 text-sm font-normal text-secondary">({concept.source})</span>
+                        <span className="ml-2 text-sm font-normal text-tertiary">({concept.source})</span>
                       </h2>
                     </div>
                   )}
 
-                  <div className="select-text mb-8 space-y-0">{renderMarkdown(lessonContent)}</div>
+                  <div className="card select-text mb-8">
+                    <div className="space-y-0">{renderMarkdown(lessonContent)}</div>
+                  </div>
 
                   <button
                     onClick={startRetrieval}
-                    className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-95"
+                    className="btn-gradient w-full py-4 text-base"
                   >
                     Ready to Practice &rarr;
                   </button>
@@ -982,7 +1065,7 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 1.5: RETRIEVAL BRIDGE                                     */}
+          {/* PHASE 1.5: RETRIEVAL BRIDGE                                    */}
           {/* ============================================================== */}
           {currentPhase === "retrieval" && (
             <>
@@ -995,17 +1078,17 @@ export default function SessionPage() {
 
               {retrievalQuestion && (
                 <div className="space-y-6">
-                  <p className="text-center text-lg font-medium leading-relaxed text-foreground">
-                    {retrievalQuestion}
-                  </p>
+                  <div className="card">
+                    <p className="text-center text-lg font-medium leading-relaxed text-primary">
+                      {retrievalQuestion}
+                    </p>
+                  </div>
 
                   {retrievalResponse && (
-                    <div className="text-center">
+                    <div className="card text-center">
                       <p className="text-sm leading-relaxed text-secondary italic">{retrievalResponse}</p>
                       {retrievalReady && (
-                        <div className="mx-auto mt-4 h-1 w-32 overflow-hidden rounded-full bg-border">
-                          <div className="h-full animate-[gate-progress_1.5s_ease-in-out_forwards] rounded-full bg-accent" />
-                        </div>
+                        <div className="gradient-line mx-auto mt-4 w-32 overflow-hidden rounded-full opacity-0" style={{ animation: "gate-progress 1.5s ease-in-out forwards" }} />
                       )}
                     </div>
                   )}
@@ -1015,7 +1098,7 @@ export default function SessionPage() {
                       <input
                         type="text"
                         placeholder="Your answer..."
-                        className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/60 outline-none focus:border-accent/50"
+                        className="w-full rounded-xl border border-border bg-surface px-4 py-3.5 text-sm text-primary placeholder-tertiary outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/10"
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={(e) => {
@@ -1035,7 +1118,7 @@ export default function SessionPage() {
                           }
                         }}
                         disabled={isLoading || !inputValue.trim()}
-                        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition-opacity active:scale-95 disabled:opacity-40"
+                        className="btn-gradient w-full py-3.5 text-sm disabled:opacity-40"
                       >
                         {isLoading ? "Evaluating..." : "Submit"}
                       </button>
@@ -1045,7 +1128,7 @@ export default function SessionPage() {
                   {retrievalResponse && !retrievalReady && (
                     <button
                       onClick={startRoleplay}
-                      className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-95"
+                      className="btn-gradient w-full py-4 text-base"
                     >
                       Continue to Practice &rarr;
                     </button>
@@ -1056,14 +1139,16 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 2: SIMULATE                                               */}
+          {/* PHASE 2: SIMULATE                                              */}
           {/* ============================================================== */}
           {currentPhase === "roleplay" && (
             <>
               {/* Turn counter */}
-              <div className="mb-4 flex items-center justify-between text-xs font-mono text-secondary">
-                <span>{character?.name ?? "Character"}</span>
-                <span>Turn {Math.max(1, Math.ceil(turnCount / 2))} of ~8</span>
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
+                <span className="rounded-full bg-accent-light px-2.5 py-0.5 text-[10px] font-medium text-accent">
+                  Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8
+                </span>
               </div>
 
               {/* Reset notice */}
@@ -1073,19 +1158,19 @@ export default function SessionPage() {
                 </p>
               )}
 
-              {/* Chat messages — flow directly in scrollable area */}
+              {/* Chat messages */}
               <div className="space-y-3 pb-4">
                 {roleplayTranscript.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                     <div
-                      className={`max-w-[85%] px-4 py-3 text-base leading-relaxed ${
+                      className={`max-w-[85%] px-4 py-3 text-[15px] leading-relaxed ${
                         msg.role === "user"
-                          ? "rounded-2xl rounded-tr-sm bg-accent/10 border border-accent/20 text-foreground"
-                          : "rounded-2xl rounded-tl-sm bg-surface text-foreground/90"
+                          ? "rounded-2xl rounded-tr-sm bg-accent-light text-primary"
+                          : "rounded-2xl rounded-tl-sm bg-surface text-primary shadow-sm"
                       }`}
                     >
                       {i === 0 && msg.role === "assistant" && (
-                        <p className="mb-1 text-xs uppercase tracking-wider text-secondary">
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-accent">
                           {character?.name}
                         </p>
                       )}
@@ -1097,9 +1182,9 @@ export default function SessionPage() {
                 {/* Streaming text */}
                 {isStreaming && streamingText && (
                   <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-surface/60 px-4 py-3 text-base leading-relaxed text-foreground/90">
+                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-surface px-4 py-3 text-[15px] leading-relaxed text-primary shadow-sm">
                       {roleplayTranscript.length === 0 && (
-                        <p className="mb-1 text-xs uppercase tracking-wider text-secondary">
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-accent">
                           {character?.name}
                         </p>
                       )}
@@ -1125,7 +1210,7 @@ export default function SessionPage() {
                   <div className="flex justify-center">
                     <button
                       onClick={() => { sendRoleplayMessage(pendingRetry); }}
-                      className="min-h-[44px] rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-xs text-accent active:scale-95"
+                      className="min-h-[44px] rounded-full border border-warning/30 bg-warning/10 px-4 py-2 text-xs font-medium text-warning active:scale-95"
                     >
                       Connection lost. Tap to retry &rarr;
                     </button>
@@ -1145,7 +1230,7 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 3: DEBRIEF                                                */}
+          {/* PHASE 3: DEBRIEF                                               */}
           {/* ============================================================== */}
           {currentPhase === "debrief" && (
             <>
@@ -1158,10 +1243,12 @@ export default function SessionPage() {
 
               {debriefContent && !isLoading && (
                 <>
-                  <div className="select-text mb-8 space-y-0">{renderMarkdown(debriefContent)}</div>
+                  <div className="card select-text mb-6">
+                    <div className="space-y-0">{renderMarkdown(debriefContent)}</div>
+                  </div>
 
                   {scores && (
-                    <div className="mb-8 rounded-lg border border-border bg-surface p-5">
+                    <div className="card mb-8">
                       <h3 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
                         Session Scores
                       </h3>
@@ -1170,17 +1257,22 @@ export default function SessionPage() {
                           const score = scores[key];
                           return (
                             <div key={key} className="flex items-center justify-between">
-                              <span className="text-sm text-foreground">{label}</span>
+                              <span className="text-sm text-primary">{label}</span>
                               <div className="flex items-center gap-3">
-                                <span className={`font-mono text-2xl font-bold ${scoreColorClass(score)}`}>
+                                <span className={`font-mono text-lg font-bold ${scoreColorClass(score)}`}>
                                   {score}
                                 </span>
-                                <div className="h-2 w-20 overflow-hidden rounded-full bg-border">
+                                <div className="h-2 w-20 overflow-hidden rounded-full bg-border/50">
                                   <div
-                                    className={`h-full rounded-full transition-all ${
-                                      score >= 4 ? "bg-success" : score === 3 ? "bg-amber" : "bg-accent"
-                                    }`}
-                                    style={{ width: `${(score / 5) * 100}%` }}
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${(score / 5) * 100}%`,
+                                      background: score >= 4
+                                        ? "var(--success)"
+                                        : score === 3
+                                          ? "var(--warning)"
+                                          : "var(--danger)",
+                                    }}
                                   />
                                 </div>
                               </div>
@@ -1190,14 +1282,13 @@ export default function SessionPage() {
                       </div>
                     </div>
                   )}
-
                 </>
               )}
             </>
           )}
 
           {/* ============================================================== */}
-          {/* PHASE 4: DEPLOY                                                 */}
+          {/* PHASE 4: DEPLOY                                                */}
           {/* ============================================================== */}
           {currentPhase === "mission" && (
             <>
@@ -1210,36 +1301,38 @@ export default function SessionPage() {
 
               {mission && !isLoading && (
                 <>
-                  <div className="mb-6 rounded-lg border-t-4 border-accent bg-surface p-6">
+                  {/* Mission card with gradient left border */}
+                  <div className="relative mb-6 overflow-hidden rounded-2xl bg-surface p-6" style={{ boxShadow: "var(--shadow-elevated)" }}>
+                    <div className="absolute inset-y-0 left-0 w-1" style={{ background: "linear-gradient(180deg, var(--accent), var(--accent-violet))" }} />
                     <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">
                       Your Mission
                     </p>
-                    <p className="text-base leading-relaxed text-foreground">{mission}</p>
+                    <p className="text-base leading-relaxed text-primary">{mission}</p>
                   </div>
 
                   {rationale && (
-                    <p className="mb-8 text-sm leading-relaxed text-secondary italic">{rationale}</p>
+                    <p className="mb-8 text-sm leading-relaxed text-tertiary italic">{rationale}</p>
                   )}
 
                   {!completedPhases.has("mission") ? (
                     <button
                       onClick={completeSession}
-                      className="w-full rounded-lg border border-border bg-surface px-6 py-4 text-base font-semibold text-foreground transition-all hover:bg-surface/80 active:scale-95"
+                      className="w-full rounded-xl bg-success py-4 text-base font-semibold text-white transition-all active:scale-95"
                     >
                       Session Complete
                     </button>
                   ) : (
-                    <div className="space-y-4 text-center">
-                      <p className="text-sm font-semibold text-success">Day {dayNumber} complete.</p>
+                    <div className="animate-sparkle space-y-4 text-center">
+                      <p className="text-lg font-semibold text-success">Day {dayNumber} complete.</p>
 
                       {scores && (
-                        <div className="rounded-lg border border-border bg-surface p-4 text-left">
+                        <div className="card text-left">
                           <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
                             Session Summary
                           </p>
                           {concept && (
                             <p className="mb-2 text-xs text-secondary">
-                              Concept: <span className="text-foreground">{concept.name}</span>
+                              Concept: <span className="font-medium text-primary">{concept.name}</span>
                             </p>
                           )}
                           <div className="mb-2 flex items-center justify-between text-xs">
@@ -1268,7 +1361,7 @@ export default function SessionPage() {
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-secondary">Focus area</span>
-                                  <span className="text-accent">{weakest.label} ({weakest.score}/5)</span>
+                                  <span className="text-danger">{weakest.label} ({weakest.score}/5)</span>
                                 </div>
                               </div>
                             );
@@ -1276,7 +1369,7 @@ export default function SessionPage() {
                         </div>
                       )}
 
-                      <p className="text-xs text-secondary">See you tomorrow.</p>
+                      <p className="text-sm text-tertiary">See you tomorrow.</p>
                     </div>
                   )}
                 </>
@@ -1295,7 +1388,7 @@ export default function SessionPage() {
           <div className="mx-auto max-w-lg">
             <button
               onClick={fetchMission}
-              className="w-full rounded-lg bg-accent px-6 py-4 text-base font-semibold text-white transition-all hover:brightness-110 active:scale-95"
+              className="btn-gradient w-full py-4 text-base"
             >
               Continue &rarr;
             </button>
@@ -1307,7 +1400,7 @@ export default function SessionPage() {
       {/* Fixed bottom input bar (roleplay only)                             */}
       {/* ================================================================== */}
       {isRoleplay && !completedPhases.has("roleplay") && (
-        <div className="border-t border-border bg-background px-4 pb-safe pt-2">
+        <div className="bottom-bar border-t border-border bg-background px-4 pt-2">
           {/* Quick command pills (mobile only) */}
           <div className="mb-2 flex gap-2 sm:hidden">
             {[
@@ -1319,7 +1412,7 @@ export default function SessionPage() {
               <button
                 key={label}
                 onClick={handler}
-                className="min-h-[44px] min-w-[44px] rounded-full border border-border bg-surface px-3 font-mono text-xs text-secondary active:scale-95"
+                className="min-h-[44px] min-w-[44px] rounded-full border border-border bg-surface px-3 font-mono text-xs text-secondary active:scale-95 hover:border-accent/30"
               >
                 {label}
               </button>
@@ -1332,7 +1425,7 @@ export default function SessionPage() {
               ref={inputRef}
               type="text"
               placeholder="Type your response..."
-              className="flex-1 rounded-full border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder-secondary/40 outline-none focus:border-accent/50"
+              className="flex-1 rounded-full border border-border bg-surface px-4 py-3 text-sm text-primary placeholder-tertiary outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/10"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => {
@@ -1349,7 +1442,8 @@ export default function SessionPage() {
                 }
               }}
               disabled={isStreaming || isLoading || !inputValue.trim()}
-              className="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-accent text-white transition-opacity active:scale-95 disabled:opacity-40"
+              className="flex h-[44px] w-[44px] items-center justify-center rounded-full text-white transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-violet))" }}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                 <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.289Z" />
@@ -1366,7 +1460,7 @@ export default function SessionPage() {
             chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
             setShowNewMessagePill(false);
           }}
-          className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full border border-border bg-surface px-4 py-2 text-xs font-mono text-accent shadow-lg active:scale-95"
+          className="fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full bg-accent px-4 py-2 text-xs font-medium text-white shadow-lg active:scale-95"
         >
           &darr; New message
         </button>
@@ -1379,22 +1473,22 @@ export default function SessionPage() {
         <>
           {/* Backdrop (mobile) */}
           <div
-            className="fixed inset-0 z-40 bg-black/50 sm:hidden"
+            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm sm:hidden"
             onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
           />
 
           {/* Panel */}
-          <div className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-2xl border-t border-border bg-accent-blue p-6 shadow-2xl sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-t-0">
+          <div className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-2xl border-t border-border bg-surface p-6 shadow-2xl sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-t-0">
             {/* Drag handle (mobile) */}
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-foreground/20 sm:hidden" />
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border sm:hidden" />
 
             <div className="mb-4 flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground/70">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
                 Mentor
               </span>
               <button
                 onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-sm text-secondary hover:text-foreground active:scale-95"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lg text-tertiary hover:text-primary active:scale-95"
               >
                 &times;
               </button>
@@ -1402,7 +1496,7 @@ export default function SessionPage() {
             {coachLoading ? (
               <LoadingDots />
             ) : (
-              <div className="text-sm leading-relaxed text-foreground/90">
+              <div className="text-sm leading-relaxed text-secondary">
                 {renderMarkdown(coachAdvice!)}
               </div>
             )}

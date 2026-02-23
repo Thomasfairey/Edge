@@ -3,13 +3,13 @@
  * POST { concept: Concept, character: CharacterArchetype,
  *        scores: SessionScores, behavioralWeaknessSummary: string,
  *        keyMoment: string, commandsUsed: string[],
- *        gateOutcome: string | null }
+ *        checkinOutcome: string | null }
  * Returns { mission: string, rationale: string, ledgerEntry: LedgerEntry }
  *
  * This is the FINAL phase. It assembles the complete LedgerEntry
  * from all data accumulated through the session and writes it to disk.
  * The mission_outcome field is left empty — it gets populated by
- * Phase 0 (The Gate) of the NEXT session.
+ * Phase 0 (Check-in) of the NEXT session.
  * Reference: PRD Section 3.6
  */
 
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     behavioralWeaknessSummary,
     keyMoment,
     commandsUsed,
-    gateOutcome,
+    checkinOutcome,
   } = (await req.json()) as {
     concept: Concept;
     character: CharacterArchetype;
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     behavioralWeaknessSummary: string;
     keyMoment: string;
     commandsUsed: string[];
-    gateOutcome: string | null;
+    checkinOutcome: string | null;
   };
 
   // Generate the mission

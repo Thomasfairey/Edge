@@ -76,7 +76,7 @@ export interface CharacterArchetype {
 // Session state (PRD Section 3.1)
 // ---------------------------------------------------------------------------
 
-export type SessionPhase = "gate" | "lesson" | "retrieval" | "roleplay" | "debrief" | "mission";
+export type SessionPhase = "checkin" | "lesson" | "retrieval" | "roleplay" | "debrief" | "mission";
 
 export interface Message {
   role: "user" | "assistant";
@@ -92,7 +92,7 @@ export interface SessionState {
   roleplayTranscript: Message[];
   coachMessages: string[];
   commandsUsed: string[];
-  gateOutcome: string | null;
+  checkinOutcome: string | null;
   lessonContent: string | null;
   debriefContent: string | null;
   scores: SessionScores | null;
