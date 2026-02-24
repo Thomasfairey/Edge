@@ -137,7 +137,7 @@ body { min-height: 100dvh; min-height: -webkit-fill-available; overscroll-behavi
 .chat-container { -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
 .bottom-bar { padding-bottom: env(safe-area-inset-bottom, 0px); }
 button, [role="button"], .phase-indicator { -webkit-user-select: none; user-select: none; }
-.session-page { overscroll-behavior-y: contain; }
+.session-page { overscroll-behavior-y: contain; position: fixed; inset: 0; }
 
 /* Full viewport height */
 .h-dvh { height: 100dvh; height: -webkit-fill-available; }

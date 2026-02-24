@@ -33,7 +33,7 @@ function scoreCircleColor(score: number): string {
 function scoreTextColor(score: number): string {
   if (score >= 4) return "#1A5C3A";
   if (score === 3) return "#6B4F00";
-  return "#7A2020";
+  return "#611414";
 }
 
 function averageDescriptor(avg: number): string {

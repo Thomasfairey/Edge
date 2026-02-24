@@ -68,7 +68,7 @@ function scoreCircleColor(score: number): string {
 function scoreTextColor(score: number): string {
   if (score >= 4) return "#1A5C3A"; // dark green on green bg
   if (score === 3) return "#6B4F00"; // dark amber on gold bg
-  return "#7A2020"; // dark red on coral bg
+  return "#611414"; // dark red on coral bg
 }
 
 async function fetchWithRetry(
@@ -211,7 +211,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
 // ---------------------------------------------------------------------------
 
 function splitLessonSections(text: string): { title: string; content: string }[] {
-  const sections: { title: string; content: string }[] = [];
+  const raw: { title: string; content: string }[] = [];
   const pattern = /^## (The (?:Principle|Play|Counter))/gm;
   const headings: { title: string; index: number }[] = [];
   let match;
@@ -227,10 +227,35 @@ function splitLessonSections(text: string): { title: string; content: string }[]
   for (let i = 0; i < headings.length; i++) {
     const start = headings[i].index + headings[i].title.length + 3; // skip "## Title\n"
     const end = i + 1 < headings.length ? headings[i + 1].index : text.length;
-    sections.push({
+    raw.push({
       title: headings[i].title,
       content: text.slice(start, end).trim(),
     });
+  }
+
+  // Split any section longer than 600 chars at the nearest paragraph break
+  const MAX_CARD_CHARS = 600;
+  const sections: { title: string; content: string }[] = [];
+  for (const section of raw) {
+    if (section.content.length <= MAX_CARD_CHARS) {
+      sections.push(section);
+    } else {
+      const paragraphs = section.content.split(/\n\n+/);
+      let current = "";
+      let partNum = 1;
+      for (const para of paragraphs) {
+        if (current && (current.length + para.length + 2) > MAX_CARD_CHARS) {
+          sections.push({ title: partNum === 1 ? section.title : `${section.title} (cont.)`, content: current.trim() });
+          current = para;
+          partNum++;
+        } else {
+          current += (current ? "\n\n" : "") + para;
+        }
+      }
+      if (current.trim()) {
+        sections.push({ title: partNum > 1 ? `${section.title} (cont.)` : section.title, content: current.trim() });
+      }
+    }
   }
 
   return sections;
@@ -295,6 +320,8 @@ function LessonCards({
           <button
             key={i}
             onClick={() => setCurrentCard(i)}
+            aria-label={`Go to page ${i + 1} of ${sections.length}`}
+            aria-current={i === currentCard ? "true" : undefined}
             className={`h-2 rounded-full transition-all ${
               i === currentCard ? "w-6 bg-[#5A52E0]" : "w-2 bg-[#B8D4E3]"
             }`}
@@ -690,7 +717,8 @@ export default function SessionPage() {
     try {
       const res = await fetchWithRetry(
         "/api/retrieval-bridge",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concept }) },
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concept }),
+          signal: AbortSignal.timeout(30000) },
         5, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
       );
       const data = await res.json();
@@ -869,7 +897,8 @@ export default function SessionPage() {
       const res = await fetchWithRetry(
         "/api/debrief",
         { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: roleplayTranscript, concept, character, commandsUsed }) },
+          body: JSON.stringify({ transcript: roleplayTranscript, concept, character, commandsUsed }),
+          signal: AbortSignal.timeout(30000) },
         3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
@@ -955,7 +984,8 @@ export default function SessionPage() {
       const res = await fetchWithRetry(
         "/api/mission",
         { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }) },
+          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }),
+          signal: AbortSignal.timeout(30000) },
         3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
@@ -967,9 +997,44 @@ export default function SessionPage() {
       const newCount = missionRetryCount + 1;
       setMissionRetryCount(newCount);
       if (newCount >= 2) {
-        // Use fallback mission
-        setMission("Practice today\u2019s technique in your next conversation. Notice what happens when you use it deliberately.");
-        setRationale("Observation builds pattern recognition.");
+        // Use domain-specific fallback mission
+        const fallbacks: Record<string, { mission: string; rationale: string }[]> = {
+          "Influence & Persuasion": [
+            { mission: "In your next conversation, give something of value before making any request. Note how the dynamic shifts.", rationale: "Reciprocity primes compliance before you ask." },
+            { mission: "Get one person to agree with a small, specific statement today. Watch how it shapes their subsequent behaviour.", rationale: "Micro-commitments cascade into larger concessions." },
+          ],
+          "Power Dynamics": [
+            { mission: "In your next meeting, speak last. Observe how others position themselves when the floor is open.", rationale: "Silence is a power move that forces others to reveal their hand." },
+            { mission: "Identify who holds the real decision-making power in your next group interaction. Note how authority flows.", rationale: "Reading power structures is the first step to navigating them." },
+          ],
+          "Negotiation": [
+            { mission: "Name the other person\u2019s likely concern before they raise it. Watch how it changes the tone.", rationale: "Tactical empathy disarms resistance before it forms." },
+            { mission: "In your next negotiation, anchor first with a specific number or position. Observe how it shapes the range.", rationale: "The first number spoken becomes the gravitational centre." },
+          ],
+          "Behavioural Psychology & Cognitive Bias": [
+            { mission: "Notice one decision today where you or someone else chose the default option. Ask why.", rationale: "Awareness of status quo bias is the first step to overriding it." },
+            { mission: "Frame one request today as an avoidance of loss rather than a pursuit of gain. Note the difference.", rationale: "Loss aversion drives decisions twice as powerfully as equivalent gains." },
+          ],
+          "Nonverbal Intelligence & Behavioural Profiling": [
+            { mission: "In your next conversation, match the other person\u2019s speaking pace for two minutes. Notice the rapport shift.", rationale: "Pace-matching signals unconscious alignment." },
+            { mission: "Observe one person\u2019s baseline behaviour today, then note when they deviate. What triggered the shift?", rationale: "Deviations from baseline reveal stress, deception, or genuine interest." },
+          ],
+          "Rapport & Relationship Engineering": [
+            { mission: "Ask one person an open question about their work today and listen without interrupting for 60 seconds.", rationale: "Sustained attention is the rarest gift in a distracted world." },
+            { mission: "Mirror back one person\u2019s exact words today instead of paraphrasing. Note their reaction.", rationale: "Exact mirroring creates a deeper sense of being understood." },
+          ],
+          "Dark Psychology & Coercive Technique Recognition": [
+            { mission: "Identify one moment today where someone used urgency to pressure a decision. Pause before responding.", rationale: "Recognising manufactured urgency is the first line of defence." },
+            { mission: "Notice one attempt to shift blame or responsibility in a conversation today. Name it internally.", rationale: "Pattern recognition neutralises manipulation before it takes hold." },
+          ],
+        };
+        const domain = concept?.domain || "";
+        const pool = fallbacks[domain] || [
+          { mission: "Apply today\u2019s technique deliberately in your next conversation. Observe the other person\u2019s response.", rationale: "Deliberate practice with observation accelerates mastery." },
+        ];
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        setMission(pick.mission);
+        setRationale(pick.rationale);
         setError(null);
       } else {
         setError("Couldn\u2019t load your mission \u2014 tap to retry.");
@@ -1023,7 +1088,7 @@ export default function SessionPage() {
       <div className="flex-shrink-0 relative">
         <button
           onClick={() => setShowExitModal(true)}
-          className="absolute left-3 top-1/2 -translate-y-1/2 z-50 flex h-9 w-9 items-center justify-center rounded-full text-secondary transition-transform active:scale-[0.92]"
+          className="absolute left-2 top-1/2 -translate-y-1/2 z-50 flex h-11 w-11 items-center justify-center rounded-full text-secondary transition-transform active:scale-[0.92]"
           aria-label="Leave session"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -1449,8 +1514,103 @@ export default function SessionPage() {
 
                         {/* Share button */}
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             const text = `The Edge - Day ${dayNumber}\nConcept: ${concept?.name}\nScores: ${scores ? Object.values(scores).join(", ") : "-"}\nMission: ${mission || "-"}`;
+
+                            // Try to generate a share card image
+                            try {
+                              const canvas = document.createElement("canvas");
+                              canvas.width = 600;
+                              canvas.height = 400;
+                              const ctx = canvas.getContext("2d");
+                              if (ctx) {
+                                // Background
+                                ctx.fillStyle = "#FAF9F6";
+                                ctx.beginPath();
+                                ctx.roundRect(0, 0, 600, 400, 24);
+                                ctx.fill();
+
+                                // Accent bar
+                                ctx.fillStyle = "#5A52E0";
+                                ctx.fillRect(0, 0, 600, 6);
+
+                                // Title
+                                ctx.fillStyle = "#2D2B3D";
+                                ctx.font = "bold 28px sans-serif";
+                                ctx.fillText("the edge", 32, 48);
+
+                                // Day + streak
+                                ctx.fillStyle = "#8E8C99";
+                                ctx.font = "16px sans-serif";
+                                ctx.fillText(`Day ${dayNumber}`, 32, 76);
+
+                                // Concept
+                                ctx.fillStyle = "#2D2B3D";
+                                ctx.font = "bold 20px sans-serif";
+                                ctx.fillText(concept?.name || "", 32, 120);
+
+                                // Score circles
+                                if (scores) {
+                                  const dims = ["TA", "TW", "FC", "ER", "SO"];
+                                  const keys: (keyof SessionScores)[] = ["technique_application", "tactical_awareness", "frame_control", "emotional_regulation", "strategic_outcome"];
+                                  keys.forEach((k, i) => {
+                                    const s = scores[k];
+                                    const cx = 64 + i * 72;
+                                    const cy = 175;
+                                    ctx.beginPath();
+                                    ctx.arc(cx, cy, 24, 0, Math.PI * 2);
+                                    ctx.fillStyle = scoreCircleColor(s);
+                                    ctx.fill();
+                                    ctx.fillStyle = scoreTextColor(s);
+                                    ctx.font = "bold 18px sans-serif";
+                                    ctx.textAlign = "center";
+                                    ctx.fillText(String(s), cx, cy + 6);
+                                    ctx.fillStyle = "#8E8C99";
+                                    ctx.font = "11px sans-serif";
+                                    ctx.fillText(dims[i], cx, cy + 40);
+                                  });
+                                  ctx.textAlign = "start";
+                                }
+
+                                // Key takeaway
+                                if (keyMoment) {
+                                  ctx.fillStyle = "#8E8C99";
+                                  ctx.font = "13px sans-serif";
+                                  ctx.fillText("Key takeaway", 32, 250);
+                                  ctx.fillStyle = "#2D2B3D";
+                                  ctx.font = "14px sans-serif";
+                                  const words = keyMoment.split(" ");
+                                  let line = "";
+                                  let y = 270;
+                                  for (const word of words) {
+                                    const test = line + (line ? " " : "") + word;
+                                    if (ctx.measureText(test).width > 536) {
+                                      ctx.fillText(line, 32, y);
+                                      line = word;
+                                      y += 20;
+                                      if (y > 340) { ctx.fillText(line + "...", 32, y); line = ""; break; }
+                                    } else { line = test; }
+                                  }
+                                  if (line) ctx.fillText(line, 32, y);
+                                }
+
+                                // Branding
+                                ctx.fillStyle = "#B5B3BD";
+                                ctx.font = "12px sans-serif";
+                                ctx.fillText("the-edge-xi.vercel.app", 32, 384);
+
+                                const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+                                if (blob && navigator.share && navigator.canShare?.({ files: [new File([blob], "edge-session.png", { type: "image/png" })] })) {
+                                  await navigator.share({
+                                    text,
+                                    files: [new File([blob], "edge-session.png", { type: "image/png" })],
+                                  });
+                                  return;
+                                }
+                              }
+                            } catch {}
+
+                            // Fallback: text share or clipboard
                             if (navigator.share) {
                               navigator.share({ text }).catch(() => {});
                             } else {
@@ -1595,7 +1755,7 @@ export default function SessionPage() {
                   saveSession();
                   router.push("/");
                 }}
-                className="flex-1 rounded-2xl bg-[#E88B8B] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97]"
+                className="flex-1 rounded-2xl bg-[#E88B8B] py-3.5 text-sm font-semibold text-[#611414] transition-transform active:scale-[0.97]"
               >
                 Leave
               </button>
