@@ -65,6 +65,12 @@ function scoreCircleColor(score: number): string {
   return "#E88B8B";
 }
 
+function scoreTextColor(score: number): string {
+  if (score >= 4) return "#1A5C3A"; // dark green on green bg
+  if (score === 3) return "#6B4F00"; // dark amber on gold bg
+  return "#7A2020"; // dark red on coral bg
+}
+
 async function fetchWithRetry(
   url: string,
   options: RequestInit,
@@ -112,7 +118,7 @@ function PhaseIndicator({
   completed: Set<SessionPhase>;
 }) {
   return (
-    <div className="sticky top-0 z-50 bg-[var(--background)] pt-3 pb-2 border-b border-[#F0EDE8]">
+    <div className="flex-shrink-0 z-50 bg-[var(--background)] pt-3 pb-2 border-b border-[#F0EDE8]">
       <div className="flex items-center justify-center gap-5">
         {PHASES.map((p) => {
           const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
@@ -129,7 +135,7 @@ function PhaseIndicator({
               />
               <span
                 className={`text-sm font-medium ${
-                  isActive ? "text-primary" : isDone ? "text-secondary" : "text-tertiary"
+                  isActive ? "text-primary" : isDone ? "text-secondary" : "text-secondary"
                 }`}
               >
                 {p.label}
@@ -149,9 +155,9 @@ function PhaseIndicator({
 function LoadingDots() {
   return (
     <div className="flex items-center justify-center gap-1.5 py-4">
-      <span className="loading-dot h-2 w-2 rounded-full bg-[#6C63FF]/50" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-[#6C63FF]/50" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-[#6C63FF]/50" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-[#5A52E0]/50" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-[#5A52E0]/50" />
+      <span className="loading-dot h-2 w-2 rounded-full bg-[#5A52E0]/50" />
     </div>
   );
 }
@@ -201,6 +207,109 @@ function renderMarkdown(text: string): React.ReactNode[] {
 }
 
 // ---------------------------------------------------------------------------
+// Lesson section splitter — parses "## The Principle", "## The Play", "## The Counter"
+// ---------------------------------------------------------------------------
+
+function splitLessonSections(text: string): { title: string; content: string }[] {
+  const sections: { title: string; content: string }[] = [];
+  const pattern = /^## (The (?:Principle|Play|Counter))/gm;
+  const headings: { title: string; index: number }[] = [];
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    headings.push({ title: match[1], index: match.index });
+  }
+
+  if (headings.length === 0) {
+    return [{ title: "Lesson", content: text }];
+  }
+
+  for (let i = 0; i < headings.length; i++) {
+    const start = headings[i].index + headings[i].title.length + 3; // skip "## Title\n"
+    const end = i + 1 < headings.length ? headings[i + 1].index : text.length;
+    sections.push({
+      title: headings[i].title,
+      content: text.slice(start, end).trim(),
+    });
+  }
+
+  return sections;
+}
+
+// ---------------------------------------------------------------------------
+// Swipeable lesson cards component
+// ---------------------------------------------------------------------------
+
+function LessonCards({
+  sections,
+  isStreaming,
+}: {
+  sections: { title: string; content: string }[];
+  isStreaming: boolean;
+}) {
+  const [currentCard, setCurrentCard] = useState(0);
+  const touchStartX = useRef(0);
+  const touchEndX = useRef(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
+  const handleTouchEnd = () => {
+    const diff = touchStartX.current - touchEndX.current;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0 && currentCard < sections.length - 1) {
+        setCurrentCard((c) => c + 1);
+      } else if (diff < 0 && currentCard > 0) {
+        setCurrentCard((c) => c - 1);
+      }
+    }
+  };
+
+  const section = sections[currentCard];
+  if (!section) return null;
+
+  return (
+    <div>
+      <div
+        className="select-text rounded-3xl p-6 shadow-[var(--shadow-soft)] overflow-y-auto"
+        style={{ backgroundColor: "#EFF6FA", maxHeight: "calc(100dvh - 220px)" }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <h2 className="mb-3 text-sm font-medium text-[#5B8BA8]">{section.title}</h2>
+        <div className="space-y-0">
+          {renderMarkdown(section.content)}
+          {isStreaming && currentCard === sections.length - 1 && (
+            <span className="inline-block animate-pulse text-[#5A52E0]">|</span>
+          )}
+        </div>
+      </div>
+
+      {/* Dot indicators */}
+      <div className="mt-4 flex items-center justify-center gap-2">
+        {sections.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setCurrentCard(i)}
+            className={`h-2 rounded-full transition-all ${
+              i === currentCard ? "w-6 bg-[#5A52E0]" : "w-2 bg-[#B8D4E3]"
+            }`}
+            style={{ minHeight: 8, minWidth: 8 }}
+          />
+        ))}
+        <span className="ml-2 text-xs text-secondary">
+          {currentCard + 1} / {sections.length}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Debrief markdown renderer (lavender styling)
 // ---------------------------------------------------------------------------
 
@@ -213,7 +322,7 @@ function renderDebriefMarkdown(text: string): React.ReactNode[] {
     if (line.startsWith("## ") || line.startsWith("**") && line.endsWith("**")) {
       const header = line.startsWith("## ") ? line.slice(3) : line.slice(2, -2);
       elements.push(
-        <h2 key={key++} className="mb-2 mt-5 text-sm font-medium text-[#7B6BA8] first:mt-0">
+        <h2 key={key++} className="mb-2 mt-5 text-sm font-medium text-[#5B4B88] first:mt-0">
           {header}
         </h2>
       );
@@ -332,9 +441,10 @@ export default function SessionPage() {
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState("");
   const [resetNotice, setResetNotice] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Auto-scroll
@@ -399,7 +509,7 @@ export default function SessionPage() {
         checkinOutcome, checkinNeeded, checkinDone,
         dayNumber, scenarioContext, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
-        lastMission, timestamp: Date.now(),
+        lastMission, coachAdvice, timestamp: Date.now(),
       }));
     } catch {}
   }
@@ -411,7 +521,7 @@ export default function SessionPage() {
   useEffect(() => {
     if (!isLoading) saveSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPhase, roleplayTranscript.length, turnCount, debriefContent, scores, mission, checkinDone]);
+  }, [currentPhase, roleplayTranscript.length, turnCount, debriefContent, scores, mission, checkinDone, coachAdvice]);
 
   // ---------------------------------------------------------------------------
   // Init
@@ -436,6 +546,7 @@ export default function SessionPage() {
           if (s.mission) setMission(s.mission);
           if (s.rationale) setRationale(s.rationale);
           if (s.lastMission) setLastMission(s.lastMission);
+          if (s.coachAdvice) setCoachAdvice(s.coachAdvice);
           setIsLoading(false); setRestored(true); return;
         } else { localStorage.removeItem(SESSION_STORAGE_KEY); }
       }
@@ -476,25 +587,96 @@ export default function SessionPage() {
   // Phase 1: Lesson
   // ---------------------------------------------------------------------------
 
+  const [lessonStreaming, setLessonStreaming] = useState(false);
+
   async function fetchLesson() {
     setIsLoading(true);
     setError(null);
+
+    // Check for pre-generated lesson in localStorage
     try {
-      const res = await fetchWithRetry(
-        "/api/lesson",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
-        5, 3000,
-        (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
-      );
-      const data = await res.json();
-      setConcept(data.concept);
-      setLessonContent(data.lessonContent);
-      setError(null);
+      const cached = localStorage.getItem("edge-pregenerated-lesson");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const today = new Date().toISOString().slice(0, 10);
+        if (parsed.date === today && parsed.concept && parsed.lessonContent) {
+          setConcept(parsed.concept);
+          setLessonContent(parsed.lessonContent);
+          setIsLoading(false);
+          localStorage.removeItem("edge-pregenerated-lesson");
+          return;
+        }
+        localStorage.removeItem("edge-pregenerated-lesson");
+      }
+    } catch {}
+
+    // Stream the lesson
+    try {
+      const res = await fetch("/api/lesson", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stream: true }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Extract concept from header
+      const conceptHeader = res.headers.get("X-Concept");
+      if (conceptHeader) {
+        setConcept(JSON.parse(decodeURIComponent(conceptHeader)));
+      }
+
+      // Stream the lesson content
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream body");
+
+      const decoder = new TextDecoder();
+      let fullText = "";
+      setLessonStreaming(true);
       setIsLoading(false);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fullText += decoder.decode(value, { stream: true });
+        setLessonContent(fullText);
+      }
+
+      setLessonContent(fullText);
+      setLessonStreaming(false);
     } catch {
-      setError("No connection. Your progress is saved \u2014 continue when back online.");
+      setLessonStreaming(false);
+      setError("Couldn\u2019t load your session \u2014 your connection might be patchy. Tap to retry.");
       setIsLoading(false);
     }
+  }
+
+  // Pre-generate tomorrow's lesson after session completion
+  function pregenerateTomorrowsLesson() {
+    try {
+      fetch("/api/lesson", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stream: false }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.concept && data.lessonContent) {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            localStorage.setItem(
+              "edge-pregenerated-lesson",
+              JSON.stringify({
+                date: tomorrow.toISOString().slice(0, 10),
+                concept: data.concept,
+                lessonContent: data.lessonContent,
+              })
+            );
+          }
+        })
+        .catch(() => {}); // Silent failure for pre-generation
+    } catch {}
   }
 
   // ---------------------------------------------------------------------------
@@ -528,6 +710,7 @@ export default function SessionPage() {
       const res = await fetch("/api/retrieval-bridge", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, userResponse }),
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("API failed");
       const data = await res.json();
@@ -556,6 +739,7 @@ export default function SessionPage() {
       const res = await fetch("/api/roleplay", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character: char, transcript: [], userMessage: null }),
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("API failed");
       const sc = res.headers.get("X-Scenario-Context");
@@ -580,6 +764,7 @@ export default function SessionPage() {
       const res = await fetch("/api/roleplay", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character, transcript: updated, userMessage: null, scenarioContext }),
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("API failed");
       await streamRoleplayResponse(res, updated);
@@ -618,6 +803,7 @@ export default function SessionPage() {
       const res = await fetch("/api/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transcript: roleplayTranscript, concept }),
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("API failed");
       const data = await res.json();
@@ -642,6 +828,7 @@ export default function SessionPage() {
       const res = await fetch("/api/roleplay", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character, transcript: [], userMessage: null }),
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("API failed");
       const sc = res.headers.get("X-Scenario-Context");
@@ -672,6 +859,9 @@ export default function SessionPage() {
   // Phase 3: Debrief
   // ---------------------------------------------------------------------------
 
+  const [debriefRetryCount, setDebriefRetryCount] = useState(0);
+  const [canSkipDebrief, setCanSkipDebrief] = useState(false);
+
   async function fetchDebrief() {
     if (!concept || !character) return;
     setIsLoading(true); setError(null);
@@ -680,7 +870,7 @@ export default function SessionPage() {
         "/api/debrief",
         { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ transcript: roleplayTranscript, concept, character, commandsUsed }) },
-        5, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
+        3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
       let display = data.debriefContent;
@@ -691,10 +881,28 @@ export default function SessionPage() {
       setBehavioralWeaknessSummary(data.behavioralWeaknessSummary);
       setKeyMoment(data.keyMoment);
       setError(null); setIsLoading(false);
+      setDebriefRetryCount(0);
     } catch {
-      setError("No connection. Your progress is saved \u2014 continue when back online.");
+      const newCount = debriefRetryCount + 1;
+      setDebriefRetryCount(newCount);
+      if (newCount >= 2) {
+        setCanSkipDebrief(true);
+        setError("Couldn\u2019t generate your debrief. Tap to retry or skip to mission.");
+      } else {
+        setError("Couldn\u2019t generate your debrief \u2014 tap to retry.");
+      }
       setIsLoading(false);
     }
+  }
+
+  function skipDebriefToMission() {
+    // Use default scores
+    setScores({ technique_application: 3, tactical_awareness: 3, frame_control: 3, emotional_regulation: 3, strategic_outcome: 3 });
+    setDebriefContent("Debrief unavailable due to connection issues. Default scores applied.");
+    setBehavioralWeaknessSummary("Unable to generate analysis.");
+    setKeyMoment("Unable to identify key moment.");
+    setCanSkipDebrief(false);
+    setError(null);
   }
 
   // ---------------------------------------------------------------------------
@@ -719,6 +927,7 @@ export default function SessionPage() {
       const res = await fetch("/api/checkin", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ previousMission: lastMission, outcomeType, userOutcome }),
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("Check-in API failed");
       const data = await res.json();
@@ -736,6 +945,8 @@ export default function SessionPage() {
     }
   }
 
+  const [missionRetryCount, setMissionRetryCount] = useState(0);
+
   async function fetchMission() {
     if (!concept || !character || !scores || submittingRef.current) return;
     submittingRef.current = true;
@@ -745,14 +956,24 @@ export default function SessionPage() {
         "/api/mission",
         { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }) },
-        5, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
+        3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
       setMission(data.mission); setRationale(data.rationale);
       setError(null); setIsLoading(false);
       submittingRef.current = false;
+      setMissionRetryCount(0);
     } catch {
-      setError("No connection. Your progress is saved \u2014 continue when back online.");
+      const newCount = missionRetryCount + 1;
+      setMissionRetryCount(newCount);
+      if (newCount >= 2) {
+        // Use fallback mission
+        setMission("Practice today\u2019s technique in your next conversation. Notice what happens when you use it deliberately.");
+        setRationale("Observation builds pattern recognition.");
+        setError(null);
+      } else {
+        setError("Couldn\u2019t load your mission \u2014 tap to retry.");
+      }
       setIsLoading(false); submittingRef.current = false;
     }
   }
@@ -764,7 +985,8 @@ export default function SessionPage() {
     setCompletedPhases((p) => new Set([...p, "mission"]));
     setShowConfetti(true);
     clearSession(); haptic();
-    setTimeout(() => router.push("/"), 2000);
+    // Pre-generate tomorrow's lesson in the background
+    pregenerateTomorrowsLesson();
   }
 
   function retry() {
@@ -797,17 +1019,29 @@ export default function SessionPage() {
       className="session-page flex flex-col h-dvh overflow-hidden phase-bg-transition"
       style={{ backgroundColor: phaseBg }}
     >
-      <PhaseIndicator current={currentPhase} completed={completedPhases} />
+      {/* Phase indicator with exit button */}
+      <div className="flex-shrink-0 relative">
+        <button
+          onClick={() => setShowExitModal(true)}
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-50 flex h-9 w-9 items-center justify-center rounded-full text-secondary transition-transform active:scale-[0.92]"
+          aria-label="Leave session"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <PhaseIndicator current={currentPhase} completed={completedPhases} />
+      </div>
 
       {/* Offline banner */}
       {!online && (
-        <div className="flex h-7 items-center justify-center text-xs font-medium text-[#C4A24E]" style={{ backgroundColor: "#FFF8E7" }}>
-          Offline — reconnecting...
+        <div className="flex-shrink-0 flex h-7 items-center justify-center text-xs font-medium text-[#C4A24E]" style={{ backgroundColor: "#FFF8E7" }}>
+          Offline &mdash; reconnecting...
         </div>
       )}
 
       {restored && (
-        <div className="flex h-7 items-center justify-center bg-[#EEEDFF] text-xs font-medium text-[#6C63FF]">
+        <div className="flex-shrink-0 flex h-7 items-center justify-center bg-[#EEEDFF] text-xs font-medium text-[#5A52E0]">
           Session restored
         </div>
       )}
@@ -819,9 +1053,16 @@ export default function SessionPage() {
           {error && (
             <div className="mb-5 rounded-3xl bg-white p-5 text-center shadow-[var(--shadow-soft)]">
               <p className="text-sm text-[#E88B8B]">{error}</p>
-              <button onClick={retry} className="mt-2 min-h-[44px] text-xs font-medium text-[#6C63FF] underline active:scale-[0.97]">
-                Retry
-              </button>
+              <div className="mt-3 flex items-center justify-center gap-4">
+                <button onClick={retry} className="min-h-[44px] text-xs font-medium text-[#5A52E0] underline active:scale-[0.97]">
+                  Retry
+                </button>
+                {canSkipDebrief && currentPhase === "debrief" && (
+                  <button onClick={skipDebriefToMission} className="min-h-[44px] text-xs font-medium text-secondary underline active:scale-[0.97]">
+                    Skip to mission
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -841,7 +1082,7 @@ export default function SessionPage() {
                 <>
                   {concept && (
                     <div className="mb-4">
-                      <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-medium text-[#6C63FF]">
+                      <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-medium text-[#5A52E0]">
                         {concept.domain}
                       </span>
                       <h2 className="mt-3 text-xl font-semibold text-primary">
@@ -851,16 +1092,10 @@ export default function SessionPage() {
                     </div>
                   )}
 
-                  <div className="select-text mb-6 rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.lesson }}>
-                    <div className="space-y-0">{renderMarkdown(lessonContent)}</div>
-                  </div>
-
-                  <button
-                    onClick={startRetrieval}
-                    className="w-full rounded-2xl bg-[#6C63FF] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
-                  >
-                    Ready to practice &rarr;
-                  </button>
+                  <LessonCards
+                    sections={splitLessonSections(lessonContent)}
+                    isStreaming={lessonStreaming}
+                  />
                 </>
               )}
             </>
@@ -897,7 +1132,7 @@ export default function SessionPage() {
                       <input
                         type="text"
                         placeholder="Your answer..."
-                        className="w-full rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#6C63FF]/20"
+                        className="w-full rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#5A52E0]/20"
                         style={{ backgroundColor: PHASE_TINT.lesson }}
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
@@ -908,7 +1143,7 @@ export default function SessionPage() {
                       <button
                         onClick={() => { if (inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
                         disabled={isLoading || !inputValue.trim()}
-                        className="w-full rounded-2xl bg-[#6C63FF] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                        className="w-full rounded-2xl bg-[#5A52E0] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
                       >
                         {isLoading ? "Evaluating..." : "Submit"}
                       </button>
@@ -918,7 +1153,7 @@ export default function SessionPage() {
                   {retrievalResponse && !retrievalReady && (
                     <button
                       onClick={() => startRoleplay()}
-                      className="w-full rounded-2xl bg-[#6C63FF] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+                      className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
                     >
                       Continue to practice &rarr;
                     </button>
@@ -970,7 +1205,7 @@ export default function SessionPage() {
                         <p className="mb-1 text-xs font-medium" style={{ color: "#D4908F" }}>{character?.name}</p>
                       )}
                       {streamingText}
-                      <span className="inline-block animate-pulse text-[#6C63FF]">|</span>
+                      <span className="inline-block animate-pulse text-[#5A52E0]">|</span>
                     </div>
                   </div>
                 )}
@@ -1032,8 +1267,8 @@ export default function SessionPage() {
                           return (
                             <div key={key} className="flex flex-col items-center gap-1.5">
                               <div
-                                className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold text-white"
-                                style={{ backgroundColor: scoreCircleColor(s) }}
+                                className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold"
+                                style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
                               >
                                 {s}
                               </div>
@@ -1075,7 +1310,7 @@ export default function SessionPage() {
                       <button
                         onClick={() => setCheckinPillSelected("completed")}
                         className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97] ${
-                          checkinPillSelected === "completed" ? "ring-2 ring-[#6C63FF]" : ""
+                          checkinPillSelected === "completed" ? "ring-2 ring-[#5A52E0]" : ""
                         }`}
                         style={{ backgroundColor: "#B8E0C8", color: "#2D6A4F" }}
                       >
@@ -1084,7 +1319,7 @@ export default function SessionPage() {
                       <button
                         onClick={() => setCheckinPillSelected("tried")}
                         className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97] ${
-                          checkinPillSelected === "tried" ? "ring-2 ring-[#6C63FF]" : ""
+                          checkinPillSelected === "tried" ? "ring-2 ring-[#5A52E0]" : ""
                         }`}
                         style={{ backgroundColor: "#F5E6B8", color: "#8B7024" }}
                       >
@@ -1105,7 +1340,7 @@ export default function SessionPage() {
                         <input
                           type="text"
                           placeholder={checkinPillSelected === "completed" ? "What was the exact reaction?" : "What happened when you tried?"}
-                          className="w-full rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#6C63FF]/20"
+                          className="w-full rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#5A52E0]/20"
                           style={{ backgroundColor: PHASE_TINT.mission }}
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
@@ -1115,7 +1350,7 @@ export default function SessionPage() {
                         <button
                           onClick={() => { if (inputValue.trim()) submitCheckin(checkinPillSelected, inputValue.trim()); }}
                           disabled={!inputValue.trim()}
-                          className="w-full rounded-2xl bg-[#6C63FF] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                          className="w-full rounded-2xl bg-[#5A52E0] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
                         >
                           Submit
                         </button>
@@ -1155,7 +1390,7 @@ export default function SessionPage() {
                     )}
                   </div>
 
-                  {!completedPhases.has("mission") ? (
+                  {!showConfetti ? (
                     <button
                       onClick={completeSession}
                       className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
@@ -1164,12 +1399,78 @@ export default function SessionPage() {
                       Session complete &#10003;
                     </button>
                   ) : (
-                    <div className="animate-completion relative text-center">
-                      {showConfetti && <Confetti />}
-                      <p className="text-lg font-semibold" style={{ color: "#6BC9A0" }}>
-                        Day {dayNumber} complete &#10003;
-                      </p>
-                      <p className="mt-2 text-sm text-tertiary">See you tomorrow.</p>
+                    <div className="animate-fade-in-up space-y-5">
+                      {/* Completion card */}
+                      <div className="rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: "#E8F5ED" }}>
+                        <p className="mb-1 text-center text-xl font-semibold text-primary animate-completion">
+                          Session complete
+                        </p>
+                        <p className="mb-5 text-center text-sm text-secondary">
+                          Day {dayNumber} &middot; {concept?.name}
+                        </p>
+
+                        {/* Key takeaway */}
+                        {keyMoment && (
+                          <div className="mb-5 rounded-2xl bg-white/60 px-4 py-3">
+                            <p className="text-sm font-medium text-secondary">Key takeaway</p>
+                            <p className="mt-1 text-sm leading-relaxed text-primary">{keyMoment}</p>
+                          </div>
+                        )}
+
+                        {/* Scores */}
+                        {scores && (
+                          <div className="mb-5">
+                            <div className="flex items-center justify-center gap-3">
+                              {SCORE_DIMS.map(({ key, label }) => {
+                                const s = scores[key];
+                                return (
+                                  <div key={key} className="flex flex-col items-center gap-1">
+                                    <div
+                                      className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold"
+                                      style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
+                                    >
+                                      {s}
+                                    </div>
+                                    <span className="text-[10px] text-secondary">{label}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Mission reminder */}
+                        {mission && (
+                          <div className="mb-4 rounded-2xl bg-white/60 px-4 py-3">
+                            <p className="text-sm font-medium text-[#5A9A7A]">Your mission today</p>
+                            <p className="mt-1 text-sm leading-relaxed text-primary">{mission}</p>
+                          </div>
+                        )}
+
+                        {/* Share button */}
+                        <button
+                          onClick={() => {
+                            const text = `The Edge - Day ${dayNumber}\nConcept: ${concept?.name}\nScores: ${scores ? Object.values(scores).join(", ") : "-"}\nMission: ${mission || "-"}`;
+                            if (navigator.share) {
+                              navigator.share({ text }).catch(() => {});
+                            } else {
+                              navigator.clipboard.writeText(text).catch(() => {});
+                            }
+                          }}
+                          className="mb-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-[#B8E0C8] py-2.5 text-sm font-medium text-[#5A9A7A] transition-transform active:scale-[0.97]"
+                        >
+                          Share summary
+                        </button>
+                      </div>
+
+                      {/* Done button */}
+                      <button
+                        onClick={() => router.push("/")}
+                        className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+                        style={{ backgroundColor: "#5A52E0" }}
+                      >
+                        Done
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1181,14 +1482,30 @@ export default function SessionPage() {
       </div>
 
       {/* ================================================================== */}
+      {/* Sticky CTA (learn phase)                                            */}
+      {/* ================================================================== */}
+      {currentPhase === "lesson" && lessonContent && !isLoading && (
+        <div className="flex-shrink-0 border-t border-[#F0EDE8] px-4 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.lesson }}>
+          <div className="mx-auto max-w-lg">
+            <button
+              onClick={() => startRetrieval()}
+              className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+            >
+              Ready to practise &rarr;
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
       {/* Sticky continue button (debrief)                                    */}
       {/* ================================================================== */}
       {currentPhase === "debrief" && debriefContent && !isLoading && (
-        <div className="border-t border-[#F0EDE8] px-4 pb-safe pt-3 pb-3" style={{ backgroundColor: PHASE_BG.debrief }}>
+        <div className="flex-shrink-0 border-t border-[#F0EDE8] px-4 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.debrief }}>
           <div className="mx-auto max-w-lg">
             <button
               onClick={enterDeploy}
-              className="w-full rounded-2xl bg-[#6C63FF] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+              className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
             >
               Continue &rarr;
             </button>
@@ -1200,24 +1517,34 @@ export default function SessionPage() {
       {/* Fixed bottom bar (roleplay)                                         */}
       {/* ================================================================== */}
       {isRoleplay && !completedPhases.has("roleplay") && (
-        <div className="bottom-bar rounded-t-3xl bg-white px-3 pt-3 shadow-[var(--shadow-elevated)]">
+        <div className="flex-shrink-0 bottom-bar rounded-t-3xl bg-white px-3 pt-3 shadow-[var(--shadow-elevated)]">
           {/* Input + send */}
-          <div className="flex gap-2 mb-2">
-            <input
+          <div className="flex items-end gap-2 mb-2">
+            <textarea
               ref={inputRef}
-              type="text"
               placeholder="Type your response..."
-              className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#6C63FF]/20"
-              style={{ backgroundColor: PHASE_TINT.roleplay }}
+              rows={1}
+              className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none resize-none focus:ring-2 focus:ring-[#5A52E0]/20"
+              style={{ backgroundColor: PHASE_TINT.roleplay, maxHeight: "6rem" }}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim() && !isStreaming) handleRoleplayInput(inputValue); }}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                // Auto-grow
+                e.target.style.height = "auto";
+                e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px";
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && inputValue.trim() && !isStreaming) {
+                  e.preventDefault();
+                  handleRoleplayInput(inputValue);
+                }
+              }}
               disabled={isStreaming || isLoading}
             />
             <button
               onClick={() => { if (inputValue.trim() && !isStreaming) handleRoleplayInput(inputValue); }}
               disabled={isStreaming || isLoading || !inputValue.trim()}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-[#6C63FF] text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-[#5A52E0] text-white transition-transform active:scale-[0.97] disabled:opacity-40"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                 <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.289Z" />
@@ -1247,10 +1574,40 @@ export default function SessionPage() {
       {showNewMessagePill && isRoleplay && (
         <button
           onClick={() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); setShowNewMessagePill(false); }}
-          className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full bg-[#6C63FF] px-3 py-1 text-xs font-medium text-white shadow-[var(--shadow-soft)] active:scale-[0.97]"
+          className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full bg-[#5A52E0] px-3 py-1 text-xs font-medium text-white shadow-[var(--shadow-soft)] active:scale-[0.97]"
         >
           &darr; New
         </button>
+      )}
+
+      {/* ================================================================== */}
+      {/* Exit confirmation modal                                             */}
+      {/* ================================================================== */}
+      {showExitModal && (
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/20" onClick={() => setShowExitModal(false)} />
+          <div className="fixed inset-x-4 top-1/2 z-[70] mx-auto max-w-sm -translate-y-1/2 rounded-3xl bg-white p-6 shadow-[var(--shadow-elevated)]">
+            <p className="mb-1 text-base font-semibold text-primary">Leave session?</p>
+            <p className="mb-5 text-sm text-secondary">Your progress will be saved. You can resume within 30 minutes.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  saveSession();
+                  router.push("/");
+                }}
+                className="flex-1 rounded-2xl bg-[#E88B8B] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97]"
+              >
+                Leave
+              </button>
+              <button
+                onClick={() => setShowExitModal(false)}
+                className="flex-1 rounded-2xl border border-[#F0EDE8] bg-white py-3.5 text-sm font-semibold text-primary transition-transform active:scale-[0.97]"
+              >
+                Stay
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* ================================================================== */}

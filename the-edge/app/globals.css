@@ -24,13 +24,13 @@
   --phase-simulate-muted: #D4908F;
   --phase-debrief: #C5B8E8;
   --phase-debrief-tint: #F3F0FA;
-  --phase-debrief-muted: #7B6BA8;
+  --phase-debrief-muted: #5B4B88;
   --phase-deploy: #B8E0C8;
   --phase-deploy-tint: #F0FAF4;
   --phase-deploy-muted: #5A9A7A;
 
   /* Accent */
-  --accent: #6C63FF;
+  --accent: #5A52E0;
   --accent-light: #EEEDFF;
 
   /* Scores */
