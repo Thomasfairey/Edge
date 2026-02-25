@@ -240,7 +240,11 @@ function splitLessonSections(text: string): { title: string; content: string }[]
     if (section.content.length <= MAX_CARD_CHARS) {
       sections.push(section);
     } else {
-      const paragraphs = section.content.split(/\n\n+/);
+      // Split on double newlines first, fall back to single newlines
+      let paragraphs = section.content.split(/\n\n+/);
+      if (paragraphs.length <= 1) {
+        paragraphs = section.content.split(/\n/);
+      }
       let current = "";
       let partNum = 1;
       for (const para of paragraphs) {
