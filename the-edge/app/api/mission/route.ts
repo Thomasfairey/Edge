@@ -1,5 +1,5 @@
 /**
- * Phase 4: Mission generation + ledger write.
+ * Phase 4: Mission generation + ledger write + SR update.
  * POST { concept: Concept, character: CharacterArchetype,
  *        scores: SessionScores, behavioralWeaknessSummary: string,
  *        keyMoment: string, commandsUsed: string[],
@@ -8,8 +8,7 @@
  *
  * This is the FINAL phase. It assembles the complete LedgerEntry
  * from all data accumulated through the session and writes it to disk.
- * The mission_outcome field is left empty — it gets populated by
- * Phase 0 (Check-in) of the NEXT session.
+ * Also updates spaced repetition data for the session's concept.
  * Reference: PRD Section 3.6
  */
 
@@ -18,14 +17,24 @@ import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildMissionPrompt } from "@/lib/prompts/mission";
 import { serialiseForPrompt, appendEntry, getLedgerCount } from "@/lib/ledger";
+import { updateSREntry } from "@/lib/spaced-repetition";
 import {
   CharacterArchetype,
   Concept,
   LedgerEntry,
   SessionScores,
 } from "@/lib/types";
+import { withRateLimit } from "@/lib/with-rate-limit";
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || !body.concept || !body.character || !body.scores) {
+    return NextResponse.json(
+      { error: "Missing required fields: concept, character, scores" },
+      { status: 400 }
+    );
+  }
+
   const {
     concept,
     character,
@@ -34,7 +43,7 @@ export async function POST(req: NextRequest) {
     keyMoment,
     commandsUsed,
     checkinOutcome,
-  } = (await req.json()) as {
+  } = body as {
     concept: Concept;
     character: CharacterArchetype;
     scores: SessionScores;
@@ -64,7 +73,6 @@ export async function POST(req: NextRequest) {
     mission = rawMission.slice(0, rationaleIndex).trim();
     rationale = rawMission.slice(rationaleIndex + "RATIONALE:".length).trim();
   } else {
-    // Fallback if the model didn't follow format
     mission = rawMission.trim();
     rationale = "";
     console.warn("[mission] Could not parse RATIONALE: section from response");
@@ -79,12 +87,12 @@ export async function POST(req: NextRequest) {
     concept: `${concept.name} (${concept.source})`,
     domain: concept.domain,
     character: character.name,
-    difficulty: character.tactics.length, // rough proxy: more tactics = harder
+    difficulty: character.tactics.length,
     scores,
     behavioral_weakness_summary: behavioralWeaknessSummary,
     key_moment: keyMoment,
     mission,
-    mission_outcome: "", // Populated by Phase 0 of the NEXT session
+    mission_outcome: "",
     commands_used: commandsUsed,
     session_completed: true,
   };
@@ -93,5 +101,15 @@ export async function POST(req: NextRequest) {
   appendEntry(ledgerEntry);
   console.log(`[mission] Day ${day} ledger entry written. Mission assigned.`);
 
+  // Update spaced repetition data
+  try {
+    updateSREntry(concept.id, scores as unknown as { [key: string]: number });
+    console.log(`[mission] SR entry updated for concept: ${concept.id}`);
+  } catch (e) {
+    console.warn("[mission] Failed to update SR entry:", e);
+  }
+
   return NextResponse.json({ mission, rationale, ledgerEntry });
 }
+
+export const POST = withRateLimit(handlePost, 5);

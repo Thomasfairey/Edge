@@ -7,6 +7,7 @@
  */
 
 import { Concept, ConceptDomain } from "@/lib/types";
+import { getDueReviews } from "@/lib/spaced-repetition";
 
 // ---------------------------------------------------------------------------
 // Master concept library — 5 per domain, 35 total
@@ -314,6 +315,7 @@ export const CONCEPTS: Concept[] = [
 
 /**
  * Select the next concept for today's session.
+ * Returns { concept, isReview } — when reviews are due, 30% chance of review session.
  *
  * Rules:
  * 1. Never repeat a concept already in completedIds.
@@ -322,7 +324,25 @@ export const CONCEPTS: Concept[] = [
  * 3. If all concepts in other domains are exhausted, allow same-domain.
  * 4. If ALL concepts are exhausted, reset the pool and pick randomly.
  */
-export function selectConcept(completedIds: string[]): Concept {
+export function selectConcept(completedIds: string[]): { concept: Concept; isReview: boolean } {
+  // Check for due reviews — 30% chance of review session
+  try {
+    const dueReviews = getDueReviews();
+    if (dueReviews.length > 0 && Math.random() < 0.3) {
+      const mostOverdue = dueReviews[0];
+      const reviewConcept = CONCEPTS.find((c) => c.id === mostOverdue.conceptId);
+      if (reviewConcept) {
+        return { concept: reviewConcept, isReview: true };
+      }
+    }
+  } catch {
+    // SR not available — continue with normal selection
+  }
+
+  return { concept: selectNewConcept(completedIds), isReview: false };
+}
+
+function selectNewConcept(completedIds: string[]): Concept {
   const completedSet = new Set(completedIds);
   const available = CONCEPTS.filter((c) => !completedSet.has(c.id));
 

@@ -13,9 +13,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildCoachPrompt } from "@/lib/prompts/coach";
 import { Concept, Message } from "@/lib/types";
+import { withRateLimit } from "@/lib/with-rate-limit";
 
-export async function POST(req: NextRequest) {
-  const { transcript, concept } = (await req.json()) as {
+async function handlePost(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || !body.transcript || !body.concept) {
+    return NextResponse.json(
+      { error: "Missing required fields: transcript, concept" },
+      { status: 400 }
+    );
+  }
+
+  const { transcript, concept } = body as {
     transcript: Message[];
     concept: Concept;
   };
@@ -30,3 +39,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ advice });
 }
+
+export const POST = withRateLimit(handlePost, 10);

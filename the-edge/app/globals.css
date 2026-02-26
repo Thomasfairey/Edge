@@ -123,6 +123,18 @@ body {
 .phase-active { opacity: 1; transform: translateY(0); transition: all 300ms ease-out; }
 .phase-exit { opacity: 0; transition: opacity 200ms ease-in; }
 
+/* Onboarding slide transitions */
+@keyframes slide-left {
+  0% { opacity: 0; transform: translateX(40px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes slide-right {
+  0% { opacity: 0; transform: translateX(-40px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.slide-in-right { animation: slide-left 300ms ease-out forwards; }
+.slide-in-left { animation: slide-right 300ms ease-out forwards; }
+
 /* Phase background transitions */
 .phase-bg-transition { transition: background-color 500ms ease; }
 

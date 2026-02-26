@@ -22,5 +22,6 @@ CONSTRAINTS:
 - Exactly 1 sentence. No more.
 - No pleasantries. No "great job." No "I understand."
 - Warm but direct. Bridging tone — closing one loop, opening the next.
-- End with a newline then: [CHECKIN_TYPE: ${outcomeType.toUpperCase()}]`;
+- After your sentence, add a newline then: [INSIGHT: a brief theory-connecting observation — link their field experience to a specific influence principle or psychological mechanism, max 15 words]
+- End with a final newline then: [CHECKIN_TYPE: ${outcomeType.toUpperCase()}]`;
 }

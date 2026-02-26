@@ -5,7 +5,8 @@ export function buildDebriefPrompt(
   concept: Concept,
   character: CharacterArchetype,
   ledgerCount: number,
-  serialisedLedger: string
+  serialisedLedger: string,
+  checkinContext?: string
 ): string {
   const formattedTranscript = transcript
     .map((t, i) => `Turn ${Math.floor(i / 2) + 1} — ${t.role === 'assistant' ? character.name.toUpperCase() : 'USER'}: ${t.content}`)
@@ -17,6 +18,10 @@ export function buildDebriefPrompt(
 SESSION HISTORY:
 ${serialisedLedger}`
     : `This is session ${ledgerCount + 1}. You have fewer than 3 prior sessions. Focus ENTIRELY on this session's execution. Do NOT attempt to identify longitudinal patterns or make cross-session comparisons — there is insufficient data and any pattern you infer will be fabricated. Be deeply specific about THIS transcript.`;
+
+  const checkinSection = checkinContext
+    ? `\n\nFIELD MISSION UPDATE:\nThe user reported on yesterday's mission before this session: "${checkinContext}"\nConnect this field experience to their performance today where relevant — did they apply yesterday's learning?\n`
+    : "";
 
   return `You are an elite executive coach. The kind who charges £2,000 per hour and tells CEOs what nobody else will.
 
@@ -31,7 +36,7 @@ THE CHARACTER THEY FACED: ${character.name}
 ${character.description}
 Tactics used: ${character.tactics.join(', ')}
 
-${longitudinalInstruction}
+${longitudinalInstruction}${checkinSection}
 
 THE TRANSCRIPT:
 

@@ -14,6 +14,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { streamResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import {
@@ -21,10 +22,19 @@ import {
   buildScenarioContext,
 } from "@/lib/prompts/roleplay";
 import { CharacterArchetype, Concept, Message } from "@/lib/types";
+import { withRateLimit } from "@/lib/with-rate-limit";
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || !body.concept || !body.character) {
+    return NextResponse.json(
+      { error: "Missing required fields: concept, character" },
+      { status: 400 }
+    );
+  }
+
   const { concept, character, transcript, userMessage, scenarioContext } =
-    (await req.json()) as {
+    body as {
       concept: Concept;
       character: CharacterArchetype;
       transcript: Message[];
@@ -41,9 +51,7 @@ export async function POST(req: NextRequest) {
   // Build the messages array for the API call
   let messages: Message[];
 
-  if (userMessage === null && transcript.length === 0) {
-    // First turn — AI speaks first. Send a single user message to trigger
-    // the opening line (the system prompt instructs the AI to open in character).
+  if (userMessage === null && (transcript || []).length === 0) {
     messages = [
       {
         role: "user",
@@ -51,10 +59,7 @@ export async function POST(req: NextRequest) {
       },
     ];
   } else {
-    // Subsequent turn — append the new user message to the existing transcript.
-    // Prepend the trigger message so the first message is always from "user"
-    // (Anthropic API requires user-first message ordering).
-    messages = [...transcript];
+    messages = [...(transcript || [])];
     if (messages.length > 0 && messages[0].role === "assistant") {
       messages.unshift({
         role: "user",
@@ -76,3 +81,5 @@ export async function POST(req: NextRequest) {
     },
   });
 }
+
+export const POST = withRateLimit(handlePost, 10);

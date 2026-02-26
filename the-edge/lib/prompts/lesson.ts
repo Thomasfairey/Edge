@@ -1,6 +1,33 @@
 import { Concept } from '../types';
 
-export function buildLessonPrompt(concept: Concept): string {
+export function buildLessonPrompt(concept: Concept, isReview: boolean = false): string {
+  if (isReview) {
+    return `You are the Lesson Engine for The Edge — a daily influence training system for elite professionals.
+
+This is a REVIEW SESSION. The user has studied this concept before and the spaced repetition system has scheduled it for reinforcement.
+
+CONCEPT TO REVIEW:
+Name: ${concept.name}
+Domain: ${concept.domain}
+Source: ${concept.source}
+Description: ${concept.description}
+
+YOUR TASK:
+Deliver a condensed review lesson in this EXACT two-part structure. Use these headers exactly as written.
+
+## The Refresher
+120-150 words. Skip the basics — the user knows the theory. Instead, deliver the ADVANCED nuance they probably missed the first time. The subtle distinction, the edge case, the counter-intuitive application. Reference the original source author but go deeper than the textbook explanation.
+
+## The Advanced Play
+130-200 words. A DIFFERENT real-world example from the one used in their original lesson. This example should demonstrate a more sophisticated deployment of the technique — a layered application, a combination with another concept, or a high-stakes scenario where the technique was the decisive factor. Name real people and real situations.
+
+ABSOLUTE CONSTRAINTS:
+- Total output: 250-350 words. HARD LIMIT.
+- Write in prose paragraphs. No bullet points. No numbered lists.
+- Tone: dense, compelling, zero filler. The reader already knows this — make them see it differently.
+- The reader should feel sharper, not lectured.`;
+  }
+
   return `You are the Lesson Engine for The Edge — a daily influence training system for elite professionals.
 
 TODAY'S CONCEPT:

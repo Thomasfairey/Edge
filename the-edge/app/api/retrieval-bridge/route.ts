@@ -12,9 +12,18 @@ import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildRetrievalBridgePrompt } from "@/lib/prompts/retrieval-bridge";
 import { Concept } from "@/lib/types";
+import { withRateLimit } from "@/lib/with-rate-limit";
 
-export async function POST(req: NextRequest) {
-  const { concept, userResponse } = (await req.json()) as {
+async function handlePost(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || !body.concept) {
+    return NextResponse.json(
+      { error: "Missing required field: concept" },
+      { status: 400 }
+    );
+  }
+
+  const { concept, userResponse } = body as {
     concept: Concept;
     userResponse?: string;
   };
@@ -39,3 +48,5 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ response: rawResponse, ready });
 }
+
+export const POST = withRateLimit(handlePost, 10);

@@ -1,19 +1,31 @@
 "use client";
 
 /**
- * Home page — session launcher with progress ring and score circles.
+ * Home page — session launcher with progress ring, score circles,
+ * onboarding flow, and trend dashboard.
  * Tiimo-inspired: warm cream, soft purple accent, DM Sans, generous whitespace.
  */
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { SessionScores, LedgerEntry } from "@/lib/types";
+import Onboarding from "./components/Onboarding";
+import TrendDashboard from "./components/TrendDashboard";
+
+interface ScoreEntry {
+  day: number;
+  date: string;
+  scores: SessionScores;
+  concept: string;
+}
 
 interface StatusData {
   dayNumber: number;
   lastEntry: LedgerEntry | null;
   recentScores: SessionScores[];
   streakCount: number;
+  srSummary?: { totalConcepts: number; dueForReview: number; masteredCount: number };
+  allScores?: ScoreEntry[];
 }
 
 const DIMENSIONS: { key: keyof SessionScores; label: string; fullName: string; description: string }[] = [
@@ -58,7 +70,6 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
     <div className="flex flex-col items-center gap-2">
       <div className="relative mx-auto" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="rotate-[-90deg]">
-          {/* Background ring */}
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -67,7 +78,6 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
             stroke="#F0EDE8"
             strokeWidth={strokeWidth}
           />
-          {/* Progress ring */}
           {hasData && (
             <circle
               cx={size / 2}
@@ -83,7 +93,6 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
             />
           )}
         </svg>
-        {/* Centre number */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-4xl font-bold text-primary">
             {hasData ? average.toFixed(1) : "\u2013"}
@@ -116,6 +125,7 @@ export default function Home() {
   const [hasIncompleteSession, setHasIncompleteSession] = useState(false);
   const [expandedDim, setExpandedDim] = useState<string | null>(null);
   const expandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     setOnline(navigator.onLine);
@@ -130,7 +140,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // Check for incomplete session in localStorage
     try {
       const raw = localStorage.getItem(SESSION_STORAGE_KEY);
       if (raw) {
@@ -150,6 +159,15 @@ export default function Home() {
       .then((data) => {
         setStatus(data);
         try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+
+        // Show onboarding if no sessions and not previously completed
+        if (!data.lastEntry) {
+          try {
+            if (!localStorage.getItem("edge-onboarding-complete")) {
+              setShowOnboarding(true);
+            }
+          } catch {}
+        }
       })
       .catch(() => {
         try {
@@ -164,6 +182,7 @@ export default function Home() {
   const recentScores = status?.recentScores ?? [];
   const streakCount = status?.streakCount ?? 0;
   const latestScores = recentScores.length > 0 ? recentScores[recentScores.length - 1] : null;
+  const allScores = status?.allScores ?? [];
 
   const average = latestScores
     ? (latestScores.technique_application +
@@ -174,6 +193,15 @@ export default function Home() {
     : 0;
 
   const hasData = latestScores !== null;
+
+  // Show onboarding flow
+  if (showOnboarding) {
+    return (
+      <main className="mx-auto max-w-[720px] px-4 py-8 sm:px-6 sm:py-12">
+        <Onboarding onComplete={() => setShowOnboarding(false)} />
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-[720px] px-4 py-8 sm:px-6 sm:py-12">
@@ -238,6 +266,11 @@ export default function Home() {
           })}
         </div>
 
+        {/* Trend Dashboard (#8) */}
+        {allScores.length >= 2 && (
+          <TrendDashboard allScores={allScores} />
+        )}
+
         {/* Empty state message */}
         {!hasData && !loading && !hasIncompleteSession && (
           <p className="text-center text-sm text-secondary leading-relaxed">
@@ -273,7 +306,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Begin session button — solid purple, no gradient */}
+        {/* Begin session button */}
         {!hasIncompleteSession && (
           <button
             onClick={() => { if (online) router.push("/session"); }}

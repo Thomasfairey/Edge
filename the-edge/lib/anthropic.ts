@@ -208,6 +208,58 @@ export function streamResponse(
 }
 
 // ---------------------------------------------------------------------------
+// Streaming-buffered helper (keeps connection alive for long generations)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stream an Anthropic response internally, buffer all chunks, return the
+ * complete text as a string. Same signature as generateResponse but uses
+ * streaming under the hood to avoid idle connection timeouts on Vercel.
+ */
+export async function generateResponseViaStream(
+  systemPrompt: string,
+  messages: ChatMessage[],
+  config: PhaseConfig
+): Promise<string> {
+  const phaseName =
+    Object.entries(PHASE_CONFIG).find(
+      ([, c]) => c.model === config.model && c.max_tokens === config.max_tokens
+    )?.[0] ?? "unknown";
+
+  try {
+    const stream = await withTimeout(
+      callWithRetry(systemPrompt, messages, config, true) as Promise<
+        AsyncIterable<Anthropic.MessageStreamEvent>
+      >,
+      90000 // 90s timeout for streaming buffer
+    );
+
+    let fullText = "";
+    let tokenCount = 0;
+
+    for await (const event of stream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        fullText += event.delta.text;
+        tokenCount += Math.ceil(event.delta.text.length / 4);
+      }
+    }
+
+    console.log(
+      `[anthropic] ${phaseName} (streamed) | model=${config.model} | ~${tokenCount} tokens`
+    );
+
+    return fullText;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[anthropic] ${phaseName} stream-buffer error: ${message}`);
+    return `[System: Response generation failed — ${message}. Please try again.]`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Non-streaming helper
 // ---------------------------------------------------------------------------
 

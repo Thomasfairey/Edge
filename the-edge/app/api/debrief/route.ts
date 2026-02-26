@@ -1,21 +1,26 @@
 /**
  * Phase 3: Debrief — transcript analysis, scoring, and structured extraction.
  * POST { transcript: Message[], concept: Concept,
- *        character: CharacterArchetype, commandsUsed: string[] }
+ *        character: CharacterArchetype, commandsUsed: string[],
+ *        checkinContext?: string }
  * Returns { debriefContent: string, scores: SessionScores,
  *           behavioralWeaknessSummary: string, keyMoment: string }
  *
- * Non-streaming — displayed as a full analysis block.
+ * Uses streaming internally (generateResponseViaStream) to keep the
+ * connection alive on Vercel during long generations.
  * Parses the ---SCORES--- and ---LEDGER--- structured output.
  * Reference: PRD Section 3.5
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
+import { generateResponseViaStream, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildDebriefPrompt } from "@/lib/prompts/debrief";
 import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
 import { CharacterArchetype, Concept, Message, SessionScores } from "@/lib/types";
+import { withRateLimit } from "@/lib/with-rate-limit";
+
+export const maxDuration = 60;
 
 /** Default scores when parsing fails. */
 const DEFAULT_SCORES: SessionScores = {
@@ -27,8 +32,36 @@ const DEFAULT_SCORES: SessionScores = {
 };
 
 /**
+ * Compute fallback scores from transcript data instead of blanket 3s.
+ * Derives basic scores from turn count and command usage.
+ */
+function computeFallbackScores(
+  transcript: Message[],
+  commandsUsed: string[]
+): SessionScores {
+  const turnCount = transcript.length;
+  const userTurns = transcript.filter((t) => t.role === "user").length;
+  const usedCoach = commandsUsed.includes("/coach");
+  const usedSkip = commandsUsed.includes("/skip");
+
+  // Base: 2 for engagement, +1 if >4 user turns, +1 if used coach
+  const base = Math.min(
+    5,
+    Math.max(1, 2 + (userTurns > 4 ? 1 : 0) + (usedCoach ? 1 : 0) - (usedSkip ? 1 : 0))
+  );
+
+  // Vary slightly per dimension
+  return {
+    technique_application: Math.max(1, base - (turnCount < 4 ? 1 : 0)),
+    tactical_awareness: base,
+    frame_control: Math.max(1, base - (usedSkip ? 1 : 0)),
+    emotional_regulation: Math.min(5, base + (userTurns > 6 ? 1 : 0)),
+    strategic_outcome: Math.max(1, base - (turnCount < 6 ? 1 : 0)),
+  };
+}
+
+/**
  * Parse the ---SCORES--- block from debrief output.
- * Uses regex — does NOT use a JSON parser.
  */
 function parseScores(text: string): SessionScores {
   const scoresMatch = text.match(/---SCORES---\s*([\s\S]*?)(?:---LEDGER---|$)/);
@@ -57,7 +90,6 @@ function parseScores(text: string): SessionScores {
 
 /**
  * Parse the ---LEDGER--- block from debrief output.
- * Extracts behavioral_weakness_summary and key_moment.
  */
 function parseLedgerFields(text: string): {
   behavioralWeaknessSummary: string;
@@ -85,47 +117,72 @@ function parseLedgerFields(text: string): {
   };
 }
 
-export async function POST(req: NextRequest) {
-  const { transcript, concept, character, commandsUsed } = (await req.json()) as {
+async function handlePost(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || !body.transcript || !body.concept || !body.character) {
+    return NextResponse.json(
+      { error: "Missing required fields: transcript, concept, character" },
+      { status: 400 }
+    );
+  }
+
+  const { transcript, concept, character, commandsUsed, checkinContext } = body as {
     transcript: Message[];
     concept: Concept;
     character: CharacterArchetype;
     commandsUsed: string[];
+    checkinContext?: string;
   };
 
-  const ledgerCount = getLedgerCount();
-  const serialisedLedger = serialiseForPrompt();
+  try {
+    const ledgerCount = getLedgerCount();
+    const serialisedLedger = serialiseForPrompt();
 
-  const debriefPrompt = buildDebriefPrompt(
-    transcript,
-    concept,
-    character,
-    ledgerCount,
-    serialisedLedger
-  );
+    const debriefPrompt = buildDebriefPrompt(
+      transcript,
+      concept,
+      character,
+      ledgerCount,
+      serialisedLedger,
+      checkinContext
+    );
 
-  const systemPrompt = `${buildPersistentContext()}\n\n${debriefPrompt}`;
+    const systemPrompt = `${buildPersistentContext()}\n\n${debriefPrompt}`;
 
-  const debriefContent = await generateResponse(
-    systemPrompt,
-    [{ role: "user", content: "Deliver the debrief." }],
-    PHASE_CONFIG.debrief
-  );
+    // Use streaming internally to keep connection alive
+    const debriefContent = await generateResponseViaStream(
+      systemPrompt,
+      [{ role: "user", content: "Deliver the debrief." }],
+      PHASE_CONFIG.debrief
+    );
 
-  // Parse structured output
-  const scores = parseScores(debriefContent);
-  const { behavioralWeaknessSummary, keyMoment } = parseLedgerFields(debriefContent);
+    // Parse structured output
+    const scores = parseScores(debriefContent);
+    const { behavioralWeaknessSummary, keyMoment } = parseLedgerFields(debriefContent);
 
-  // Log parsing results
-  console.log(
-    `[debrief] Scores: TA=${scores.technique_application} TW=${scores.tactical_awareness} FC=${scores.frame_control} ER=${scores.emotional_regulation} SO=${scores.strategic_outcome}`
-  );
-  console.log(`[debrief] Commands used: ${commandsUsed.join(", ") || "none"}`);
+    console.log(
+      `[debrief] Scores: TA=${scores.technique_application} TW=${scores.tactical_awareness} FC=${scores.frame_control} ER=${scores.emotional_regulation} SO=${scores.strategic_outcome}`
+    );
+    console.log(`[debrief] Commands used: ${(commandsUsed || []).join(", ") || "none"}`);
 
-  return NextResponse.json({
-    debriefContent,
-    scores,
-    behavioralWeaknessSummary,
-    keyMoment,
-  });
+    return NextResponse.json({
+      debriefContent,
+      scores,
+      behavioralWeaknessSummary,
+      keyMoment,
+    });
+  } catch (error) {
+    console.error("[debrief] Error:", error);
+
+    // Fallback: compute scores from transcript data
+    const fallbackScores = computeFallbackScores(transcript, commandsUsed || []);
+    return NextResponse.json({
+      debriefContent: "Debrief generation failed. Scores have been estimated from your session activity.",
+      scores: fallbackScores,
+      behavioralWeaknessSummary: "Unable to generate analysis due to connection timeout.",
+      keyMoment: "Unable to identify key moment.",
+    });
+  }
 }
+
+export const POST = withRateLimit(handlePost, 5);

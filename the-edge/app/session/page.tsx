@@ -66,9 +66,9 @@ function scoreCircleColor(score: number): string {
 }
 
 function scoreTextColor(score: number): string {
-  if (score >= 4) return "#1A5C3A"; // dark green on green bg
-  if (score === 3) return "#6B4F00"; // dark amber on gold bg
-  return "#611414"; // dark red on coral bg
+  if (score >= 4) return "#1A5C3A";
+  if (score === 3) return "#6B4F00";
+  return "#611414";
 }
 
 async function fetchWithRetry(
@@ -208,11 +208,12 @@ function renderMarkdown(text: string): React.ReactNode[] {
 
 // ---------------------------------------------------------------------------
 // Lesson section splitter — parses "## The Principle", "## The Play", "## The Counter"
+// Also handles review format: "## The Refresher", "## The Advanced Play"
 // ---------------------------------------------------------------------------
 
 function splitLessonSections(text: string): { title: string; content: string }[] {
   const raw: { title: string; content: string }[] = [];
-  const pattern = /^## (The (?:Principle|Play|Counter))/gm;
+  const pattern = /^## (The (?:Principle|Play|Counter|Refresher|Advanced Play))/gm;
   const headings: { title: string; index: number }[] = [];
   let match;
 
@@ -225,7 +226,7 @@ function splitLessonSections(text: string): { title: string; content: string }[]
   }
 
   for (let i = 0; i < headings.length; i++) {
-    const start = headings[i].index + headings[i].title.length + 3; // skip "## Title\n"
+    const start = headings[i].index + headings[i].title.length + 3;
     const end = i + 1 < headings.length ? headings[i + 1].index : text.length;
     raw.push({
       title: headings[i].title,
@@ -233,14 +234,12 @@ function splitLessonSections(text: string): { title: string; content: string }[]
     });
   }
 
-  // Split any section longer than 600 chars at the nearest paragraph break
   const MAX_CARD_CHARS = 600;
   const sections: { title: string; content: string }[] = [];
   for (const section of raw) {
     if (section.content.length <= MAX_CARD_CHARS) {
       sections.push(section);
     } else {
-      // Split on double newlines first, fall back to single newlines
       let paragraphs = section.content.split(/\n\n+/);
       if (paragraphs.length <= 1) {
         paragraphs = section.content.split(/\n/);
@@ -266,7 +265,7 @@ function splitLessonSections(text: string): { title: string; content: string }[]
 }
 
 // ---------------------------------------------------------------------------
-// Swipeable lesson cards component
+// Swipeable lesson cards component (#4 — enhanced navigation)
 // ---------------------------------------------------------------------------
 
 function LessonCards({
@@ -277,8 +276,15 @@ function LessonCards({
   isStreaming: boolean;
 }) {
   const [currentCard, setCurrentCard] = useState(0);
+  const [showSwipeHint, setShowSwipeHint] = useState(true);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
+
+  // Fade swipe hint after 3s
+  useEffect(() => {
+    const t = setTimeout(() => setShowSwipeHint(false), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -300,10 +306,22 @@ function LessonCards({
   const section = sections[currentCard];
   if (!section) return null;
 
+  const hasMore = currentCard < sections.length - 1;
+
   return (
-    <div>
+    <div className="relative">
+      {/* Next-card peek strip */}
+      {hasMore && (
+        <div
+          className="absolute right-0 top-0 bottom-0 w-3 rounded-r-3xl z-10 pointer-events-none"
+          style={{
+            background: "linear-gradient(to left, rgba(90,82,224,0.08), transparent)",
+          }}
+        />
+      )}
+
       <div
-        className="select-text rounded-3xl p-6 shadow-[var(--shadow-soft)] overflow-y-auto"
+        className="select-text rounded-3xl p-6 shadow-[var(--shadow-soft)] overflow-y-auto relative"
         style={{ backgroundColor: "#EFF6FA", maxHeight: "calc(100dvh - 220px)" }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -316,25 +334,37 @@ function LessonCards({
             <span className="inline-block animate-pulse text-[#5A52E0]">|</span>
           )}
         </div>
-      </div>
 
-      {/* Dot indicators */}
-      <div className="mt-4 flex items-center justify-center gap-2">
-        {sections.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => setCurrentCard(i)}
-            aria-label={`Go to page ${i + 1} of ${sections.length}`}
-            aria-current={i === currentCard ? "true" : undefined}
-            className={`h-2 rounded-full transition-all ${
-              i === currentCard ? "w-6 bg-[#5A52E0]" : "w-2 bg-[#B8D4E3]"
-            }`}
-            style={{ minHeight: 8, minWidth: 8 }}
-          />
-        ))}
-        <span className="ml-2 text-xs text-secondary">
-          {currentCard + 1} / {sections.length}
-        </span>
+        {/* Swipe hint on first card */}
+        {currentCard === 0 && showSwipeHint && sections.length > 1 && (
+          <div
+            className="mt-4 text-center text-xs text-[#5A52E0] transition-opacity duration-1000"
+            style={{ opacity: showSwipeHint ? 0.8 : 0 }}
+          >
+            Swipe to continue &rarr;
+          </div>
+        )}
+
+        {/* Sticky dot indicators with gradient fade */}
+        <div className="sticky bottom-0 pt-3 pb-1" style={{ background: "linear-gradient(transparent, #EFF6FA 40%)" }}>
+          <div className="flex items-center justify-center gap-2">
+            {sections.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentCard(i)}
+                aria-label={`Go to page ${i + 1} of ${sections.length}`}
+                aria-current={i === currentCard ? "true" : undefined}
+                className={`h-2 rounded-full transition-all ${
+                  i === currentCard ? "w-6 bg-[#5A52E0]" : "w-2 bg-[#B8D4E3]"
+                }`}
+                style={{ minHeight: 8, minWidth: 8 }}
+              />
+            ))}
+            <span className="ml-2 text-xs text-secondary">
+              {currentCard + 1} / {sections.length}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -411,6 +441,42 @@ function Confetti() {
 }
 
 // ---------------------------------------------------------------------------
+// Score delta display helper
+// ---------------------------------------------------------------------------
+
+function ScoreDelta({ current, previous }: { current: number; previous: number | null }) {
+  if (previous === null) return null;
+  const diff = current - previous;
+  if (diff === 0) return null;
+  return (
+    <span
+      className="ml-1 text-xs font-medium"
+      style={{ color: diff > 0 ? "#6BC9A0" : "#E88B8B" }}
+    >
+      {diff > 0 ? `+${diff}` : diff}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Motivational line based on trajectory
+// ---------------------------------------------------------------------------
+
+function getMotivationalLine(scores: SessionScores, previousScores: SessionScores | null): string {
+  if (!previousScores) return "First session in the books. The baseline is set.";
+
+  const currentAvg = Object.values(scores).reduce((a, b) => a + b, 0) / 5;
+  const prevAvg = Object.values(previousScores).reduce((a, b) => a + b, 0) / 5;
+  const diff = currentAvg - prevAvg;
+
+  if (diff > 0.5) return "The work is compounding.";
+  if (diff > 0) return "Marginal gains. Keep stacking.";
+  if (diff === 0) return "Holding steady. The next breakthrough is close.";
+  if (diff > -0.5) return "Tougher session \u2014 that\u2019s where growth happens.";
+  return "Hard day. The best sessions often follow the worst.";
+}
+
+// ---------------------------------------------------------------------------
 // Main session component
 // ---------------------------------------------------------------------------
 
@@ -430,6 +496,7 @@ export default function SessionPage() {
   const [dayNumber, setDayNumber] = useState(1);
   const [lastMission, setLastMission] = useState<string | null>(null);
   const [checkinOutcome, setCheckinOutcome] = useState<string | null>(null);
+  const [checkinUserText, setCheckinUserText] = useState<string | null>(null);
   const [concept, setConcept] = useState<Concept | null>(null);
   const [character, setCharacter] = useState<CharacterArchetype | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
@@ -447,6 +514,8 @@ export default function SessionPage() {
   const [keyMoment, setKeyMoment] = useState("");
   const [mission, setMission] = useState<string | null>(null);
   const [rationale, setRationale] = useState<string | null>(null);
+  const [isReviewSession, setIsReviewSession] = useState(false);
+  const [previousScores, setPreviousScores] = useState<SessionScores | null>(null);
 
   // Check-in state (within deploy phase)
   const [checkinNeeded, setCheckinNeeded] = useState(false);
@@ -537,10 +606,11 @@ export default function SessionPage() {
         phase: currentPhase, concept, character, lessonContent,
         transcript: roleplayTranscript, turnCount,
         completedPhases: Array.from(completedPhases), commandsUsed,
-        checkinOutcome, checkinNeeded, checkinDone,
+        checkinOutcome, checkinNeeded, checkinDone, checkinUserText,
         dayNumber, scenarioContext, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
-        lastMission, coachAdvice, timestamp: Date.now(),
+        lastMission, coachAdvice, isReviewSession, previousScores,
+        timestamp: Date.now(),
       }));
     } catch {}
   }
@@ -569,6 +639,7 @@ export default function SessionPage() {
           setTurnCount(s.turnCount || 0); setCompletedPhases(new Set(s.completedPhases || []));
           setCommandsUsed(s.commandsUsed || []); setCheckinOutcome(s.checkinOutcome);
           setCheckinNeeded(s.checkinNeeded ?? false); setCheckinDone(s.checkinDone ?? false);
+          setCheckinUserText(s.checkinUserText ?? null);
           setDayNumber(s.dayNumber || 1); setScenarioContext(s.scenarioContext || null);
           if (s.debriefContent) setDebriefContent(s.debriefContent);
           if (s.scores) setScores(s.scores);
@@ -578,6 +649,8 @@ export default function SessionPage() {
           if (s.rationale) setRationale(s.rationale);
           if (s.lastMission) setLastMission(s.lastMission);
           if (s.coachAdvice) setCoachAdvice(s.coachAdvice);
+          if (s.isReviewSession) setIsReviewSession(s.isReviewSession);
+          if (s.previousScores) setPreviousScores(s.previousScores);
           setIsLoading(false); setRestored(true); return;
         } else { localStorage.removeItem(SESSION_STORAGE_KEY); }
       }
@@ -591,6 +664,10 @@ export default function SessionPage() {
         if (data.lastEntry) {
           setLastMission(data.lastEntry.mission);
           setCheckinNeeded(true);
+          // Store previous scores for completion screen deltas
+          if (data.lastEntry.scores) {
+            setPreviousScores(data.lastEntry.scores);
+          }
         }
         fetchLesson();
       })
@@ -633,6 +710,7 @@ export default function SessionPage() {
         if (parsed.date === today && parsed.concept && parsed.lessonContent) {
           setConcept(parsed.concept);
           setLessonContent(parsed.lessonContent);
+          setIsReviewSession(parsed.isReview ?? false);
           setIsLoading(false);
           localStorage.removeItem("edge-pregenerated-lesson");
           return;
@@ -657,6 +735,10 @@ export default function SessionPage() {
       if (conceptHeader) {
         setConcept(JSON.parse(decodeURIComponent(conceptHeader)));
       }
+
+      // Check if review session
+      const isReview = res.headers.get("X-Is-Review") === "true";
+      setIsReviewSession(isReview);
 
       // Stream the lesson content
       const reader = res.body?.getReader();
@@ -683,7 +765,6 @@ export default function SessionPage() {
     }
   }
 
-  // Pre-generate tomorrow's lesson after session completion
   function pregenerateTomorrowsLesson() {
     try {
       fetch("/api/lesson", {
@@ -702,11 +783,12 @@ export default function SessionPage() {
                 date: tomorrow.toISOString().slice(0, 10),
                 concept: data.concept,
                 lessonContent: data.lessonContent,
+                isReview: data.isReview ?? false,
               })
             );
           }
         })
-        .catch(() => {}); // Silent failure for pre-generation
+        .catch(() => {});
     } catch {}
   }
 
@@ -888,7 +970,7 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 3: Debrief
+  // Phase 3: Debrief (#1 — increased timeout, fallback, #2 — streaming, #5 — checkin context)
   // ---------------------------------------------------------------------------
 
   const [debriefRetryCount, setDebriefRetryCount] = useState(0);
@@ -901,8 +983,14 @@ export default function SessionPage() {
       const res = await fetchWithRetry(
         "/api/debrief",
         { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: roleplayTranscript, concept, character, commandsUsed }),
-          signal: AbortSignal.timeout(30000) },
+          body: JSON.stringify({
+            transcript: roleplayTranscript,
+            concept,
+            character,
+            commandsUsed,
+            checkinContext: checkinUserText || undefined,
+          }),
+          signal: AbortSignal.timeout(65000) }, // #1: increased from 30s to 65s
         3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
@@ -929,7 +1017,6 @@ export default function SessionPage() {
   }
 
   function skipDebriefToMission() {
-    // Use default scores
     setScores({ technique_application: 3, tactical_awareness: 3, frame_control: 3, emotional_regulation: 3, strategic_outcome: 3 });
     setDebriefContent("Debrief unavailable due to connection issues. Default scores applied.");
     setBehavioralWeaknessSummary("Unable to generate analysis.");
@@ -939,12 +1026,11 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 4: Deploy (check-in + mission)
+  // Phase 4: Deploy (check-in + mission) — #5 enhanced
   // ---------------------------------------------------------------------------
 
   function enterDeploy() {
     advancePhase("debrief", "mission");
-    // If day 2+, show check-in first. Otherwise go straight to mission.
     if (checkinNeeded && !checkinDone) {
       setIsLoading(false);
     } else {
@@ -956,6 +1042,8 @@ export default function SessionPage() {
     if (!lastMission || submittingRef.current) return;
     submittingRef.current = true;
     setIsLoading(true);
+    // Store user text for debrief context
+    if (userOutcome) setCheckinUserText(userOutcome);
     try {
       const res = await fetch("/api/checkin", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -969,8 +1057,8 @@ export default function SessionPage() {
       setCheckinDone(true);
       setIsLoading(false);
       submittingRef.current = false;
-      // After check-in, auto-advance to mission
-      setTimeout(() => { setCheckinResponse(null); fetchMission(); }, 2000);
+      // #5: increased display time from 2s to 3.5s
+      setTimeout(() => { setCheckinResponse(null); fetchMission(); }, 3500);
     } catch {
       setError("Failed to submit. Try again.");
       setIsLoading(false);
@@ -1001,7 +1089,6 @@ export default function SessionPage() {
       const newCount = missionRetryCount + 1;
       setMissionRetryCount(newCount);
       if (newCount >= 2) {
-        // Use domain-specific fallback mission
         const fallbacks: Record<string, { mission: string; rationale: string }[]> = {
           "Influence & Persuasion": [
             { mission: "In your next conversation, give something of value before making any request. Note how the dynamic shifts.", rationale: "Reciprocity primes compliance before you ask." },
@@ -1054,7 +1141,6 @@ export default function SessionPage() {
     setCompletedPhases((p) => new Set([...p, "mission"]));
     setShowConfetti(true);
     clearSession(); haptic();
-    // Pre-generate tomorrow's lesson in the background
     pregenerateTomorrowsLesson();
   }
 
@@ -1115,6 +1201,13 @@ export default function SessionPage() {
         </div>
       )}
 
+      {/* Review session badge (#6) */}
+      {isReviewSession && currentPhase === "lesson" && (
+        <div className="flex-shrink-0 flex h-7 items-center justify-center bg-[#EEEDFF] text-xs font-medium text-[#5A52E0]">
+          Review session
+        </div>
+      )}
+
       {/* Scrollable content */}
       <div ref={isRoleplay ? chatContainerRef : undefined} className="chat-container flex-1 overflow-y-auto px-4 sm:px-6">
         <div className={`mx-auto max-w-lg py-5 sm:py-8 ${phaseClass}`}>
@@ -1151,9 +1244,16 @@ export default function SessionPage() {
                 <>
                   {concept && (
                     <div className="mb-4">
-                      <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-medium text-[#5A52E0]">
-                        {concept.domain}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-medium text-[#5A52E0]">
+                          {concept.domain}
+                        </span>
+                        {isReviewSession && (
+                          <span className="inline-block rounded-full bg-[#F5E6B8] px-3 py-1 text-xs font-medium text-[#8B7024]">
+                            Review
+                          </span>
+                        )}
+                      </div>
                       <h2 className="mt-3 text-xl font-semibold text-primary">
                         {concept.name}
                         <span className="ml-2 text-sm font-normal italic text-secondary">({concept.source})</span>
@@ -1327,19 +1427,28 @@ export default function SessionPage() {
 
               {debriefContent && !isLoading && (
                 <>
-                  {/* Score circles */}
+                  {/* Score circles with deltas (#9) */}
                   {scores && (
                     <div className="mb-5 rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)]">
                       <div className="flex items-center justify-center gap-5">
                         {SCORE_DIMS.map(({ key, label }) => {
                           const s = scores[key];
+                          const prev = previousScores ? previousScores[key] : null;
                           return (
                             <div key={key} className="flex flex-col items-center gap-1.5">
                               <div
-                                className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold"
+                                className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold relative"
                                 style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
                               >
                                 {s}
+                                {prev !== null && prev !== s && (
+                                  <span
+                                    className="absolute -top-1 -right-1 text-[10px] font-bold"
+                                    style={{ color: s > prev ? "#6BC9A0" : "#E88B8B" }}
+                                  >
+                                    {s > prev ? `+${s - prev}` : s - prev}
+                                  </span>
+                                )}
                               </div>
                               <span className="text-xs text-secondary">{label}</span>
                             </div>
@@ -1359,15 +1468,15 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* DEPLOY (check-in + mission)                                     */}
+          {/* DEPLOY (check-in + mission) — #5 enhanced styling              */}
           {/* ============================================================== */}
           {currentPhase === "mission" && (
             <>
-              {/* Check-in card (Day 2+, before mission loads) */}
+              {/* Check-in card (Day 2+, before mission loads) — #5 more prominent */}
               {checkinNeeded && !checkinDone && !isLoading && !mission && (
                 <div className="animate-fade-in-up space-y-5">
-                  <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
-                    <p className="mb-3 text-sm text-secondary">Before your next mission...</p>
+                  <div className="rounded-3xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
+                    <p className="mb-1 text-xs font-medium text-[#5A9A7A] uppercase tracking-wider">Mission debrief</p>
                     <p className="mb-1 text-sm text-secondary">Yesterday you were asked to:</p>
                     <p className="mb-5 text-base font-medium leading-relaxed text-primary">
                       &ldquo;{lastMission}&rdquo;
@@ -1378,8 +1487,8 @@ export default function SessionPage() {
                     <div className="flex gap-3">
                       <button
                         onClick={() => setCheckinPillSelected("completed")}
-                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97] ${
-                          checkinPillSelected === "completed" ? "ring-2 ring-[#5A52E0]" : ""
+                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[0.97] ${
+                          checkinPillSelected === "completed" ? "ring-2 ring-[#5A52E0] shadow-[0_2px_8px_rgba(90,82,224,0.2)]" : ""
                         }`}
                         style={{ backgroundColor: "#B8E0C8", color: "#2D6A4F" }}
                       >
@@ -1387,8 +1496,8 @@ export default function SessionPage() {
                       </button>
                       <button
                         onClick={() => setCheckinPillSelected("tried")}
-                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97] ${
-                          checkinPillSelected === "tried" ? "ring-2 ring-[#5A52E0]" : ""
+                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[0.97] ${
+                          checkinPillSelected === "tried" ? "ring-2 ring-[#5A52E0] shadow-[0_2px_8px_rgba(90,82,224,0.2)]" : ""
                         }`}
                         style={{ backgroundColor: "#F5E6B8", color: "#8B7024" }}
                       >
@@ -1469,16 +1578,23 @@ export default function SessionPage() {
                     </button>
                   ) : (
                     <div className="animate-fade-in-up space-y-5">
-                      {/* Completion card */}
+                      {/* Enhanced completion card (#9) */}
                       <div className="rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: "#E8F5ED" }}>
                         <p className="mb-1 text-center text-xl font-semibold text-primary animate-completion">
                           Session complete
                         </p>
-                        <p className="mb-5 text-center text-sm text-secondary">
+                        <p className="mb-2 text-center text-sm text-secondary">
                           Day {dayNumber} &middot; {concept?.name}
                         </p>
 
-                        {/* Key takeaway */}
+                        {/* Motivational line (#9) */}
+                        {scores && (
+                          <p className="mb-5 text-center text-xs font-medium text-[#5A9A7A]">
+                            {getMotivationalLine(scores, previousScores)}
+                          </p>
+                        )}
+
+                        {/* Key moment quote from debrief (#9) */}
                         {keyMoment && (
                           <div className="mb-5 rounded-2xl bg-white/60 px-4 py-3">
                             <p className="text-sm font-medium text-secondary">Key takeaway</p>
@@ -1486,19 +1602,21 @@ export default function SessionPage() {
                           </div>
                         )}
 
-                        {/* Scores */}
+                        {/* Scores with deltas (#9) */}
                         {scores && (
                           <div className="mb-5">
                             <div className="flex items-center justify-center gap-3">
                               {SCORE_DIMS.map(({ key, label }) => {
                                 const s = scores[key];
+                                const prev = previousScores ? previousScores[key] : null;
                                 return (
                                   <div key={key} className="flex flex-col items-center gap-1">
                                     <div
-                                      className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold"
+                                      className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold relative"
                                       style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
                                     >
                                       {s}
+                                      <ScoreDelta current={s} previous={prev} />
                                     </div>
                                     <span className="text-[10px] text-secondary">{label}</span>
                                   </div>
@@ -1508,9 +1626,9 @@ export default function SessionPage() {
                           </div>
                         )}
 
-                        {/* Mission reminder */}
+                        {/* Mission styled as dashed-border card (#9) */}
                         {mission && (
-                          <div className="mb-4 rounded-2xl bg-white/60 px-4 py-3">
+                          <div className="mb-4 rounded-2xl border-2 border-dashed border-[#B8E0C8] bg-white/60 px-4 py-3">
                             <p className="text-sm font-medium text-[#5A9A7A]">Your mission today</p>
                             <p className="mt-1 text-sm leading-relaxed text-primary">{mission}</p>
                           </div>
@@ -1521,39 +1639,28 @@ export default function SessionPage() {
                           onClick={async () => {
                             const text = `The Edge - Day ${dayNumber}\nConcept: ${concept?.name}\nScores: ${scores ? Object.values(scores).join(", ") : "-"}\nMission: ${mission || "-"}`;
 
-                            // Try to generate a share card image
                             try {
                               const canvas = document.createElement("canvas");
                               canvas.width = 600;
                               canvas.height = 400;
                               const ctx = canvas.getContext("2d");
                               if (ctx) {
-                                // Background
                                 ctx.fillStyle = "#FAF9F6";
                                 ctx.beginPath();
                                 ctx.roundRect(0, 0, 600, 400, 24);
                                 ctx.fill();
-
-                                // Accent bar
                                 ctx.fillStyle = "#5A52E0";
                                 ctx.fillRect(0, 0, 600, 6);
-
-                                // Title
                                 ctx.fillStyle = "#2D2B3D";
                                 ctx.font = "bold 28px sans-serif";
                                 ctx.fillText("the edge", 32, 48);
-
-                                // Day + streak
                                 ctx.fillStyle = "#8E8C99";
                                 ctx.font = "16px sans-serif";
                                 ctx.fillText(`Day ${dayNumber}`, 32, 76);
-
-                                // Concept
                                 ctx.fillStyle = "#2D2B3D";
                                 ctx.font = "bold 20px sans-serif";
                                 ctx.fillText(concept?.name || "", 32, 120);
 
-                                // Score circles
                                 if (scores) {
                                   const dims = ["TA", "TW", "FC", "ER", "SO"];
                                   const keys: (keyof SessionScores)[] = ["technique_application", "tactical_awareness", "frame_control", "emotional_regulation", "strategic_outcome"];
@@ -1576,7 +1683,6 @@ export default function SessionPage() {
                                   ctx.textAlign = "start";
                                 }
 
-                                // Key takeaway
                                 if (keyMoment) {
                                   ctx.fillStyle = "#8E8C99";
                                   ctx.font = "13px sans-serif";
@@ -1598,7 +1704,6 @@ export default function SessionPage() {
                                   if (line) ctx.fillText(line, 32, y);
                                 }
 
-                                // Branding
                                 ctx.fillStyle = "#B5B3BD";
                                 ctx.font = "12px sans-serif";
                                 ctx.fillText("the-edge-xi.vercel.app", 32, 384);
@@ -1614,7 +1719,6 @@ export default function SessionPage() {
                               }
                             } catch {}
 
-                            // Fallback: text share or clipboard
                             if (navigator.share) {
                               navigator.share({ text }).catch(() => {});
                             } else {
@@ -1693,7 +1797,6 @@ export default function SessionPage() {
               value={inputValue}
               onChange={(e) => {
                 setInputValue(e.target.value);
-                // Auto-grow
                 e.target.style.height = "auto";
                 e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px";
               }}
