@@ -123,6 +123,36 @@ body {
 .phase-active { opacity: 1; transform: translateY(0); transition: all 300ms ease-out; }
 .phase-exit { opacity: 0; transition: opacity 200ms ease-in; }
 
+/* Voice — listening pulse ring */
+@keyframes voice-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(90, 82, 224, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(90, 82, 224, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(90, 82, 224, 0); }
+}
+.voice-listening {
+  animation: voice-pulse 1.4s ease-out infinite;
+  background-color: #5A52E0 !important;
+  color: white !important;
+}
+
+/* Voice — speaking indicator (gentle bounce) */
+@keyframes voice-speaking {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+.voice-speaking {
+  animation: voice-speaking 0.8s ease-in-out infinite;
+}
+
+/* Voice — waveform bars */
+@keyframes voice-bar-1 { 0%, 100% { height: 6px; } 50% { height: 16px; } }
+@keyframes voice-bar-2 { 0%, 100% { height: 10px; } 50% { height: 20px; } }
+@keyframes voice-bar-3 { 0%, 100% { height: 8px; } 50% { height: 14px; } }
+.voice-bar { width: 3px; border-radius: 2px; background: currentColor; }
+.voice-bar:nth-child(1) { animation: voice-bar-1 0.8s ease-in-out infinite; }
+.voice-bar:nth-child(2) { animation: voice-bar-2 0.8s ease-in-out infinite 0.15s; }
+.voice-bar:nth-child(3) { animation: voice-bar-3 0.8s ease-in-out infinite 0.3s; }
+
 /* Onboarding slide transitions */
 @keyframes slide-left {
   0% { opacity: 0; transform: translateX(40px); }
