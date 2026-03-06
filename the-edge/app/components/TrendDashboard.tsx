@@ -93,6 +93,25 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
 
   return (
     <div className="w-full max-w-sm space-y-4">
+      {/* Growth edge — most valuable insight, shown first */}
+      <div className="rounded-3xl p-5 shadow-[0_4px_20px_rgba(90,82,224,0.08)]" style={{ backgroundColor: "#EEEDFF" }}>
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#5A52E0]/10 text-sm">
+            &#127919;
+          </div>
+          <p className="text-sm font-bold text-[#5A52E0]">Today&apos;s focus</p>
+        </div>
+        <p className="text-base leading-relaxed text-primary">
+          <strong>{weakest.fullName}</strong> is your growth edge
+          (avg {weakest.avg.toFixed(1)}/5).
+          {weakest.trend.symbol === "\u2191"
+            ? " It\u2019s trending up \u2014 keep the pressure on."
+            : weakest.trend.symbol === "\u2193"
+            ? " It\u2019s trending down \u2014 this is where to focus."
+            : " It\u2019s holding steady \u2014 time to push through."}
+        </p>
+      </div>
+
       {/* Sparkline table */}
       <div className="rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)]">
         <div className="flex items-center justify-between mb-4">
@@ -131,20 +150,6 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
             <span className="text-[10px] text-tertiary">Focus area (1-2)</span>
           </div>
         </div>
-      </div>
-
-      {/* Recurring pattern card */}
-      <div className="rounded-3xl p-5 shadow-[var(--shadow-soft)]" style={{ backgroundColor: "#EEEDFF" }}>
-        <p className="mb-1 text-xs font-medium text-[#5A52E0]">Growth edge</p>
-        <p className="text-sm leading-relaxed text-primary">
-          <strong>{weakest.fullName}</strong> is your lowest-scoring dimension
-          (avg {weakest.avg.toFixed(1)}).
-          {weakest.trend.symbol === "\u2191"
-            ? " It\u2019s trending up \u2014 keep the pressure on."
-            : weakest.trend.symbol === "\u2193"
-            ? " It\u2019s trending down \u2014 this is where to focus."
-            : " It\u2019s holding steady \u2014 time to push through."}
-        </p>
       </div>
     </div>
   );

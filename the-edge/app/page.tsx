@@ -308,7 +308,7 @@ export default function Home() {
 
         {/* Resume session card */}
         {hasIncompleteSession && (
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
             <p className="mb-1 text-sm font-medium text-primary">Session in progress</p>
             <p className="mb-5 text-sm text-secondary">You have an unfinished session. Pick up where you left off?</p>
             <div className="flex gap-3">
@@ -339,9 +339,9 @@ export default function Home() {
           <button
             onClick={() => { if (online) router.push("/session"); }}
             disabled={!online}
-            className="w-full max-w-sm rounded-2xl bg-[#5A52E0] px-10 py-4 text-lg font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+            className="w-full max-w-sm rounded-2xl bg-[#5A52E0] px-10 py-5 text-lg font-bold text-white disabled:opacity-40 shadow-[0_4px_20px_rgba(90,82,224,0.25)] transition-shadow hover:shadow-[0_6px_28px_rgba(90,82,224,0.35)]"
           >
-            {online ? "Begin session" : "Offline"}
+            {online ? "Begin today\u2019s session" : "Offline"}
           </button>
         )}
       </div>
