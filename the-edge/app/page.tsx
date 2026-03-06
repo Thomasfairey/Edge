@@ -245,10 +245,11 @@ export default function Home() {
                       expandTimeout.current = setTimeout(() => setExpandedDim(null), 4000);
                     }
                   }}
-                  className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold transition-transform active:scale-[0.92]"
+                  className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold transition-all active:scale-[0.92]"
                   style={{
                     backgroundColor: score !== null ? scoreCircleColor(score) : "#E0DED8",
                     color: score !== null ? scoreTextColor(score) : "#8E8C99",
+                    boxShadow: isExpanded ? "0 0 0 3px #5A52E0" : "none",
                   }}
                   aria-label={`${fullName}: ${score !== null ? score + " out of 5" : "no score yet"}`}
                 >

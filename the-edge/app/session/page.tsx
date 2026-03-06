@@ -459,24 +459,6 @@ function Confetti() {
 }
 
 // ---------------------------------------------------------------------------
-// Score delta display helper
-// ---------------------------------------------------------------------------
-
-function ScoreDelta({ current, previous }: { current: number; previous: number | null }) {
-  if (previous === null) return null;
-  const diff = current - previous;
-  if (diff === 0) return null;
-  return (
-    <span
-      className="ml-1 text-xs font-medium"
-      style={{ color: diff > 0 ? "#6BC9A0" : "#E88B8B" }}
-    >
-      {diff > 0 ? `+${diff}` : diff}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Motivational line based on trajectory
 // ---------------------------------------------------------------------------
 
@@ -1082,7 +1064,7 @@ export default function SessionPage() {
       const idx = display.indexOf("---SCORES---");
       if (idx !== -1) display = display.slice(0, idx).trim();
       setDebriefContent(display);
-      setScores(data.scores);
+      setScores(normaliseScores(data.scores));
       setBehavioralWeaknessSummary(data.behavioralWeaknessSummary);
       setKeyMoment(data.keyMoment);
       setError(null); setIsLoading(false);
@@ -1557,6 +1539,7 @@ export default function SessionPage() {
                         {SCORE_DIMS.map(({ key, label }) => {
                           const s = scores[key];
                           const prev = previousScores ? previousScores[key] : null;
+                          const diff = prev !== null ? s - prev : null;
                           return (
                             <div key={key} className="flex flex-col items-center gap-1.5">
                               <div
@@ -1564,12 +1547,15 @@ export default function SessionPage() {
                                 style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
                               >
                                 {s}
-                                {prev !== null && prev !== s && (
+                                {diff !== null && (
                                   <span
-                                    className="absolute -top-1 -right-1 text-[10px] font-bold"
-                                    style={{ color: s > prev ? "#6BC9A0" : "#E88B8B" }}
+                                    className="absolute -top-1.5 -right-2 text-[10px] font-bold rounded-full px-1"
+                                    style={{
+                                      color: diff > 0 ? "#1A5C3A" : diff < 0 ? "#611414" : "#6B6578",
+                                      backgroundColor: diff > 0 ? "#D4F5E4" : diff < 0 ? "#FDE2E2" : "#F0EDE8",
+                                    }}
                                   >
-                                    {s > prev ? `+${s - prev}` : s - prev}
+                                    {diff > 0 ? `+${diff}` : diff === 0 ? "=" : diff}
                                   </span>
                                 )}
                               </div>
@@ -1771,6 +1757,7 @@ export default function SessionPage() {
                               {SCORE_DIMS.map(({ key, label }) => {
                                 const s = scores[key];
                                 const prev = previousScores ? previousScores[key] : null;
+                                const diff = prev !== null ? s - prev : null;
                                 return (
                                   <div key={key} className="flex flex-col items-center gap-1">
                                     <div
@@ -1778,7 +1765,17 @@ export default function SessionPage() {
                                       style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
                                     >
                                       {s}
-                                      <ScoreDelta current={s} previous={prev} />
+                                      {diff !== null && (
+                                        <span
+                                          className="absolute -top-1.5 -right-2 text-[10px] font-bold rounded-full px-1"
+                                          style={{
+                                            color: diff > 0 ? "#1A5C3A" : diff < 0 ? "#611414" : "#6B6578",
+                                            backgroundColor: diff > 0 ? "#D4F5E4" : diff < 0 ? "#FDE2E2" : "#F0EDE8",
+                                          }}
+                                        >
+                                          {diff > 0 ? `+${diff}` : diff === 0 ? "=" : diff}
+                                        </span>
+                                      )}
                                     </div>
                                     <span className="text-[10px] text-secondary">{label}</span>
                                   </div>
