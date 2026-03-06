@@ -31,10 +31,12 @@ export type VoiceState = "idle" | "listening" | "processing" | "speaking";
 interface UseVoiceOptions {
   /** Called when speech recognition produces a final transcript */
   onTranscript?: (text: string) => void;
-  /** Language for recognition + synthesis (default: "en-GB") */
+  /** Language for recognition (default: "en-GB") */
   lang?: string;
   /** Whether TTS is enabled (default: true) */
   ttsEnabled?: boolean;
+  /** Character archetype ID — determines which ElevenLabs voice is used */
+  characterId?: string;
 }
 
 interface UseVoiceReturn {
@@ -42,7 +44,7 @@ interface UseVoiceReturn {
   state: VoiceState;
   /** Whether the browser supports speech recognition */
   sttSupported: boolean;
-  /** Whether the browser supports speech synthesis */
+  /** TTS is always supported via ElevenLabs API */
   ttsSupported: boolean;
   /** Whether voice mode is active (persisted toggle) */
   voiceEnabled: boolean;
@@ -52,7 +54,7 @@ interface UseVoiceReturn {
   startListening: () => void;
   /** Stop listening */
   stopListening: () => void;
-  /** Speak text aloud using TTS */
+  /** Speak text aloud via ElevenLabs TTS */
   speak: (text: string) => void;
   /** Stop any current speech */
   stopSpeaking: () => void;
@@ -71,22 +73,26 @@ const VOICE_PREF_KEY = "edge-voice-enabled";
 // ---------------------------------------------------------------------------
 
 export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
-  const { onTranscript, lang = "en-GB", ttsEnabled = true } = options;
+  const { onTranscript, lang = "en-GB", ttsEnabled = true, characterId } = options;
 
   const [state, setState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognitionShim | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const onTranscriptRef = useRef(onTranscript);
+  const characterIdRef = useRef(characterId);
   onTranscriptRef.current = onTranscript;
+  characterIdRef.current = characterId;
 
   // Feature detection
   const sttSupported =
     typeof window !== "undefined" &&
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
-  const ttsSupported =
-    typeof window !== "undefined" && "speechSynthesis" in window;
+  // TTS is always supported since we use server-side ElevenLabs
+  const ttsSupported = true;
 
   // Restore preference from localStorage
   useEffect(() => {
@@ -105,7 +111,12 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       // If disabling, stop everything
       if (!next) {
         recognitionRef.current?.stop();
-        window.speechSynthesis?.cancel();
+        abortRef.current?.abort();
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.src = "";
+          audioRef.current = null;
+        }
         setState("idle");
         setInterimTranscript("");
       }
@@ -114,14 +125,19 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   }, []);
 
   // -------------------------------------------------------------------------
-  // Speech Recognition (STT)
+  // Speech Recognition (STT) — browser Web Speech API
   // -------------------------------------------------------------------------
 
   const startListening = useCallback(() => {
     if (!sttSupported) return;
 
-    // Stop any current TTS
-    window.speechSynthesis?.cancel();
+    // Stop any current audio playback
+    abortRef.current?.abort();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
 
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -158,7 +174,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     };
 
     recognition.onerror = (event: any) => {
-      // "no-speech" and "aborted" are not real errors
       if (event.error !== "no-speech" && event.error !== "aborted") {
         console.warn("[useVoice] recognition error:", event.error);
       }
@@ -168,7 +183,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     /* eslint-enable @typescript-eslint/no-explicit-any */
 
     recognition.onend = () => {
-      // Only reset to idle if we haven't transitioned to processing
       setState((prev) => (prev === "listening" ? "idle" : prev));
       setInterimTranscript("");
       recognitionRef.current = null;
@@ -185,38 +199,84 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   }, []);
 
   // -------------------------------------------------------------------------
-  // Speech Synthesis (TTS)
+  // Speech Synthesis (TTS) — ElevenLabs via /api/tts
   // -------------------------------------------------------------------------
 
   const speak = useCallback(
     (text: string) => {
-      if (!ttsSupported || !ttsEnabled || !voiceEnabled) return;
+      if (!ttsEnabled || !voiceEnabled) return;
+      if (!text || text.trim().length === 0) return;
 
-      // Cancel any ongoing speech
-      window.speechSynthesis.cancel();
+      // Abort any in-flight TTS request
+      abortRef.current?.abort();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        audioRef.current = null;
+      }
 
-      // Clean up markdown/special chars for more natural speech
-      const cleaned = text
-        .replace(/\*\*([^*]+)\*\*/g, "$1")
-        .replace(/[#_~`]/g, "")
-        .replace(/\n+/g, ". ");
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-      const utterance = new SpeechSynthesisUtterance(cleaned);
-      utterance.lang = lang;
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
+      setState("speaking");
 
-      utterance.onstart = () => setState("speaking");
-      utterance.onend = () => setState("idle");
-      utterance.onerror = () => setState("idle");
+      fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          characterId: characterIdRef.current,
+        }),
+        signal: controller.signal,
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`TTS API error: ${res.status}`);
+          return res.blob();
+        })
+        .then((blob) => {
+          if (controller.signal.aborted) return;
 
-      window.speechSynthesis.speak(utterance);
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audioRef.current = audio;
+
+          audio.onended = () => {
+            setState("idle");
+            URL.revokeObjectURL(url);
+            audioRef.current = null;
+          };
+
+          audio.onerror = () => {
+            console.warn("[useVoice] audio playback error");
+            setState("idle");
+            URL.revokeObjectURL(url);
+            audioRef.current = null;
+          };
+
+          audio.play().catch((err) => {
+            // Autoplay might be blocked — user needs to interact first
+            console.warn("[useVoice] audio play blocked:", err.message);
+            setState("idle");
+            URL.revokeObjectURL(url);
+            audioRef.current = null;
+          });
+        })
+        .catch((err) => {
+          if (err.name === "AbortError") return;
+          console.warn("[useVoice] TTS fetch error:", err.message);
+          setState("idle");
+        });
     },
-    [ttsSupported, ttsEnabled, voiceEnabled, lang]
+    [ttsEnabled, voiceEnabled]
   );
 
   const stopSpeaking = useCallback(() => {
-    window.speechSynthesis?.cancel();
+    abortRef.current?.abort();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
     setState((prev) => (prev === "speaking" ? "idle" : prev));
   }, []);
 
@@ -224,7 +284,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop();
-      window.speechSynthesis?.cancel();
+      abortRef.current?.abort();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      }
     };
   }, []);
 

@@ -560,6 +560,7 @@ export default function SessionPage() {
         voiceAutoSubmitRef.current = text.trim();
       }
     }, []),
+    characterId: character?.id,
   });
 
   const voiceAutoSubmitRef = useRef<string | null>(null);
