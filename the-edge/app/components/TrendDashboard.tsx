@@ -95,10 +95,13 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
     <div className="w-full max-w-sm space-y-4">
       {/* Sparkline table */}
       <div className="rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)]">
-        <p className="mb-4 text-sm font-semibold text-primary">Trend</p>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm font-semibold text-primary">Trend</p>
+          <p className="text-[10px] text-tertiary">Last {allScores.length} sessions</p>
+        </div>
         <div className="space-y-3">
           {dimStats.map((d) => (
-            <div key={d.key} className="flex items-center gap-2">
+            <div key={d.key} className="flex items-center gap-2" title={d.fullName}>
               <span className="w-7 text-xs font-medium text-secondary">{d.label}</span>
               <Sparkline values={d.values} color={scoreColor(d.current)} />
               <span
@@ -112,6 +115,21 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
               </span>
             </div>
           ))}
+        </div>
+        {/* Legend */}
+        <div className="mt-3 pt-3 border-t border-[#F0EDE8] flex items-center justify-center gap-4">
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#6BC9A0" }} />
+            <span className="text-[10px] text-tertiary">Strong (4-5)</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#F5C563" }} />
+            <span className="text-[10px] text-tertiary">Building (3)</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#E88B8B" }} />
+            <span className="text-[10px] text-tertiary">Focus area (1-2)</span>
+          </div>
         </div>
       </div>
 

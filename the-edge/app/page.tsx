@@ -101,9 +101,16 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
         </div>
       </div>
       {hasData && (
-        <span className="text-sm font-medium text-accent">
-          {averageDescriptor(average)}
-        </span>
+        <>
+          <span className="text-sm font-medium text-accent">
+            {averageDescriptor(average)}
+          </span>
+          {average < 3 && (
+            <span className="text-[11px] text-secondary mt-0.5">
+              Most users hit 3.0 by Day 10
+            </span>
+          )}
+        </>
       )}
     </div>
   );
@@ -209,10 +216,10 @@ export default function Home() {
         {/* Title + tagline + day */}
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight text-primary">
-            the edge
+            <span className="text-[#5A52E0]">the</span> edge
           </h1>
-          <p className="mt-1 text-sm text-secondary">
-            Daily influence training for your commute
+          <p className="mt-1 text-sm font-medium tracking-wide text-[#5A52E0]/60 uppercase">
+            Daily influence training
           </p>
           <p className="mt-2 text-base text-primary font-medium">
             {loading ? "\u2014" : (

@@ -75,6 +75,18 @@ function normaliseScores(scores: Record<string, number> | null): SessionScores |
   return out as unknown as SessionScores;
 }
 
+function characterEmoji(id?: string): string {
+  switch (id) {
+    case "sceptical-investor": return "🎯";
+    case "political-stakeholder": return "🏛";
+    case "resistant-report": return "😏";
+    case "hostile-negotiator": return "⚔️";
+    case "alpha-peer": return "🔬";
+    case "consultancy-gatekeeper": return "👔";
+    default: return "🎭";
+  }
+}
+
 function scoreCircleColor(score: number): string {
   if (score >= 4) return "#6BC9A0";
   if (score === 3) return "#F5C563";
@@ -287,9 +299,11 @@ function splitLessonSections(text: string): { title: string; content: string }[]
 function LessonCards({
   sections,
   isStreaming,
+  onCardChange,
 }: {
   sections: { title: string; content: string }[];
   isStreaming: boolean;
+  onCardChange?: (current: number, total: number) => void;
 }) {
   const [currentCard, setCurrentCard] = useState(0);
   const [showSwipeHint, setShowSwipeHint] = useState(true);
@@ -301,6 +315,11 @@ function LessonCards({
     const t = setTimeout(() => setShowSwipeHint(false), 3000);
     return () => clearTimeout(t);
   }, []);
+
+  // Notify parent of card position
+  useEffect(() => {
+    onCardChange?.(currentCard, sections.length);
+  }, [currentCard, sections.length, onCardChange]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -396,17 +415,58 @@ function renderDebriefMarkdown(text: string): React.ReactNode[] {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let key = 0;
+  let inReplayBlock = false;
 
   for (const line of lines) {
-    if (line.startsWith("## ") || line.startsWith("**") && line.endsWith("**")) {
+    const lower = line.toLowerCase();
+
+    // Detect replay / "what you should have said" sections
+    if (lower.includes("what you said") || lower.includes("you said:") || lower.includes("your response:")) {
+      inReplayBlock = true;
+      elements.push(
+        <div key={key++} className="mt-4 mb-1 rounded-t-2xl bg-[#FDF2F2] px-4 pt-3 pb-2">
+          <p className="text-xs font-semibold text-[#D4908F] uppercase tracking-wider">What you said</p>
+          <p className="mt-1 text-sm leading-relaxed text-primary/70 italic">
+            {line.replace(/^.*?(?:what you said|you said:|your response:)\s*/i, "").replace(/\*\*/g, "")}
+          </p>
+        </div>
+      );
+      continue;
+    }
+
+    if (inReplayBlock && (lower.includes("what you should") || lower.includes("stronger response") || lower.includes("try instead") || lower.includes("better approach") || lower.includes("ideal response"))) {
+      inReplayBlock = false;
+      elements.push(
+        <div key={key++} className="mb-4 rounded-b-2xl bg-[#E8F5ED] px-4 pt-2 pb-3">
+          <p className="text-xs font-semibold text-[#2D6A4F] uppercase tracking-wider">Stronger response</p>
+          <p className="mt-1 text-sm leading-relaxed text-primary font-medium">
+            {line.replace(/^.*?(?:what you should|stronger response|try instead|better approach|ideal response)[^:]*:\s*/i, "").replace(/\*\*/g, "")}
+          </p>
+        </div>
+      );
+      continue;
+    }
+
+    if (line.startsWith("## ") || (line.startsWith("**") && line.endsWith("**"))) {
+      inReplayBlock = false;
       const header = line.startsWith("## ") ? line.slice(3) : line.slice(2, -2);
       elements.push(
-        <h2 key={key++} className="mb-2 mt-5 text-sm font-medium text-[#5B4B88] first:mt-0">
+        <h2 key={key++} className="mb-2 mt-5 text-sm font-semibold text-[#5B4B88] uppercase tracking-wider first:mt-0">
           {header}
         </h2>
       );
     } else if (line.trim() === "") {
+      if (inReplayBlock) continue; // don't break replay blocks with whitespace
       elements.push(<div key={key++} className="h-3" />);
+    } else if (lower.includes("why this works") || lower.includes("why it works")) {
+      elements.push(
+        <div key={key++} className="mt-2 mb-3 rounded-2xl bg-[#EEEDFF] px-4 py-3">
+          <p className="text-xs font-semibold text-[#5A52E0] uppercase tracking-wider mb-1">Why this works</p>
+          <p className="text-sm leading-relaxed text-primary">
+            {line.replace(/^.*?(?:why (?:this|it) works)[^:]*:\s*/i, "").replace(/\*\*/g, "")}
+          </p>
+        </div>
+      );
     } else {
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
       elements.push(
@@ -762,6 +822,10 @@ export default function SessionPage() {
   // ---------------------------------------------------------------------------
 
   const [lessonStreaming, setLessonStreaming] = useState(false);
+  const [lessonCardPos, setLessonCardPos] = useState<{ current: number; total: number }>({ current: 0, total: 1 });
+  const onLessonCardChange = useCallback((current: number, total: number) => {
+    setLessonCardPos({ current, total });
+  }, []);
 
   async function fetchLesson() {
     setIsLoading(true);
@@ -1223,12 +1287,12 @@ export default function SessionPage() {
   // Render
   // ---------------------------------------------------------------------------
 
-  const SCORE_DIMS: { key: keyof SessionScores; label: string }[] = [
-    { key: "technique_application", label: "TA" },
-    { key: "tactical_awareness", label: "TW" },
-    { key: "frame_control", label: "FC" },
-    { key: "emotional_regulation", label: "ER" },
-    { key: "strategic_outcome", label: "SO" },
+  const SCORE_DIMS: { key: keyof SessionScores; label: string; fullName: string }[] = [
+    { key: "technique_application", label: "TA", fullName: "Technique" },
+    { key: "tactical_awareness", label: "TW", fullName: "Tactical" },
+    { key: "frame_control", label: "FC", fullName: "Frame" },
+    { key: "emotional_regulation", label: "ER", fullName: "Regulation" },
+    { key: "strategic_outcome", label: "SO", fullName: "Outcome" },
   ];
 
   const isRoleplay = currentPhase === "roleplay";
@@ -1330,6 +1394,7 @@ export default function SessionPage() {
                   <LessonCards
                     sections={splitLessonSections(lessonContent)}
                     isStreaming={lessonStreaming}
+                    onCardChange={onLessonCardChange}
                   />
                 </>
               )}
@@ -1357,7 +1422,8 @@ export default function SessionPage() {
                   </div>
 
                   {retrievalResponse && (
-                    <div className="rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-soft)]">
+                    <div className="animate-fade-in-up rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-soft)]">
+                      <p className="mb-2 text-xs font-medium text-[#5A52E0]">Got it. Here&apos;s your edge:</p>
                       <p className="text-sm leading-relaxed text-secondary italic">{retrievalResponse}</p>
                     </div>
                   )}
@@ -1442,8 +1508,39 @@ export default function SessionPage() {
           {/* ============================================================== */}
           {currentPhase === "roleplay" && (
             <>
+              {/* Character persona card */}
+              {character && roleplayTranscript.length === 0 && !isLoading && !isStreaming && (
+                <div className="mb-5 rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)] animate-fade-in-up">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full text-2xl" style={{ backgroundColor: "#FDF2F2" }}>
+                      {characterEmoji(character.id)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold text-primary">{character.name}</p>
+                      <p className="mt-0.5 text-sm leading-snug text-secondary">{character.description}</p>
+                    </div>
+                  </div>
+                  {scenarioContext && (
+                    <div className="mt-3 rounded-2xl px-4 py-3" style={{ backgroundColor: "#FDF2F2" }}>
+                      <p className="text-xs font-medium text-[#D4908F] mb-1">Scene</p>
+                      <p className="text-sm leading-relaxed text-primary">{scenarioContext}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">
+                    {character?.id === "sceptical-investor" ? "🎯" :
+                     character?.id === "political-stakeholder" ? "🏛" :
+                     character?.id === "resistant-report" ? "😏" :
+                     character?.id === "hostile-negotiator" ? "⚔️" :
+                     character?.id === "alpha-peer" ? "🔬" :
+                     character?.id === "consultancy-gatekeeper" ? "👔" : "🎭"}
+                  </span>
+                  <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
+                </div>
                 <span className="text-xs text-secondary">Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8</span>
               </div>
 
@@ -1453,31 +1550,35 @@ export default function SessionPage() {
 
               <div className="space-y-3 pb-4">
                 {roleplayTranscript.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start gap-2"}`}>
+                    {msg.role === "assistant" && (
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
+                        {character?.id === "sceptical-investor" ? "🎯" :
+                         character?.id === "political-stakeholder" ? "🏛" :
+                         character?.id === "resistant-report" ? "😏" :
+                         character?.id === "hostile-negotiator" ? "⚔️" :
+                         character?.id === "alpha-peer" ? "🔬" :
+                         character?.id === "consultancy-gatekeeper" ? "👔" : "🎭"}
+                      </div>
+                    )}
                     <div
-                      className={`max-w-[85%] p-4 text-base leading-relaxed ${
+                      className={`max-w-[80%] p-4 text-base leading-relaxed ${
                         msg.role === "user"
-                          ? "rounded-3xl rounded-tr-lg"
+                          ? "rounded-3xl rounded-tr-lg bg-[#5A52E0] text-white"
                           : "rounded-3xl rounded-tl-lg bg-white shadow-[var(--shadow-soft)]"
                       }`}
-                      style={msg.role === "user" ? { backgroundColor: "rgba(242,196,196,0.3)" } : undefined}
                     >
-                      {i === 0 && msg.role === "assistant" && (
-                        <p className="mb-1 text-xs font-medium" style={{ color: "#D4908F" }}>
-                          {character?.name}
-                        </p>
-                      )}
                       {msg.content}
                     </div>
                   </div>
                 ))}
 
                 {isStreaming && streamingText && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-3xl rounded-tl-lg bg-white p-4 text-base leading-relaxed shadow-[var(--shadow-soft)]">
-                      {roleplayTranscript.length === 0 && (
-                        <p className="mb-1 text-xs font-medium" style={{ color: "#D4908F" }}>{character?.name}</p>
-                      )}
+                  <div className="flex justify-start gap-2">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
+                      {characterEmoji(character?.id)}
+                    </div>
+                    <div className="max-w-[80%] rounded-3xl rounded-tl-lg bg-white p-4 text-base leading-relaxed shadow-[var(--shadow-soft)]">
                       {streamingText}
                       <span className="inline-block animate-pulse text-[#5A52E0]">|</span>
                     </div>
@@ -1485,13 +1586,17 @@ export default function SessionPage() {
                 )}
 
                 {isLoading && !isStreaming && (
-                  <div className="py-2">
-                    <p className="mb-2 text-xs text-secondary">
-                      {roleplayTranscript.length === 0
-                        ? `Setting up scenario with ${character?.name ?? "character"}...`
-                        : `${character?.name ?? "Character"} is thinking...`}
-                    </p>
-                    <LoadingDots />
+                  <div className="flex justify-start gap-2">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
+                      {characterEmoji(character?.id)}
+                    </div>
+                    <div className="rounded-3xl rounded-tl-lg bg-white p-4 shadow-[var(--shadow-soft)]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="loading-dot h-2 w-2 rounded-full bg-[#D4908F]/50" />
+                        <span className="loading-dot h-2 w-2 rounded-full bg-[#D4908F]/50" />
+                        <span className="loading-dot h-2 w-2 rounded-full bg-[#D4908F]/50" />
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1532,11 +1637,11 @@ export default function SessionPage() {
 
               {debriefContent && !isLoading && (
                 <>
-                  {/* Score circles with deltas (#9) */}
+                  {/* Score circles with deltas */}
                   {scores && (
                     <div className="mb-5 rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)]">
-                      <div className="flex items-center justify-center gap-5">
-                        {SCORE_DIMS.map(({ key, label }) => {
+                      <div className="flex items-center justify-center gap-4">
+                        {SCORE_DIMS.map(({ key, fullName }) => {
                           const s = scores[key];
                           const prev = previousScores ? previousScores[key] : null;
                           const diff = prev !== null ? s - prev : null;
@@ -1559,7 +1664,7 @@ export default function SessionPage() {
                                   </span>
                                 )}
                               </div>
-                              <span className="text-xs text-secondary">{label}</span>
+                              <span className="text-[10px] text-secondary">{fullName}</span>
                             </div>
                           );
                         })}
@@ -1750,11 +1855,11 @@ export default function SessionPage() {
                           </div>
                         )}
 
-                        {/* Scores with deltas (#9) */}
+                        {/* Scores with deltas */}
                         {scores && (
                           <div className="mb-5">
                             <div className="flex items-center justify-center gap-3">
-                              {SCORE_DIMS.map(({ key, label }) => {
+                              {SCORE_DIMS.map(({ key, fullName }) => {
                                 const s = scores[key];
                                 const prev = previousScores ? previousScores[key] : null;
                                 const diff = prev !== null ? s - prev : null;
@@ -1777,7 +1882,7 @@ export default function SessionPage() {
                                         </span>
                                       )}
                                     </div>
-                                    <span className="text-[10px] text-secondary">{label}</span>
+                                    <span className="text-[10px] text-secondary">{fullName}</span>
                                   </div>
                                 );
                               })}
@@ -1914,12 +2019,18 @@ export default function SessionPage() {
       {currentPhase === "lesson" && lessonContent && !isLoading && (
         <div className="flex-shrink-0 border-t border-[#F0EDE8] px-4 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.lesson }}>
           <div className="mx-auto max-w-lg">
-            <button
-              onClick={() => startRetrieval()}
-              className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
-            >
-              Ready to practise &rarr;
-            </button>
+            {lessonCardPos.current < lessonCardPos.total - 1 ? (
+              <p className="py-3 text-center text-sm text-secondary">
+                {lessonCardPos.current + 1} of {lessonCardPos.total} &mdash; swipe to continue
+              </p>
+            ) : (
+              <button
+                onClick={() => startRetrieval()}
+                className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97] animate-fade-in-up"
+              >
+                Ready to practise &rarr;
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2044,42 +2155,57 @@ export default function SessionPage() {
           )}
 
           {/* Command circles row + voice toggle */}
-          <div className="flex items-center justify-center gap-4 pb-2">
+          <div className="flex items-center justify-center gap-3 pb-2">
             {voice.sttSupported && (
-              <button
-                onClick={voice.toggleVoice}
-                className={`flex h-11 w-11 items-center justify-center rounded-full text-lg transition-all active:scale-[0.93] ${
-                  voice.voiceEnabled
-                    ? "bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
-                    : "bg-[#F0EDE8] text-secondary"
-                }`}
-                title={voice.voiceEnabled ? "Voice on" : "Voice off"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                  {voice.voiceEnabled ? (
-                    <>
-                      <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06Z" />
-                      <path d="M18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
-                      <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 6 6 0 0 1 0 8.486.75.75 0 0 1-1.06-1.061 4.5 4.5 0 0 0 0-6.364.75.75 0 0 1 0-1.06Z" />
-                    </>
-                  ) : (
-                    <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM17.78 9.22a.75.75 0 1 0-1.06 1.06L18.44 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06l1.72-1.72 1.72 1.72a.75.75 0 1 0 1.06-1.06L20.56 12l1.72-1.72a.75.75 0 1 0-1.06-1.06l-1.72 1.72-1.72-1.72Z" />
-                  )}
-                </svg>
-              </button>
+              <div className="flex flex-col items-center gap-0.5">
+                <button
+                  onClick={voice.toggleVoice}
+                  className={`flex h-11 w-11 items-center justify-center rounded-full text-lg transition-all active:scale-[0.93] ${
+                    voice.voiceEnabled
+                      ? "bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
+                      : "bg-[#F0EDE8] text-secondary"
+                  }`}
+                  title={voice.voiceEnabled ? "Voice on" : "Voice off"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                    {voice.voiceEnabled ? (
+                      <>
+                        <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06Z" />
+                        <path d="M18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
+                        <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 6 6 0 0 1 0 8.486.75.75 0 0 1-1.06-1.061 4.5 4.5 0 0 0 0-6.364.75.75 0 0 1 0-1.06Z" />
+                      </>
+                    ) : (
+                      <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM17.78 9.22a.75.75 0 1 0-1.06 1.06L18.44 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06l1.72-1.72 1.72 1.72a.75.75 0 1 0 1.06-1.06L20.56 12l1.72-1.72a.75.75 0 1 0-1.06-1.06l-1.72 1.72-1.72-1.72Z" />
+                    )}
+                  </svg>
+                </button>
+                <span className="text-[9px] text-tertiary">Voice</span>
+              </div>
             )}
-            <button onClick={handleCoach} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#FFF8E7" }} title="Coach">
-              &#128161;
-            </button>
-            <button onClick={handleReset} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#EFF6FA" }} title="Reset">
-              &#128260;
-            </button>
-            <button onClick={handleSkip} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#F0EDE8" }} title="Skip">
-              &#9197;
-            </button>
-            <button onClick={handleDone} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#F0FAF4" }} title="Done">
-              &#10003;
-            </button>
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={handleCoach} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#FFF8E7" }} title="Coach">
+                &#128161;
+              </button>
+              <span className="text-[9px] text-tertiary">Hint</span>
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={handleReset} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#EFF6FA" }} title="Reset">
+                &#128260;
+              </button>
+              <span className="text-[9px] text-tertiary">Reset</span>
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={handleSkip} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#F0EDE8" }} title="Skip">
+                &#9197;
+              </button>
+              <span className="text-[9px] text-tertiary">Skip</span>
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={handleDone} className="flex h-11 w-11 items-center justify-center rounded-full text-lg transition-transform active:scale-[0.93]" style={{ backgroundColor: "#F0FAF4" }} title="Done">
+                &#10003;
+              </button>
+              <span className="text-[9px] text-tertiary">Done</span>
+            </div>
           </div>
         </div>
       )}
