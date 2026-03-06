@@ -49,7 +49,8 @@ function scoreTextColor(score: number): string {
 }
 
 function averageDescriptor(avg: number): string {
-  if (avg >= 4.5) return "Elite";
+  if (avg >= 4.8) return "Master";
+  if (avg >= 4.0) return "Elite";
   if (avg >= 3.5) return "Sharp";
   if (avg >= 2.5) return "Building";
   return "Developing";
@@ -68,8 +69,9 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const t = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(t);
+    // Delay to ensure the initial strokeDashoffset renders before transitioning
+    const t = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(t);
   }, []);
 
   return (

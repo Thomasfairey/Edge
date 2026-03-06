@@ -87,6 +87,21 @@ function characterEmoji(id?: string): string {
   }
 }
 
+function PersonaLine({ description }: { description: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded(!expanded)}
+      className="mt-1 text-left pl-10 w-full"
+    >
+      <p className={`text-[11px] text-tertiary transition-all duration-200 ${expanded ? "" : "truncate"}`}>
+        {description}
+      </p>
+    </button>
+  );
+}
+
 function scoreCircleColor(score: number): string {
   if (score >= 4) return "#6BC9A0";
   if (score === 3) return "#F5C563";
@@ -573,12 +588,34 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
     }
   }
 
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | undefined>(defaultOpen ? undefined : 0);
+
+  useEffect(() => {
+    if (open) {
+      const el = contentRef.current;
+      if (el) {
+        setHeight(el.scrollHeight);
+        // After transition, set to auto for dynamic content
+        const t = setTimeout(() => setHeight(undefined), 250);
+        return () => clearTimeout(t);
+      }
+    } else {
+      // First set to explicit height, then to 0 on next frame
+      const el = contentRef.current;
+      if (el) {
+        setHeight(el.scrollHeight);
+        requestAnimationFrame(() => setHeight(0));
+      }
+    }
+  }, [open]);
+
   return (
     <div className="border-b border-[#F0EDE8]/50 last:border-0">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between py-3 text-left transition-colors"
+        className="w-full flex items-center justify-between py-3 text-left"
       >
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[#5B4B88] uppercase tracking-wider">{title}</h2>
@@ -595,17 +632,26 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
           )}
         </div>
         <svg
-          className={`h-4 w-4 text-tertiary transition-transform ${open ? "rotate-180" : ""}`}
+          className="h-4 w-4 text-tertiary transition-transform duration-200"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
           fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
         </svg>
       </button>
-      {open && (
-        <div className="pb-4 animate-fade-in-up">
+      <div
+        ref={contentRef}
+        className="overflow-hidden transition-[max-height,opacity] duration-250 ease-out"
+        style={{
+          maxHeight: height === undefined ? "none" : `${height}px`,
+          opacity: open ? 1 : 0,
+          transition: "max-height 250ms ease-out, opacity 200ms ease-out",
+        }}
+      >
+        <div className="pb-4">
           {children}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -1661,7 +1707,7 @@ export default function SessionPage() {
                   <span className="text-xs text-secondary">Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8</span>
                 </div>
                 {character?.description && roleplayTranscript.length > 0 && (
-                  <p className="mt-1 text-[11px] text-tertiary truncate pl-10">{character.description}</p>
+                  <PersonaLine description={character.description} />
                 )}
               </div>
 
@@ -2042,6 +2088,42 @@ export default function SessionPage() {
                             <p className="mt-1 text-sm leading-relaxed text-primary">{mission}</p>
                           </div>
                         )}
+
+                        {/* Share preview card */}
+                        <div className="mb-3 rounded-2xl bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <p className="text-sm font-bold text-primary">
+                                <span className="text-[#5A52E0]">the</span> edge
+                              </p>
+                              <p className="text-[10px] text-tertiary">Day {dayNumber}</p>
+                            </div>
+                            {scores && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-lg font-bold text-[#5A52E0]">
+                                  {(Object.values(scores).reduce((a, b) => a + b, 0) / 5).toFixed(1)}
+                                </span>
+                                <span className="text-[10px] text-tertiary">/5</span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium text-primary mb-2">{concept?.name}</p>
+                          {scores && (
+                            <div className="flex gap-1.5 mb-2">
+                              {SCORE_DIMS.map(({ key }) => {
+                                const s = scores[key];
+                                return (
+                                  <div key={key} className="h-1.5 flex-1 rounded-full" style={{
+                                    backgroundColor: s >= 4 ? "#6BC9A0" : s >= 3 ? "#F5C563" : "#E88B8B",
+                                  }} />
+                                );
+                              })}
+                            </div>
+                          )}
+                          {keyMoment && (
+                            <p className="text-[10px] text-secondary italic truncate">{keyMoment}</p>
+                          )}
+                        </div>
 
                         {/* Share button */}
                         <button

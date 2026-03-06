@@ -133,12 +133,14 @@ body {
 /* Celebration burst for "Nailed it" / session complete */
 @keyframes celebrate {
   0% { transform: scale(1); }
-  25% { transform: scale(1.08); }
-  50% { transform: scale(0.96); }
-  75% { transform: scale(1.03); }
+  15% { transform: scale(1.12); }
+  30% { transform: scale(0.95); }
+  45% { transform: scale(1.06); }
+  60% { transform: scale(0.98); }
+  75% { transform: scale(1.02); }
   100% { transform: scale(1); }
 }
-.animate-celebrate { animation: celebrate 600ms ease-out; }
+.animate-celebrate { animation: celebrate 700ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 
 /* Streak counter tick */
 @keyframes count-up {
