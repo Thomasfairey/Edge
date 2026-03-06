@@ -43,8 +43,8 @@
   --coach-muted: #C4A24E;
 
   /* Shadows */
-  --shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.04);
-  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 @theme inline {
@@ -119,9 +119,15 @@ body {
 }
 
 /* Phase transitions */
-.phase-enter { opacity: 0; transform: translateY(8px); }
-.phase-active { opacity: 1; transform: translateY(0); transition: all 300ms ease-out; }
-.phase-exit { opacity: 0; transition: opacity 200ms ease-in; }
+.phase-enter { opacity: 0; transform: translateY(12px); }
+.phase-active { opacity: 1; transform: translateY(0); transition: all 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+.phase-exit { opacity: 0; transform: translateY(-8px); transition: all 250ms ease-in; }
+
+/* Button press feedback */
+button:active:not(:disabled), [role="button"]:active:not(:disabled) {
+  transform: scale(0.97);
+  transition: transform 80ms ease-out;
+}
 
 /* Ring growth animation for dashboard */
 @keyframes ring-grow {
@@ -253,6 +259,54 @@ input:-webkit-autofill {
   box-shadow: var(--shadow-soft);
   padding: 1.5rem;
 }
+
+/* Lesson card typography hierarchy */
+.lesson-definition {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.lesson-body {
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--text-primary);
+}
+.lesson-example {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+  padding-left: 1rem;
+  border-left: 3px solid var(--phase-learn);
+  margin: 0.75rem 0;
+  font-style: italic;
+}
+
+/* Achievement badge */
+.achievement-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Retrieval transition */
+@keyframes challenge-appear {
+  0% { opacity: 0; transform: scale(0.95) translateY(12px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-challenge { animation: challenge-appear 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+/* Score ring pulse for high achievers */
+@keyframes ring-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(90, 82, 224, 0)); }
+  50% { filter: drop-shadow(0 0 8px rgba(90, 82, 224, 0.3)); }
+}
+.ring-glow { animation: ring-pulse 2s ease-in-out infinite; }
 
 /* Thinner scrollbar on mobile */
 @media (max-width: 768px) {

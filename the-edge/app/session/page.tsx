@@ -168,23 +168,28 @@ function PhaseIndicator({
           const isDone = completed.has(p.key);
 
           return (
-            <div key={p.key} className="flex flex-col items-center gap-1.5">
+            <div key={p.key} className="flex flex-col items-center gap-1.5" style={{ minWidth: 44 }}>
               <div
-                className={`h-3 w-3 rounded-full ${isActive ? "phase-dot-active" : ""}`}
+                className={`rounded-full ${isActive ? "phase-dot-active" : ""}`}
                 style={{
+                  width: isActive ? 14 : 10,
+                  height: isActive ? 14 : 10,
                   backgroundColor: isDone || isActive ? p.color : "transparent",
                   border: isDone || isActive ? "none" : `2px solid ${p.color}4D`,
-                  transition: "background-color 400ms ease, border 400ms ease, transform 300ms ease",
-                  transform: isDone ? "scale(1)" : isActive ? "scale(1)" : "scale(0.85)",
+                  transition: "all 400ms cubic-bezier(0.22, 1, 0.36, 1)",
+                  boxShadow: isActive ? `0 0 8px ${p.color}60` : "none",
                 }}
               />
               <span
-                className={`text-sm font-medium ${
-                  isActive ? "text-primary" : isDone ? "text-secondary" : "text-secondary"
+                className={`text-xs font-medium transition-colors duration-300 ${
+                  isActive ? "text-primary" : "text-tertiary"
                 }`}
               >
                 {p.label}
               </span>
+              {isDone && (
+                <div className="h-0.5 w-3 rounded-full -mt-0.5" style={{ backgroundColor: p.color }} />
+              )}
             </div>
           );
         })}
@@ -211,11 +216,12 @@ function LoadingDots() {
 // Markdown renderer
 // ---------------------------------------------------------------------------
 
-function renderMarkdown(text: string): React.ReactNode[] {
+function renderMarkdown(text: string, context: "lesson" | "debrief" | "default" = "default"): React.ReactNode[] {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let key = 0;
   let isFirstParagraph = true;
+  const isLesson = context === "lesson";
 
   for (const line of lines) {
     if (line.startsWith("## ")) {
@@ -234,29 +240,39 @@ function renderMarkdown(text: string): React.ReactNode[] {
     } else if (line.trim() === "") {
       elements.push(<div key={key++} className="h-3" />);
     } else {
-      // Bold first sentence of first paragraph in each section for scannability
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
       const hasBold = parts.some(p => p.startsWith("**"));
 
-      if (isFirstParagraph && !hasBold && line.length > 20) {
+      // Detect example-like content (quotes, named scenarios, "When X did Y")
+      const isExample = isLesson && !hasBold && (
+        line.startsWith('"') || line.startsWith('\u201C') ||
+        /^When [A-Z]/.test(line) || /^In \d{4}/.test(line)
+      );
+
+      if (isExample) {
+        isFirstParagraph = false;
+        elements.push(
+          <div key={key++} className="lesson-example">{line}</div>
+        );
+      } else if (isFirstParagraph && !hasBold && line.length > 20) {
         isFirstParagraph = false;
         const sentenceEnd = line.search(/[.!?]\s|[.!?]$/);
         if (sentenceEnd > 0) {
           const firstSentence = line.slice(0, sentenceEnd + 1);
           const rest = line.slice(sentenceEnd + 1);
           elements.push(
-            <p key={key++} className="text-base leading-relaxed text-primary">
-              <strong className="font-semibold">{firstSentence}</strong>{rest}
+            <p key={key++} className={isLesson ? "lesson-definition" : "text-base leading-relaxed text-primary"}>
+              {isLesson ? firstSentence : <strong className="font-semibold">{firstSentence}</strong>}
+              {rest && <span className={isLesson ? "font-normal text-base" : ""}>{rest}</span>}
             </p>
           );
         } else {
           elements.push(
-            <p key={key++} className="text-base leading-relaxed text-primary font-medium">{line}</p>
+            <p key={key++} className={isLesson ? "lesson-definition" : "text-base leading-relaxed text-primary font-medium"}>{line}</p>
           );
         }
       } else {
         isFirstParagraph = false;
-        // Break long paragraphs at ~2 sentence boundaries for readability
         if (!hasBold && line.length > 200) {
           const sentences = line.match(/[^.!?]+[.!?]+\s*/g) || [line];
           const chunks: string[] = [];
@@ -271,12 +287,12 @@ function renderMarkdown(text: string): React.ReactNode[] {
           if (buf.trim()) chunks.push(buf.trim());
           for (const chunk of chunks) {
             elements.push(
-              <p key={key++} className="text-base leading-relaxed text-primary mb-2">{chunk}</p>
+              <p key={key++} className={`${isLesson ? "lesson-body" : "text-base leading-relaxed text-primary"} mb-2`}>{chunk}</p>
             );
           }
         } else {
           elements.push(
-            <p key={key++} className="text-base leading-relaxed text-primary">
+            <p key={key++} className={isLesson ? "lesson-body" : "text-base leading-relaxed text-primary"}>
               {parts.map((part, i) =>
                 part.startsWith("**") && part.endsWith("**") ? (
                   <strong key={i} className="font-semibold">
@@ -423,9 +439,12 @@ function LessonCards({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <h2 className="mb-3 text-sm font-medium text-[#5B8BA8]">{section.title}</h2>
-        <div className="space-y-0">
-          {renderMarkdown(section.content)}
+        <div className="mb-4 flex items-center gap-2">
+          <div className="h-1.5 w-1.5 rounded-full bg-[#5B8BA8]" />
+          <h2 className="text-xs font-semibold text-[#5B8BA8] uppercase tracking-widest">{section.title}</h2>
+        </div>
+        <div className="space-y-1">
+          {renderMarkdown(section.content, "lesson")}
           {isStreaming && currentCard === sections.length - 1 && (
             <span className="inline-block animate-pulse text-[#5A52E0]">|</span>
           )}
@@ -450,11 +469,13 @@ function LessonCards({
                 onClick={() => setCurrentCard(i)}
                 aria-label={`Go to page ${i + 1} of ${sections.length}`}
                 aria-current={i === currentCard ? "true" : undefined}
-                className={`h-2 rounded-full transition-all ${
-                  i === currentCard ? "w-6 bg-[#5A52E0]" : "w-2 bg-[#B8D4E3]"
-                }`}
-                style={{ minHeight: 8, minWidth: 8 }}
-              />
+                className="flex items-center justify-center"
+                style={{ minHeight: 44, minWidth: 28 }}
+              >
+                <div className={`h-2.5 rounded-full transition-all ${
+                  i === currentCard ? "w-7 bg-[#5A52E0]" : "w-2.5 bg-[#B8D4E3]"
+                }`} />
+              </button>
             ))}
             {!isStreaming && (
               <span className="ml-2 text-xs text-secondary">
@@ -616,6 +637,7 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
         type="button"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between py-3 text-left"
+        style={{ minHeight: 48 }}
       >
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[#5B4B88] uppercase tracking-wider">{title}</h2>
@@ -631,13 +653,15 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
             </span>
           )}
         </div>
-        <svg
-          className="h-4 w-4 text-tertiary transition-transform duration-200"
-          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
-          fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-        </svg>
+        <div className="flex h-11 w-11 items-center justify-center -mr-2">
+          <svg
+            className="h-5 w-5 text-secondary transition-transform duration-250"
+            style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+            fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </div>
       </button>
       <div
         ref={contentRef}
@@ -982,8 +1006,8 @@ export default function SessionPage() {
       setError(null);
       setPhaseAnimation("enter");
       haptic();
-      setTimeout(() => setPhaseAnimation("active"), 50);
-    }, 200);
+      setTimeout(() => setPhaseAnimation("active"), 80);
+    }, 280);
   }
 
   // ---------------------------------------------------------------------------
@@ -1477,7 +1501,7 @@ export default function SessionPage() {
       <div className="flex-shrink-0 relative">
         <button
           onClick={() => setShowExitModal(true)}
-          className="absolute left-2 top-1/2 -translate-y-1/2 z-50 flex h-11 w-11 items-center justify-center rounded-full text-secondary transition-transform active:scale-[0.92]"
+          className="absolute left-1 top-1/2 -translate-y-1/2 z-50 flex h-12 w-12 items-center justify-center rounded-full text-secondary"
           aria-label="Leave session"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -1583,17 +1607,22 @@ export default function SessionPage() {
               )}
 
               {retrievalQuestion && (
-                <div className="space-y-5">
-                  <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+                <div className="space-y-5 animate-challenge">
+                  <div className="text-center mb-1">
+                    <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-semibold text-[#5A52E0] uppercase tracking-wider">
+                      Quick check
+                    </span>
+                  </div>
+                  <div className="rounded-3xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
                     <p className="text-center text-lg font-medium leading-relaxed text-primary">
                       {retrievalQuestion}
                     </p>
                   </div>
 
                   {retrievalResponse && (
-                    <div className="animate-fade-in-up rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-soft)]">
-                      <p className="mb-2 text-xs font-medium text-[#5A52E0]">Got it. Here&apos;s your edge:</p>
-                      <p className="text-sm leading-relaxed text-secondary italic">{retrievalResponse}</p>
+                    <div className="animate-fade-in-up rounded-3xl p-6 text-center shadow-[0_4px_20px_rgba(0,0,0,0.06)]" style={{ backgroundColor: "#EEEDFF" }}>
+                      <p className="mb-1 text-sm font-semibold text-[#5A52E0]">Solid recall</p>
+                      <p className="text-sm leading-relaxed text-primary">{retrievalResponse}</p>
                     </div>
                   )}
 
@@ -1650,7 +1679,11 @@ export default function SessionPage() {
                           <button
                             onClick={() => { if (inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
                             disabled={isLoading || !inputValue.trim()}
-                            className="w-full rounded-2xl bg-[#5A52E0] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                            className={`w-full rounded-2xl py-3.5 text-sm font-semibold transition-all ${
+                              inputValue.trim()
+                                ? "bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
+                                : "bg-[#E0DED8] text-[#8E8C99]"
+                            }`}
                           >
                             {isLoading ? "Evaluating..." : "Submit"}
                           </button>
@@ -1679,22 +1712,33 @@ export default function SessionPage() {
             <>
               {/* Character persona card — shown until first AI message arrives */}
               {character && roleplayTranscript.length === 0 && (
-                <div className="mb-5 rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)] animate-fade-in-up">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full text-2xl" style={{ backgroundColor: "#FDF2F2" }}>
-                      {characterEmoji(character.id)}
+                <div className="mb-5 animate-challenge">
+                  {/* Character intro card */}
+                  <div className="rounded-3xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
+                    <div className="text-center mb-4">
+                      <div className="inline-flex h-16 w-16 items-center justify-center rounded-full text-3xl mb-3" style={{ backgroundColor: "#FDF2F2" }}>
+                        {characterEmoji(character.id)}
+                      </div>
+                      <p className="text-lg font-bold text-primary">{character.name}</p>
+                      <p className="mt-1 text-sm leading-snug text-secondary">{character.description}</p>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-base font-semibold text-primary">{character.name}</p>
-                      <p className="mt-0.5 text-sm leading-snug text-secondary">{character.description}</p>
+
+                    {/* Key traits */}
+                    <div className="flex gap-2 justify-center flex-wrap mb-4">
+                      {character.tactics.slice(0, 2).map((t, i) => (
+                        <span key={i} className="rounded-full px-2.5 py-1 text-[11px] font-medium" style={{ backgroundColor: "#FDE2E2", color: "#611414" }}>
+                          {t.length > 30 ? t.slice(0, 30) + "\u2026" : t}
+                        </span>
+                      ))}
                     </div>
+
+                    {scenarioContext && (
+                      <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: "#FDF2F2" }}>
+                        <p className="text-xs font-semibold text-[#D4908F] uppercase tracking-wider mb-1.5">Scene</p>
+                        <p className="text-sm leading-relaxed text-primary">{scenarioContext}</p>
+                      </div>
+                    )}
                   </div>
-                  {scenarioContext && (
-                    <div className="mt-3 rounded-2xl px-4 py-3" style={{ backgroundColor: "#FDF2F2" }}>
-                      <p className="text-xs font-medium text-[#D4908F] mb-1">Scene</p>
-                      <p className="text-sm leading-relaxed text-primary">{scenarioContext}</p>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1704,7 +1748,18 @@ export default function SessionPage() {
                     <span className="text-2xl">{characterEmoji(character?.id)}</span>
                     <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
                   </div>
-                  <span className="text-xs text-secondary">Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8</span>
+                  <div className="flex items-center gap-1.5">
+                    {Array.from({ length: 8 }, (_, i) => (
+                      <div
+                        key={i}
+                        className="h-1.5 w-1.5 rounded-full transition-all duration-300"
+                        style={{
+                          backgroundColor: i < Math.max(1, Math.ceil(turnCount / 2)) ? "#F2C4C4" : "#F0EDE8",
+                          transform: i < Math.max(1, Math.ceil(turnCount / 2)) ? "scale(1)" : "scale(0.8)",
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
                 {character?.description && roleplayTranscript.length > 0 && (
                   <PersonaLine description={character.description} />
@@ -1717,17 +1772,17 @@ export default function SessionPage() {
 
               <div className="space-y-3 pb-4">
                 {roleplayTranscript.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start gap-2"}`}>
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end pl-8" : "justify-start pr-8 gap-2"} animate-fade-in-up`}>
                     {msg.role === "assistant" && (
                       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
                         {characterEmoji(character?.id)}
                       </div>
                     )}
                     <div
-                      className={`max-w-[80%] p-4 text-base leading-relaxed ${
+                      className={`p-4 text-base leading-relaxed ${
                         msg.role === "user"
-                          ? "rounded-3xl rounded-tr-lg bg-[#5A52E0] text-white"
-                          : "rounded-3xl rounded-tl-lg bg-white shadow-[var(--shadow-soft)]"
+                          ? "rounded-3xl rounded-br-lg bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.15)]"
+                          : "rounded-3xl rounded-tl-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]"
                       }`}
                     >
                       {msg.content}
@@ -1878,28 +1933,28 @@ export default function SessionPage() {
                     <div className="flex gap-3">
                       <button
                         onClick={() => { setCheckinPillSelected("completed"); haptic(20); }}
-                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[0.97] ${
-                          checkinPillSelected === "completed" ? "ring-2 ring-[#5A52E0] shadow-[0_2px_8px_rgba(90,82,224,0.2)] animate-celebrate" : ""
+                        className={`flex-1 rounded-2xl px-4 py-3.5 text-sm font-semibold transition-all ${
+                          checkinPillSelected === "completed" ? "ring-2 ring-[#2D6A4F] shadow-[0_4px_12px_rgba(107,201,160,0.3)] animate-celebrate scale-[1.02]" : ""
                         }`}
                         style={{ backgroundColor: "#B8E0C8", color: "#2D6A4F" }}
                       >
-                        &#10003; Nailed it
+                        &#9889; Nailed it
                       </button>
                       <button
                         onClick={() => setCheckinPillSelected("tried")}
-                        className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[0.97] ${
-                          checkinPillSelected === "tried" ? "ring-2 ring-[#5A52E0] shadow-[0_2px_8px_rgba(90,82,224,0.2)]" : ""
+                        className={`flex-1 rounded-2xl px-4 py-3.5 text-sm font-semibold transition-all ${
+                          checkinPillSelected === "tried" ? "ring-2 ring-[#8B7024] shadow-[0_4px_12px_rgba(245,197,99,0.3)] scale-[1.02]" : ""
                         }`}
                         style={{ backgroundColor: "#F5E6B8", color: "#8B7024" }}
                       >
-                        ~ Tried it
+                        &#128075; Tried it
                       </button>
                       <button
                         onClick={() => submitCheckin("skipped")}
-                        className="flex-1 rounded-full px-4 py-3 text-sm font-medium transition-transform active:scale-[0.97]"
+                        className="flex-1 rounded-2xl px-4 py-3.5 text-sm font-medium transition-transform"
                         style={{ backgroundColor: "#F0EDE8", color: "#8E8C99" }}
                       >
-                        &#10005; Skip
+                        Skip
                       </button>
                     </div>
 
@@ -1985,10 +2040,14 @@ export default function SessionPage() {
 
               {/* Mission card */}
               {mission && !isLoading && !checkinResponse && (
-                <div className="animate-fade-in-up relative">
-                  <p className="mb-3 text-sm font-medium" style={{ color: "#5A9A7A" }}>Your mission</p>
+                <div className="animate-challenge relative">
+                  <div className="text-center mb-4">
+                    <span className="inline-block rounded-full bg-[#E8F5ED] px-3 py-1 text-xs font-semibold text-[#2D6A4F] uppercase tracking-wider">
+                      Field assignment
+                    </span>
+                  </div>
 
-                  <div className="mb-5 rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.mission }}>
+                  <div className="mb-5 rounded-3xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]" style={{ backgroundColor: PHASE_TINT.mission }}>
                     {(() => {
                       // Extract first sentence as scannable headline
                       const sentenceEnd = mission.search(/[.!?]\s|[.!?]$/);
@@ -2015,7 +2074,7 @@ export default function SessionPage() {
                   {!showConfetti ? (
                     <button
                       onClick={completeSession}
-                      className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+                      className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-all shadow-[0_4px_16px_rgba(107,201,160,0.3)]"
                       style={{ backgroundColor: "#6BC9A0" }}
                     >
                       Session complete &#10003;
@@ -2270,9 +2329,10 @@ export default function SessionPage() {
           <div className="mx-auto max-w-lg">
             <button
               onClick={enterDeploy}
-              className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+              className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
+              style={{ backgroundColor: "#7B6FD4" }}
             >
-              Continue &rarr;
+              Your mission &rarr;
             </button>
           </div>
         </div>

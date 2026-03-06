@@ -77,7 +77,7 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative mx-auto" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="rotate-[-90deg]">
+        <svg width={size} height={size} className={`rotate-[-90deg] ${hasData && average >= 4.0 ? "ring-glow" : ""}`}>
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -110,7 +110,14 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
       </div>
       {hasData && (
         <>
-          <span className="text-sm font-medium text-accent">
+          <span
+            className="achievement-badge"
+            style={{
+              backgroundColor: average >= 4.0 ? "#EEEDFF" : average >= 3.0 ? "#FEF3CD" : "#FDE2E2",
+              color: average >= 4.0 ? "#5A52E0" : average >= 3.0 ? "#6B4F00" : "#611414",
+            }}
+          >
+            {average >= 4.0 && <span>&#9733;</span>}
             {averageDescriptor(average)}
           </span>
           {average < 3 && (
@@ -260,11 +267,16 @@ export default function Home() {
                       expandTimeout.current = setTimeout(() => setExpandedDim(null), 4000);
                     }
                   }}
-                  className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold transition-all active:scale-[0.92]"
+                  className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold transition-all"
                   style={{
                     backgroundColor: score !== null ? scoreCircleColor(score) : "#E0DED8",
                     color: score !== null ? scoreTextColor(score) : "#8E8C99",
-                    boxShadow: isExpanded ? "0 0 0 3px #5A52E0" : "none",
+                    boxShadow: isExpanded
+                      ? "0 0 0 3px #5A52E0"
+                      : score === 5
+                      ? "0 0 0 2px rgba(107,201,160,0.4)"
+                      : "none",
+                    opacity: score !== null && score <= 2 ? 0.85 : 1,
                   }}
                   aria-label={`${fullName}: ${score !== null ? score + " out of 5" : "no score yet"}`}
                 >
@@ -272,7 +284,7 @@ export default function Home() {
                 </button>
                 <span className="text-[10px] text-secondary">{label}</span>
                 {isExpanded && (
-                  <div className="animate-fade-in-up w-36 rounded-2xl bg-white p-3 text-center shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+                  <div className="animate-fade-in-up w-36 rounded-2xl bg-white p-3 text-center shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
                     <p className="text-xs font-semibold text-primary">{fullName}</p>
                     <p className="mt-1 text-[11px] leading-tight text-secondary">{description}</p>
                   </div>

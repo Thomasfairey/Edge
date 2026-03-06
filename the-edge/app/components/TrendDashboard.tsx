@@ -15,11 +15,11 @@ interface ScoreEntry {
 }
 
 const DIMS: { key: keyof SessionScores; label: string; fullName: string }[] = [
-  { key: "technique_application", label: "TA", fullName: "Technique Application" },
-  { key: "tactical_awareness", label: "TW", fullName: "Tactical Awareness" },
-  { key: "frame_control", label: "FC", fullName: "Frame Control" },
-  { key: "emotional_regulation", label: "ER", fullName: "Emotional Regulation" },
-  { key: "strategic_outcome", label: "SO", fullName: "Strategic Outcome" },
+  { key: "technique_application", label: "Technique", fullName: "Technique Application" },
+  { key: "tactical_awareness", label: "Tactical", fullName: "Tactical Awareness" },
+  { key: "frame_control", label: "Frame", fullName: "Frame Control" },
+  { key: "emotional_regulation", label: "Regulation", fullName: "Emotional Regulation" },
+  { key: "strategic_outcome", label: "Outcome", fullName: "Strategic Outcome" },
 ];
 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
@@ -102,7 +102,7 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
         <div className="space-y-3">
           {dimStats.map((d) => (
             <div key={d.key} className="flex items-center gap-2" title={d.fullName}>
-              <span className="w-7 text-xs font-medium text-secondary">{d.label}</span>
+              <span className="w-20 text-xs font-medium text-secondary truncate">{d.label}</span>
               <Sparkline values={d.values} color={scoreColor(d.current)} />
               <span
                 className="w-6 text-center text-sm font-bold"
