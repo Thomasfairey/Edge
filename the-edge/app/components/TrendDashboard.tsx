@@ -57,26 +57,17 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function trendArrow(values: number[]): { symbol: string; color: string } {
-  if (values.length < 2) return { symbol: "\u2192", color: "#8E8C99" };
+function trendArrow(values: number[]): { symbol: string; color: string; delta: number } {
+  if (values.length < 2) return { symbol: "\u2192", color: "#8E8C99", delta: 0 };
 
-  // Compare average of last 2 vs previous entries
-  const recent = values.slice(-2);
-  const earlier = values.slice(0, -2);
-  if (earlier.length === 0) {
-    const diff = recent[1] - recent[0];
-    if (diff > 0) return { symbol: "\u2191", color: "#6BC9A0" };
-    if (diff < 0) return { symbol: "\u2193", color: "#E88B8B" };
-    return { symbol: "\u2192", color: "#8E8C99" };
-  }
+  // Compare latest score to previous score (most intuitive for users)
+  const current = values[values.length - 1];
+  const previous = values[values.length - 2];
+  const diff = current - previous;
 
-  const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const earlierAvg = earlier.reduce((a, b) => a + b, 0) / earlier.length;
-  const diff = recentAvg - earlierAvg;
-
-  if (diff > 0.3) return { symbol: "\u2191", color: "#6BC9A0" };
-  if (diff < -0.3) return { symbol: "\u2193", color: "#E88B8B" };
-  return { symbol: "\u2192", color: "#8E8C99" };
+  if (diff > 0) return { symbol: "\u2191", color: "#6BC9A0", delta: diff };
+  if (diff < 0) return { symbol: "\u2193", color: "#E88B8B", delta: diff };
+  return { symbol: "\u2192", color: "#8E8C99", delta: 0 };
 }
 
 function scoreColor(score: number): string {
@@ -116,10 +107,9 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
               >
                 {d.current}
               </span>
-              <span className="w-5 text-center text-base" style={{ color: d.trend.color }}>
-                {d.trend.symbol}
+              <span className="w-10 text-center text-xs font-medium" style={{ color: d.trend.color }}>
+                {d.trend.symbol}{d.trend.delta !== 0 ? (d.trend.delta > 0 ? `+${d.trend.delta}` : d.trend.delta) : ""}
               </span>
-              <span className="text-xs text-tertiary">{d.best}</span>
             </div>
           ))}
         </div>

@@ -60,6 +60,21 @@ function haptic(ms = 10) {
   }
 }
 
+/** Normalise scores that may use abbreviated keys (TA/TW/FC/ER/SO) to canonical form. */
+const ABBREV_MAP: Record<string, keyof SessionScores> = {
+  TA: "technique_application", TW: "tactical_awareness",
+  FC: "frame_control", ER: "emotional_regulation", SO: "strategic_outcome",
+};
+function normaliseScores(scores: Record<string, number> | null): SessionScores | null {
+  if (!scores) return null;
+  if ("technique_application" in scores) return scores as unknown as SessionScores;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(scores)) {
+    out[ABBREV_MAP[k] ?? k] = v;
+  }
+  return out as unknown as SessionScores;
+}
+
 function scoreCircleColor(score: number): string {
   if (score >= 4) return "#6BC9A0";
   if (score === 3) return "#F5C563";
@@ -361,9 +376,11 @@ function LessonCards({
                 style={{ minHeight: 8, minWidth: 8 }}
               />
             ))}
-            <span className="ml-2 text-xs text-secondary">
-              {currentCard + 1} / {sections.length}
-            </span>
+            {!isStreaming && (
+              <span className="ml-2 text-xs text-secondary">
+                {currentCard + 1} / {sections.length}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -709,7 +726,7 @@ export default function SessionPage() {
           setCheckinUserText(s.checkinUserText ?? null);
           setDayNumber(s.dayNumber || 1); setScenarioContext(s.scenarioContext || null);
           if (s.debriefContent) setDebriefContent(s.debriefContent);
-          if (s.scores) setScores(s.scores);
+          if (s.scores) setScores(normaliseScores(s.scores));
           if (s.behavioralWeaknessSummary) setBehavioralWeaknessSummary(s.behavioralWeaknessSummary);
           if (s.keyMoment) setKeyMoment(s.keyMoment);
           if (s.mission) setMission(s.mission);
@@ -717,7 +734,7 @@ export default function SessionPage() {
           if (s.lastMission) setLastMission(s.lastMission);
           if (s.coachAdvice) setCoachAdvice(s.coachAdvice);
           if (s.isReviewSession) setIsReviewSession(s.isReviewSession);
-          if (s.previousScores) setPreviousScores(s.previousScores);
+          if (s.previousScores) setPreviousScores(normaliseScores(s.previousScores));
           setIsLoading(false); setRestored(true); return;
         } else { localStorage.removeItem(SESSION_STORAGE_KEY); }
       }
@@ -733,7 +750,7 @@ export default function SessionPage() {
           setCheckinNeeded(true);
           // Store previous scores for completion screen deltas
           if (data.lastEntry.scores) {
-            setPreviousScores(data.lastEntry.scores);
+            setPreviousScores(normaliseScores(data.lastEntry.scores));
           }
         }
         fetchLesson();
