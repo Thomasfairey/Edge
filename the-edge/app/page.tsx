@@ -65,6 +65,12 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = hasData ? (average / 5) * circumference : 0;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -88,12 +94,8 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
               strokeWidth={strokeWidth}
               strokeLinecap="round"
               strokeDasharray={circumference}
-              strokeDashoffset={circumference - progress}
-              className="animate-ring-grow"
-              style={{
-                ["--ring-circumference" as string]: circumference,
-                ["--ring-target" as string]: circumference - progress,
-              }}
+              strokeDashoffset={mounted ? circumference - progress : circumference}
+              style={{ transition: "stroke-dashoffset 1s ease-out" }}
             />
           )}
         </svg>

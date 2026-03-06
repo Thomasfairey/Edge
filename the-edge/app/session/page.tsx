@@ -155,10 +155,12 @@ function PhaseIndicator({
           return (
             <div key={p.key} className="flex flex-col items-center gap-1.5">
               <div
-                className={`h-3 w-3 rounded-full transition-all ${isActive ? "phase-dot-active" : ""}`}
+                className={`h-3 w-3 rounded-full ${isActive ? "phase-dot-active" : ""}`}
                 style={{
                   backgroundColor: isDone || isActive ? p.color : "transparent",
                   border: isDone || isActive ? "none" : `2px solid ${p.color}4D`,
+                  transition: "background-color 400ms ease, border 400ms ease, transform 300ms ease",
+                  transform: isDone ? "scale(1)" : isActive ? "scale(1)" : "scale(0.85)",
                 }}
               />
               <span
@@ -239,19 +241,39 @@ function renderMarkdown(text: string): React.ReactNode[] {
         }
       } else {
         isFirstParagraph = false;
-        elements.push(
-          <p key={key++} className="text-base leading-relaxed text-primary">
-            {parts.map((part, i) =>
-              part.startsWith("**") && part.endsWith("**") ? (
-                <strong key={i} className="font-semibold">
-                  {part.slice(2, -2)}
-                </strong>
-              ) : (
-                part
-              )
-            )}
-          </p>
-        );
+        // Break long paragraphs at ~2 sentence boundaries for readability
+        if (!hasBold && line.length > 200) {
+          const sentences = line.match(/[^.!?]+[.!?]+\s*/g) || [line];
+          const chunks: string[] = [];
+          let buf = "";
+          for (const s of sentences) {
+            buf += s;
+            if (buf.length > 100) {
+              chunks.push(buf.trim());
+              buf = "";
+            }
+          }
+          if (buf.trim()) chunks.push(buf.trim());
+          for (const chunk of chunks) {
+            elements.push(
+              <p key={key++} className="text-base leading-relaxed text-primary mb-2">{chunk}</p>
+            );
+          }
+        } else {
+          elements.push(
+            <p key={key++} className="text-base leading-relaxed text-primary">
+              {parts.map((part, i) =>
+                part.startsWith("**") && part.endsWith("**") ? (
+                  <strong key={i} className="font-semibold">
+                    {part.slice(2, -2)}
+                  </strong>
+                ) : (
+                  part
+                )
+              )}
+            </p>
+          );
+        }
       }
     }
   }
@@ -435,56 +457,50 @@ function LessonCards({
 // Debrief markdown renderer (lavender styling)
 // ---------------------------------------------------------------------------
 
-function renderDebriefMarkdown(text: string): React.ReactNode[] {
+/** Parse debrief into sections keyed by ## headers, with special card rendering for replay blocks. */
+function parseDebriefSections(text: string): { title: string; content: React.ReactNode[] }[] {
   const lines = text.split("\n");
-  const elements: React.ReactNode[] = [];
+  const sections: { title: string; content: React.ReactNode[] }[] = [];
+  let currentSection: { title: string; content: React.ReactNode[] } = { title: "", content: [] };
   let key = 0;
   let inReplayBlock = false;
 
-  for (const line of lines) {
+  function pushLine(line: string) {
     const lower = line.toLowerCase();
 
-    // Detect replay / "what you should have said" sections
+    // Detect replay / "what you said" sections
     if (lower.includes("what you said") || lower.includes("you said:") || lower.includes("your response:")) {
       inReplayBlock = true;
-      elements.push(
-        <div key={key++} className="mt-4 mb-1 rounded-t-2xl bg-[#FDF2F2] px-4 pt-3 pb-2">
-          <p className="text-xs font-semibold text-[#D4908F] uppercase tracking-wider">What you said</p>
+      currentSection.content.push(
+        <div key={key++} className="mt-3 rounded-2xl border-l-4 border-[#F2C4C4] bg-[#FDF2F2] px-4 py-3">
+          <p className="text-xs font-semibold text-[#D4908F] uppercase tracking-wider">Your move</p>
           <p className="mt-1 text-sm leading-relaxed text-primary/70 italic">
             {line.replace(/^.*?(?:what you said|you said:|your response:)\s*/i, "").replace(/\*\*/g, "")}
           </p>
         </div>
       );
-      continue;
+      return;
     }
 
     if (inReplayBlock && (lower.includes("what you should") || lower.includes("stronger response") || lower.includes("try instead") || lower.includes("better approach") || lower.includes("ideal response"))) {
       inReplayBlock = false;
-      elements.push(
-        <div key={key++} className="mb-4 rounded-b-2xl bg-[#E8F5ED] px-4 pt-2 pb-3">
-          <p className="text-xs font-semibold text-[#2D6A4F] uppercase tracking-wider">Stronger response</p>
+      currentSection.content.push(
+        <div key={key++} className="mt-1 mb-3 rounded-2xl border-l-4 border-[#6BC9A0] bg-[#E8F5ED] px-4 py-3">
+          <p className="text-xs font-semibold text-[#2D6A4F] uppercase tracking-wider">The edge move</p>
           <p className="mt-1 text-sm leading-relaxed text-primary font-medium">
             {line.replace(/^.*?(?:what you should|stronger response|try instead|better approach|ideal response)[^:]*:\s*/i, "").replace(/\*\*/g, "")}
           </p>
         </div>
       );
-      continue;
+      return;
     }
 
-    if (line.startsWith("## ") || (line.startsWith("**") && line.endsWith("**"))) {
-      inReplayBlock = false;
-      const header = line.startsWith("## ") ? line.slice(3) : line.slice(2, -2);
-      elements.push(
-        <h2 key={key++} className="mb-2 mt-5 text-sm font-semibold text-[#5B4B88] uppercase tracking-wider first:mt-0">
-          {header}
-        </h2>
-      );
-    } else if (line.trim() === "") {
-      if (inReplayBlock) continue; // don't break replay blocks with whitespace
-      elements.push(<div key={key++} className="h-3" />);
+    if (line.trim() === "") {
+      if (inReplayBlock) return;
+      currentSection.content.push(<div key={key++} className="h-2" />);
     } else if (lower.includes("why this works") || lower.includes("why it works")) {
-      elements.push(
-        <div key={key++} className="mt-2 mb-3 rounded-2xl bg-[#EEEDFF] px-4 py-3">
+      currentSection.content.push(
+        <div key={key++} className="mt-2 mb-2 rounded-2xl bg-[#EEEDFF] px-4 py-3">
           <p className="text-xs font-semibold text-[#5A52E0] uppercase tracking-wider mb-1">Why this works</p>
           <p className="text-sm leading-relaxed text-primary">
             {line.replace(/^.*?(?:why (?:this|it) works)[^:]*:\s*/i, "").replace(/\*\*/g, "")}
@@ -493,22 +509,105 @@ function renderDebriefMarkdown(text: string): React.ReactNode[] {
       );
     } else {
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      elements.push(
-        <p key={key++} className="text-base leading-relaxed text-primary">
+      currentSection.content.push(
+        <p key={key++} className="text-sm leading-relaxed text-primary">
           {parts.map((part, i) =>
             part.startsWith("**") && part.endsWith("**") ? (
-              <strong key={i} className="font-semibold">
-                {part.slice(2, -2)}
-              </strong>
-            ) : (
-              part
-            )
+              <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
+            ) : part
           )}
         </p>
       );
     }
   }
-  return elements;
+
+  for (const line of lines) {
+    if (line.startsWith("## ") || (line.startsWith("**") && line.endsWith("**") && !line.includes("**") && line.length < 80) || (line.startsWith("**") && line.endsWith("**"))) {
+      // Check if this is a dimension header (not inline bold)
+      const isSectionHeader = line.startsWith("## ") || (line.startsWith("**") && line.endsWith("**") && line.length < 80);
+      if (isSectionHeader) {
+        inReplayBlock = false;
+        if (currentSection.title || currentSection.content.length > 0) {
+          sections.push(currentSection);
+        }
+        const header = line.startsWith("## ") ? line.slice(3) : line.slice(2, -2);
+        currentSection = { title: header, content: [] };
+        continue;
+      }
+    }
+    pushLine(line);
+  }
+  if (currentSection.title || currentSection.content.length > 0) {
+    sections.push(currentSection);
+  }
+  return sections;
+}
+
+/** Collapsible debrief section with score badge */
+function DebriefSection({ title, children, scores, defaultOpen }: {
+  title: string;
+  children: React.ReactNode;
+  scores?: SessionScores | null;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen ?? true);
+
+  // Try to match a score dimension from the title
+  const dimMap: Record<string, keyof SessionScores> = {
+    technique: "technique_application",
+    tactical: "tactical_awareness",
+    frame: "frame_control",
+    emotion: "emotional_regulation",
+    regulation: "emotional_regulation",
+    strategic: "strategic_outcome",
+    outcome: "strategic_outcome",
+  };
+  const titleLower = title.toLowerCase();
+  let matchedScore: number | null = null;
+  if (scores) {
+    for (const [keyword, key] of Object.entries(dimMap)) {
+      if (titleLower.includes(keyword)) {
+        matchedScore = scores[key];
+        break;
+      }
+    }
+  }
+
+  return (
+    <div className="border-b border-[#F0EDE8]/50 last:border-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between py-3 text-left transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-[#5B4B88] uppercase tracking-wider">{title}</h2>
+          {matchedScore !== null && (
+            <span
+              className="text-xs font-bold rounded-full px-2 py-0.5"
+              style={{
+                backgroundColor: matchedScore >= 4 ? "#D4F5E4" : matchedScore >= 3 ? "#FEF3CD" : "#FDE2E2",
+                color: matchedScore >= 4 ? "#1A5C3A" : matchedScore >= 3 ? "#6B4F00" : "#611414",
+              }}
+            >
+              {matchedScore}/5
+            </span>
+          )}
+        </div>
+        <svg
+          className={`h-4 w-4 text-tertiary transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="pb-4 animate-fade-in-up">
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1553,12 +1652,17 @@ export default function SessionPage() {
                 </div>
               )}
 
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{characterEmoji(character?.id)}</span>
-                  <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
+              <div className="mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{characterEmoji(character?.id)}</span>
+                    <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
+                  </div>
+                  <span className="text-xs text-secondary">Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8</span>
                 </div>
-                <span className="text-xs text-secondary">Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8</span>
+                {character?.description && roleplayTranscript.length > 0 && (
+                  <p className="mt-1 text-[11px] text-tertiary truncate pl-10">{character.description}</p>
+                )}
               </div>
 
               {resetNotice && (
@@ -1684,9 +1788,24 @@ export default function SessionPage() {
                     </div>
                   )}
 
-                  {/* Analysis card */}
-                  <div className="select-text mb-5 rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.debrief }}>
-                    <div className="space-y-0">{renderDebriefMarkdown(debriefContent)}</div>
+                  {/* Analysis card — collapsible sections */}
+                  <div className="select-text mb-5 rounded-3xl p-5 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.debrief }}>
+                    {(() => {
+                      const sections = parseDebriefSections(debriefContent);
+                      if (sections.length <= 1) {
+                        // Fallback: no sections detected, render flat
+                        return <div className="space-y-0">{sections[0]?.content}</div>;
+                      }
+                      return sections.map((s, i) => (
+                        s.title ? (
+                          <DebriefSection key={i} title={s.title} scores={scores} defaultOpen={i < 2}>
+                            <div className="space-y-1">{s.content}</div>
+                          </DebriefSection>
+                        ) : (
+                          <div key={i} className="space-y-1 pb-3">{s.content}</div>
+                        )
+                      ));
+                    })()}
                   </div>
                 </>
               )}
@@ -1712,15 +1831,14 @@ export default function SessionPage() {
                     {/* Outcome pills */}
                     <div className="flex gap-3">
                       <button
-                        onClick={() => setCheckinPillSelected("completed")}
+                        onClick={() => { setCheckinPillSelected("completed"); haptic(20); }}
                         className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[0.97] ${
-                          checkinPillSelected === "completed" ? "ring-2 ring-[#5A52E0] shadow-[0_2px_8px_rgba(90,82,224,0.2)]" : ""
+                          checkinPillSelected === "completed" ? "ring-2 ring-[#5A52E0] shadow-[0_2px_8px_rgba(90,82,224,0.2)] animate-celebrate" : ""
                         }`}
                         style={{ backgroundColor: "#B8E0C8", color: "#2D6A4F" }}
                       >
                         &#10003; Nailed it
                       </button>
-                      {/* Note: celebration animation handled by confetti on session complete */}
                       <button
                         onClick={() => setCheckinPillSelected("tried")}
                         className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[0.97] ${
