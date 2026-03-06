@@ -135,8 +135,10 @@ async function handlePost(req: NextRequest) {
   };
 
   try {
-    const ledgerCount = getLedgerCount();
-    const serialisedLedger = serialiseForPrompt();
+    const [ledgerCount, serialisedLedger] = await Promise.all([
+      getLedgerCount(),
+      serialiseForPrompt(),
+    ]);
 
     const debriefPrompt = buildDebriefPrompt(
       transcript,
@@ -147,7 +149,7 @@ async function handlePost(req: NextRequest) {
       checkinContext
     );
 
-    const systemPrompt = `${buildPersistentContext()}\n\n${debriefPrompt}`;
+    const systemPrompt = `${await buildPersistentContext()}\n\n${debriefPrompt}`;
 
     // Use streaming internally to keep connection alive
     const debriefContent = await generateResponseViaStream(

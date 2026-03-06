@@ -8,10 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildCheckinPrompt } from "@/lib/prompts/checkin";
-import { getLedger } from "@/lib/ledger";
+import { updateLastMissionOutcome } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import fs from "fs";
-import path from "path";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -38,12 +36,7 @@ async function handlePost(req: NextRequest) {
 
   // Handle "skipped" — no API call needed
   if (outcomeType === "skipped") {
-    const entries = getLedger();
-    if (entries.length > 0) {
-      entries[entries.length - 1].mission_outcome = "NOT EXECUTED";
-      const ledgerPath = path.join(process.cwd(), "data", "ledger.json");
-      fs.writeFileSync(ledgerPath, JSON.stringify(entries, null, 2), "utf-8");
-    }
+    await updateLastMissionOutcome("NOT EXECUTED");
 
     return NextResponse.json({
       response: "No problem. The mission you\u2019re about to get will give you a clean shot.",
@@ -57,7 +50,7 @@ async function handlePost(req: NextRequest) {
     userOutcome || "",
     outcomeType
   );
-  const systemPrompt = `${buildPersistentContext()}\n\n${checkinPrompt}`;
+  const systemPrompt = `${await buildPersistentContext()}\n\n${checkinPrompt}`;
 
   const rawResponse = await generateResponse(
     systemPrompt,
@@ -80,12 +73,7 @@ async function handlePost(req: NextRequest) {
     .trim();
 
   // Update the most recent ledger entry's mission_outcome
-  const entries = getLedger();
-  if (entries.length > 0) {
-    entries[entries.length - 1].mission_outcome = userOutcome || outcomeType;
-    const ledgerPath = path.join(process.cwd(), "data", "ledger.json");
-    fs.writeFileSync(ledgerPath, JSON.stringify(entries, null, 2), "utf-8");
-  }
+  await updateLastMissionOutcome(userOutcome || outcomeType);
 
   return NextResponse.json({ response, type, insight });
 }

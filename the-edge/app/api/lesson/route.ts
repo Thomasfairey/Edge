@@ -46,14 +46,14 @@ async function handlePost(req: NextRequest) {
     }
     concept = found;
   } else {
-    const completedIds = getCompletedConcepts();
-    const result = selectConcept(completedIds);
+    const completedIds = await getCompletedConcepts();
+    const result = await selectConcept(completedIds);
     concept = result.concept;
     isReview = result.isReview;
   }
 
   const lessonPrompt = buildLessonPrompt(concept, isReview);
-  const systemPrompt = `${buildPersistentContext()}\n\n${lessonPrompt}`;
+  const systemPrompt = `${await buildPersistentContext()}\n\n${lessonPrompt}`;
 
   const userMessage = {
     role: "user" as const,

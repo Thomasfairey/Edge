@@ -45,9 +45,12 @@ function calculateStreak(entries: { date: string }[]): number {
 }
 
 async function handleGet() {
-  const entries = getLedger();
-  const lastEntry = getLastEntry();
-  const dayNumber = getLedgerCount() + 1;
+  const [entries, lastEntry, dayNumber, srSummary] = await Promise.all([
+    getLedger(),
+    getLastEntry(),
+    getLedgerCount().then((c) => c + 1),
+    getSRSummary().catch(() => ({ totalConcepts: 0, dueForReview: 0, masteredCount: 0 })),
+  ]);
 
   // Get last 7 entries' scores
   const recentScores: SessionScores[] = entries
@@ -55,12 +58,6 @@ async function handleGet() {
     .map((e) => e.scores);
 
   const streakCount = calculateStreak(entries);
-
-  // SR summary
-  let srSummary = { totalConcepts: 0, dueForReview: 0, masteredCount: 0 };
-  try {
-    srSummary = getSRSummary();
-  } catch {}
 
   // All scores for trend dashboard
   const allScores = entries.map((e) => ({

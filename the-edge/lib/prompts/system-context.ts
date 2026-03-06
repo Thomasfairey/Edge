@@ -10,9 +10,11 @@ import { serialiseForPrompt, getCompletedConcepts } from "@/lib/ledger";
  * Build the full persistent context string.
  * Dynamically injects the serialised Nuance Ledger and completed concepts list.
  */
-export function buildPersistentContext(): string {
-  const ledgerSummary = serialiseForPrompt();
-  const completedConcepts = getCompletedConcepts();
+export async function buildPersistentContext(): Promise<string> {
+  const [ledgerSummary, completedConcepts] = await Promise.all([
+    serialiseForPrompt(),
+    getCompletedConcepts(),
+  ]);
 
   const conceptsList =
     completedConcepts.length > 0

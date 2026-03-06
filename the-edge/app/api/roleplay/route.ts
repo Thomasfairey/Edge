@@ -46,7 +46,7 @@ async function handlePost(req: NextRequest) {
   const scenario = scenarioContext ?? buildScenarioContext(concept, character);
 
   const roleplayPrompt = buildRoleplayPrompt(concept, character, scenario);
-  const systemPrompt = `${buildPersistentContext()}\n\n${roleplayPrompt}`;
+  const systemPrompt = `${await buildPersistentContext()}\n\n${roleplayPrompt}`;
 
   // Build the messages array for the API call
   let messages: Message[];

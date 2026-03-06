@@ -1,10 +1,9 @@
 /**
  * Simplified SM-2 spaced repetition engine.
- * Tracks concept mastery across sessions using a JSON file.
+ * Tracks concept mastery across sessions using Supabase.
  */
 
-import fs from "fs";
-import path from "path";
+import { supabase } from "@/lib/supabase";
 
 export interface SREntry {
   conceptId: string;
@@ -16,32 +15,39 @@ export interface SREntry {
   lastScoreAvg: number;
 }
 
-const SR_PATH = path.join(process.cwd(), "data", "spaced-repetition.json");
-
-function ensureFile(): void {
-  const dir = path.dirname(SR_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  if (!fs.existsSync(SR_PATH)) {
-    fs.writeFileSync(SR_PATH, "[]", "utf-8");
-  }
+interface SRRow {
+  id: number;
+  concept_id: string;
+  last_practiced: string;
+  ease_factor: number;
+  interval: number;
+  next_review: string;
+  practice_count: number;
+  last_score_avg: number;
 }
 
-export function getSRData(): SREntry[] {
-  try {
-    ensureFile();
-    const raw = fs.readFileSync(SR_PATH, "utf-8");
-    return JSON.parse(raw) as SREntry[];
-  } catch {
-    fs.writeFileSync(SR_PATH, "[]", "utf-8");
+function rowToEntry(row: SRRow): SREntry {
+  return {
+    conceptId: row.concept_id,
+    lastPracticed: row.last_practiced,
+    easeFactor: Number(row.ease_factor),
+    interval: row.interval,
+    nextReview: row.next_review,
+    practiceCount: row.practice_count,
+    lastScoreAvg: Number(row.last_score_avg),
+  };
+}
+
+export async function getSRData(): Promise<SREntry[]> {
+  const { data, error } = await supabase
+    .from("spaced_repetition")
+    .select("*");
+
+  if (error) {
+    console.error("[sr] Failed to read:", error.message);
     return [];
   }
-}
-
-function writeSRData(data: SREntry[]): void {
-  ensureFile();
-  fs.writeFileSync(SR_PATH, JSON.stringify(data, null, 2), "utf-8");
+  return (data as SRRow[]).map(rowToEntry);
 }
 
 /**
@@ -51,74 +57,96 @@ function writeSRData(data: SREntry[]): void {
  * - avg >= 3 → interval * ease (competent)
  * - avg < 3 → ease * 0.8, interval = 1 (needs review)
  */
-export function updateSREntry(conceptId: string, scores: { [key: string]: number }): void {
-  const data = getSRData();
+export async function updateSREntry(conceptId: string, scores: { [key: string]: number }): Promise<void> {
   const values = Object.values(scores);
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
-
   const today = new Date().toISOString().split("T")[0];
-  const existing = data.find((e) => e.conceptId === conceptId);
 
-  if (existing) {
-    existing.lastPracticed = today;
-    existing.practiceCount += 1;
-    existing.lastScoreAvg = Math.round(avg * 10) / 10;
+  // Check if entry exists
+  const { data: existing } = await supabase
+    .from("spaced_repetition")
+    .select("*")
+    .eq("concept_id", conceptId)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    const row = existing[0] as SRRow;
+    let easeFactor = Number(row.ease_factor);
+    let interval = row.interval;
 
     if (avg >= 4) {
-      existing.easeFactor = Math.min(existing.easeFactor * 1.3, 5);
-      existing.interval = Math.round(existing.interval * existing.easeFactor);
+      easeFactor = Math.min(easeFactor * 1.3, 5);
+      interval = Math.round(interval * easeFactor);
     } else if (avg >= 3) {
-      existing.interval = Math.round(existing.interval * existing.easeFactor);
+      interval = Math.round(interval * easeFactor);
     } else {
-      existing.easeFactor = Math.max(existing.easeFactor * 0.8, 1.3);
-      existing.interval = 1;
+      easeFactor = Math.max(easeFactor * 0.8, 1.3);
+      interval = 1;
     }
 
     const next = new Date(today);
-    next.setDate(next.getDate() + existing.interval);
-    existing.nextReview = next.toISOString().split("T")[0];
+    next.setDate(next.getDate() + interval);
+
+    const { error } = await supabase
+      .from("spaced_repetition")
+      .update({
+        last_practiced: today,
+        practice_count: row.practice_count + 1,
+        last_score_avg: Math.round(avg * 10) / 10,
+        ease_factor: Math.round(easeFactor * 100) / 100,
+        interval,
+        next_review: next.toISOString().split("T")[0],
+        updated_at: new Date().toISOString(),
+      })
+      .eq("concept_id", conceptId);
+
+    if (error) console.error("[sr] Failed to update:", error.message);
   } else {
-    // New entry — initial interval based on performance
     const initialInterval = avg >= 4 ? 7 : avg >= 3 ? 3 : 1;
     const next = new Date(today);
     next.setDate(next.getDate() + initialInterval);
 
-    data.push({
-      conceptId,
-      lastPracticed: today,
-      easeFactor: 2.5,
-      interval: initialInterval,
-      nextReview: next.toISOString().split("T")[0],
-      practiceCount: 1,
-      lastScoreAvg: Math.round(avg * 10) / 10,
-    });
-  }
+    const { error } = await supabase
+      .from("spaced_repetition")
+      .insert({
+        concept_id: conceptId,
+        last_practiced: today,
+        ease_factor: 2.5,
+        interval: initialInterval,
+        next_review: next.toISOString().split("T")[0],
+        practice_count: 1,
+        last_score_avg: Math.round(avg * 10) / 10,
+      });
 
-  writeSRData(data);
+    if (error) console.error("[sr] Failed to insert:", error.message);
+  }
 }
 
 /**
  * Get concepts due for review (nextReview <= today).
- * Returns sorted by most overdue first.
  */
-export function getDueReviews(): SREntry[] {
-  const data = getSRData();
+export async function getDueReviews(): Promise<SREntry[]> {
   const today = new Date().toISOString().split("T")[0];
 
-  return data
-    .filter((e) => e.nextReview <= today)
-    .sort((a, b) => a.nextReview.localeCompare(b.nextReview));
+  const { data, error } = await supabase
+    .from("spaced_repetition")
+    .select("*")
+    .lte("next_review", today)
+    .order("next_review", { ascending: true });
+
+  if (error || !data) return [];
+  return (data as SRRow[]).map(rowToEntry);
 }
 
 /**
  * Get SR summary stats for the status API.
  */
-export function getSRSummary(): {
+export async function getSRSummary(): Promise<{
   totalConcepts: number;
   dueForReview: number;
   masteredCount: number;
-} {
-  const data = getSRData();
+}> {
+  const data = await getSRData();
   const today = new Date().toISOString().split("T")[0];
 
   return {

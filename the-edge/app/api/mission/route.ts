@@ -7,7 +7,7 @@
  * Returns { mission: string, rationale: string, ledgerEntry: LedgerEntry }
  *
  * This is the FINAL phase. It assembles the complete LedgerEntry
- * from all data accumulated through the session and writes it to disk.
+ * from all data accumulated through the session and writes it to Supabase.
  * Also updates spaced repetition data for the session's concept.
  * Reference: PRD Section 3.6
  */
@@ -54,7 +54,7 @@ async function handlePost(req: NextRequest) {
   };
 
   // Generate the mission
-  const serialisedLedger = serialiseForPrompt();
+  const serialisedLedger = await serialiseForPrompt();
   const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
   const systemPrompt = `${buildPersistentContext()}\n\n${missionPrompt}`;
 
@@ -79,7 +79,7 @@ async function handlePost(req: NextRequest) {
   }
 
   // Assemble the complete ledger entry
-  const day = getLedgerCount() + 1;
+  const day = (await getLedgerCount()) + 1;
 
   const ledgerEntry: LedgerEntry = {
     day,
@@ -97,13 +97,13 @@ async function handlePost(req: NextRequest) {
     session_completed: true,
   };
 
-  // Write to disk
-  appendEntry(ledgerEntry);
+  // Write to Supabase
+  await appendEntry(ledgerEntry);
   console.log(`[mission] Day ${day} ledger entry written. Mission assigned.`);
 
   // Update spaced repetition data
   try {
-    updateSREntry(concept.id, scores as unknown as { [key: string]: number });
+    await updateSREntry(concept.id, scores as unknown as { [key: string]: number });
     console.log(`[mission] SR entry updated for concept: ${concept.id}`);
   } catch (e) {
     console.warn("[mission] Failed to update SR entry:", e);

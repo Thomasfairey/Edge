@@ -36,7 +36,7 @@ async function handlePost(req: NextRequest) {
 
   // Second call — evaluate the user's response via LLM
   const retrievalPrompt = buildRetrievalBridgePrompt(concept);
-  const systemPrompt = `${buildPersistentContext()}\n\n${retrievalPrompt}`;
+  const systemPrompt = `${await buildPersistentContext()}\n\n${retrievalPrompt}`;
 
   const rawResponse = await generateResponse(
     systemPrompt,

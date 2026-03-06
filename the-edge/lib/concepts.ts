@@ -324,10 +324,10 @@ export const CONCEPTS: Concept[] = [
  * 3. If all concepts in other domains are exhausted, allow same-domain.
  * 4. If ALL concepts are exhausted, reset the pool and pick randomly.
  */
-export function selectConcept(completedIds: string[]): { concept: Concept; isReview: boolean } {
+export async function selectConcept(completedIds: string[]): Promise<{ concept: Concept; isReview: boolean }> {
   // Check for due reviews — 30% chance of review session
   try {
-    const dueReviews = getDueReviews();
+    const dueReviews = await getDueReviews();
     if (dueReviews.length > 0 && Math.random() < 0.3) {
       const mostOverdue = dueReviews[0];
       const reviewConcept = CONCEPTS.find((c) => c.id === mostOverdue.conceptId);
