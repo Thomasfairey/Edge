@@ -198,11 +198,13 @@ function renderMarkdown(text: string): React.ReactNode[] {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let key = 0;
+  let isFirstParagraph = true;
 
   for (const line of lines) {
     if (line.startsWith("## ")) {
+      isFirstParagraph = true;
       elements.push(
-        <h2 key={key++} className="mb-2 mt-5 text-sm font-medium text-[#5B8BA8] first:mt-0">
+        <h2 key={key++} className="mb-2 mt-5 text-sm font-semibold text-[#5B8BA8] uppercase tracking-wider first:mt-0">
           {line.slice(3)}
         </h2>
       );
@@ -215,20 +217,42 @@ function renderMarkdown(text: string): React.ReactNode[] {
     } else if (line.trim() === "") {
       elements.push(<div key={key++} className="h-3" />);
     } else {
+      // Bold first sentence of first paragraph in each section for scannability
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      elements.push(
-        <p key={key++} className="text-base leading-relaxed text-primary">
-          {parts.map((part, i) =>
-            part.startsWith("**") && part.endsWith("**") ? (
-              <strong key={i} className="font-semibold">
-                {part.slice(2, -2)}
-              </strong>
-            ) : (
-              part
-            )
-          )}
-        </p>
-      );
+      const hasBold = parts.some(p => p.startsWith("**"));
+
+      if (isFirstParagraph && !hasBold && line.length > 20) {
+        isFirstParagraph = false;
+        const sentenceEnd = line.search(/[.!?]\s|[.!?]$/);
+        if (sentenceEnd > 0) {
+          const firstSentence = line.slice(0, sentenceEnd + 1);
+          const rest = line.slice(sentenceEnd + 1);
+          elements.push(
+            <p key={key++} className="text-base leading-relaxed text-primary">
+              <strong className="font-semibold">{firstSentence}</strong>{rest}
+            </p>
+          );
+        } else {
+          elements.push(
+            <p key={key++} className="text-base leading-relaxed text-primary font-medium">{line}</p>
+          );
+        }
+      } else {
+        isFirstParagraph = false;
+        elements.push(
+          <p key={key++} className="text-base leading-relaxed text-primary">
+            {parts.map((part, i) =>
+              part.startsWith("**") && part.endsWith("**") ? (
+                <strong key={i} className="font-semibold">
+                  {part.slice(2, -2)}
+                </strong>
+              ) : (
+                part
+              )
+            )}
+          </p>
+        );
+      }
     }
   }
   return elements;
@@ -822,7 +846,7 @@ export default function SessionPage() {
   // ---------------------------------------------------------------------------
 
   const [lessonStreaming, setLessonStreaming] = useState(false);
-  const [lessonCardPos, setLessonCardPos] = useState<{ current: number; total: number }>({ current: 0, total: 1 });
+  const [lessonCardPos, setLessonCardPos] = useState<{ current: number; total: number }>({ current: 0, total: 999 });
   const onLessonCardChange = useCallback((current: number, total: number) => {
     setLessonCardPos({ current, total });
   }, []);
@@ -1508,8 +1532,8 @@ export default function SessionPage() {
           {/* ============================================================== */}
           {currentPhase === "roleplay" && (
             <>
-              {/* Character persona card */}
-              {character && roleplayTranscript.length === 0 && !isLoading && !isStreaming && (
+              {/* Character persona card — shown until first AI message arrives */}
+              {character && roleplayTranscript.length === 0 && (
                 <div className="mb-5 rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)] animate-fade-in-up">
                   <div className="flex items-start gap-4">
                     <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full text-2xl" style={{ backgroundColor: "#FDF2F2" }}>
@@ -1531,14 +1555,7 @@ export default function SessionPage() {
 
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl">
-                    {character?.id === "sceptical-investor" ? "🎯" :
-                     character?.id === "political-stakeholder" ? "🏛" :
-                     character?.id === "resistant-report" ? "😏" :
-                     character?.id === "hostile-negotiator" ? "⚔️" :
-                     character?.id === "alpha-peer" ? "🔬" :
-                     character?.id === "consultancy-gatekeeper" ? "👔" : "🎭"}
-                  </span>
+                  <span className="text-2xl">{characterEmoji(character?.id)}</span>
                   <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
                 </div>
                 <span className="text-xs text-secondary">Turn {Math.max(1, Math.ceil(turnCount / 2))} / ~8</span>
@@ -1553,12 +1570,7 @@ export default function SessionPage() {
                   <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start gap-2"}`}>
                     {msg.role === "assistant" && (
                       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
-                        {character?.id === "sceptical-investor" ? "🎯" :
-                         character?.id === "political-stakeholder" ? "🏛" :
-                         character?.id === "resistant-report" ? "😏" :
-                         character?.id === "hostile-negotiator" ? "⚔️" :
-                         character?.id === "alpha-peer" ? "🔬" :
-                         character?.id === "consultancy-gatekeeper" ? "👔" : "🎭"}
+                        {characterEmoji(character?.id)}
                       </div>
                     )}
                     <div
@@ -1646,7 +1658,7 @@ export default function SessionPage() {
                           const prev = previousScores ? previousScores[key] : null;
                           const diff = prev !== null ? s - prev : null;
                           return (
-                            <div key={key} className="flex flex-col items-center gap-1.5">
+                            <div key={key} className="flex flex-col items-center gap-1.5 animate-score-pop" style={{ opacity: 0 }}>
                               <div
                                 className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold relative"
                                 style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
@@ -1708,6 +1720,7 @@ export default function SessionPage() {
                       >
                         &#10003; Nailed it
                       </button>
+                      {/* Note: celebration animation handled by confetti on session complete */}
                       <button
                         onClick={() => setCheckinPillSelected("tried")}
                         className={`flex-1 rounded-full px-4 py-3 text-sm font-medium transition-all active:scale-[0.97] ${
@@ -1812,11 +1825,25 @@ export default function SessionPage() {
                   <p className="mb-3 text-sm font-medium" style={{ color: "#5A9A7A" }}>Your mission</p>
 
                   <div className="mb-5 rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.mission }}>
-                    <p className="text-lg font-medium leading-relaxed text-primary">{mission}</p>
+                    {(() => {
+                      // Extract first sentence as scannable headline
+                      const sentenceEnd = mission.search(/[.!?]\s|[.!?]$/);
+                      if (sentenceEnd > 0 && sentenceEnd < mission.length - 1) {
+                        const headline = mission.slice(0, sentenceEnd + 1);
+                        const detail = mission.slice(sentenceEnd + 1).trim();
+                        return (
+                          <>
+                            <p className="text-lg font-bold leading-snug text-primary">{headline}</p>
+                            {detail && <p className="mt-2 text-base leading-relaxed text-primary/80">{detail}</p>}
+                          </>
+                        );
+                      }
+                      return <p className="text-lg font-bold leading-relaxed text-primary">{mission}</p>;
+                    })()}
                     {rationale && (
                       <>
                         <div className="my-4 border-t" style={{ borderColor: "rgba(184,224,200,0.3)" }} />
-                        <p className="text-sm text-secondary">{rationale}</p>
+                        <p className="text-sm text-secondary italic">{rationale}</p>
                       </>
                     )}
                   </div>
@@ -1831,9 +1858,9 @@ export default function SessionPage() {
                     </button>
                   ) : (
                     <div className="animate-fade-in-up space-y-5">
-                      {/* Enhanced completion card (#9) */}
-                      <div className="rounded-3xl p-6 shadow-[var(--shadow-soft)]" style={{ backgroundColor: "#E8F5ED" }}>
-                        <p className="mb-1 text-center text-xl font-semibold text-primary animate-completion">
+                      {/* Enhanced completion card */}
+                      <div className="rounded-3xl p-6 shadow-[var(--shadow-soft)] animate-celebrate" style={{ backgroundColor: "#E8F5ED" }}>
+                        <p className="mb-1 text-center text-xl font-semibold text-primary">
                           Session complete
                         </p>
                         <p className="mb-2 text-center text-sm text-secondary">

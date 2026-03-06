@@ -29,11 +29,11 @@ interface StatusData {
 }
 
 const DIMENSIONS: { key: keyof SessionScores; label: string; fullName: string; description: string }[] = [
-  { key: "technique_application", label: "TA", fullName: "Technique Application", description: "How effectively you deployed the day\u2019s concept during the roleplay." },
-  { key: "tactical_awareness", label: "TW", fullName: "Tactical Awareness", description: "Your ability to recognise the character\u2019s tactics and adapt in real time." },
-  { key: "frame_control", label: "FC", fullName: "Frame Control", description: "Who owned the conversation frame and whether you maintained or lost it." },
-  { key: "emotional_regulation", label: "ER", fullName: "Emotional Regulation", description: "Whether you stayed strategic under pressure or became reactive." },
-  { key: "strategic_outcome", label: "SO", fullName: "Strategic Outcome", description: "Whether you achieved your objective and moved the character from their position." },
+  { key: "technique_application", label: "Technique", fullName: "Technique Application", description: "How effectively you deployed the day\u2019s concept during the roleplay." },
+  { key: "tactical_awareness", label: "Tactical", fullName: "Tactical Awareness", description: "Your ability to recognise the character\u2019s tactics and adapt in real time." },
+  { key: "frame_control", label: "Frame", fullName: "Frame Control", description: "Who owned the conversation frame and whether you maintained or lost it." },
+  { key: "emotional_regulation", label: "Regulation", fullName: "Emotional Regulation", description: "Whether you stayed strategic under pressure or became reactive." },
+  { key: "strategic_outcome", label: "Outcome", fullName: "Strategic Outcome", description: "Whether you achieved your objective and moved the character from their position." },
 ];
 
 function scoreCircleColor(score: number): string {
@@ -89,7 +89,11 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
               strokeLinecap="round"
               strokeDasharray={circumference}
               strokeDashoffset={circumference - progress}
-              style={{ transition: "stroke-dashoffset 800ms ease-out" }}
+              className="animate-ring-grow"
+              style={{
+                ["--ring-circumference" as string]: circumference,
+                ["--ring-target" as string]: circumference - progress,
+              }}
             />
           )}
         </svg>
@@ -225,7 +229,7 @@ export default function Home() {
             {loading ? "\u2014" : (
               <>
                 Day {dayNumber}
-                {streakCount > 0 && <> &middot; <span className="text-score-mid">&#128293;</span> {streakCount}-day streak</>}
+                {streakCount > 0 && <> &middot; <span className="text-score-mid animate-count-up">&#128293; {streakCount}-day streak</span></>}
               </>
             )}
           </p>
@@ -262,7 +266,7 @@ export default function Home() {
                 >
                   {score !== null ? score : "\u2013"}
                 </button>
-                <span className="text-xs text-secondary">{label}</span>
+                <span className="text-[10px] text-secondary">{label}</span>
                 {isExpanded && (
                   <div className="animate-fade-in-up w-36 rounded-2xl bg-white p-3 text-center shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
                     <p className="text-xs font-semibold text-primary">{fullName}</p>
