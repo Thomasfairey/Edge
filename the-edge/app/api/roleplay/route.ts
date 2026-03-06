@@ -16,7 +16,6 @@
 import { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { streamResponse, PHASE_CONFIG } from "@/lib/anthropic";
-import { buildPersistentContext } from "@/lib/prompts/system-context";
 import {
   buildRoleplayPrompt,
   buildScenarioContext,
@@ -46,7 +45,8 @@ async function handlePost(req: NextRequest) {
   const scenario = scenarioContext ?? buildScenarioContext(concept, character);
 
   const roleplayPrompt = buildRoleplayPrompt(concept, character, scenario);
-  const systemPrompt = `${await buildPersistentContext()}\n\n${roleplayPrompt}`;
+  // Roleplay uses a lightweight context — the character doesn't need the full user bio
+  const systemPrompt = roleplayPrompt;
 
   // Build the messages array for the API call
   let messages: Message[];

@@ -44,7 +44,7 @@ export const MODELS = {
 export const PHASE_CONFIG = {
   checkin: { model: MODELS.PRIMARY, max_tokens: 200, temperature: 0.7 },
   lesson: { model: MODELS.PRIMARY, max_tokens: 1200, temperature: 0.8 },
-  roleplay: { model: MODELS.PRIMARY, max_tokens: 400, temperature: 0.9 },
+  roleplay: { model: MODELS.FAST, max_tokens: 300, temperature: 0.9 },
   coach: { model: MODELS.FAST, max_tokens: 300, temperature: 0.7 },
   debrief: { model: MODELS.PRIMARY, max_tokens: 1500, temperature: 0.6 },
   mission: { model: MODELS.PRIMARY, max_tokens: 400, temperature: 0.7 },
