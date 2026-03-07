@@ -1,6 +1,7 @@
 /**
  * Simplified SM-2 spaced repetition engine.
  * Tracks concept mastery across sessions using Supabase.
+ * All queries scoped by user_id when provided.
  */
 
 import { supabase } from "@/lib/supabase";
@@ -24,6 +25,7 @@ interface SRRow {
   next_review: string;
   practice_count: number;
   last_score_avg: number;
+  user_id?: string;
 }
 
 function rowToEntry(row: SRRow): SREntry {
@@ -38,10 +40,14 @@ function rowToEntry(row: SRRow): SREntry {
   };
 }
 
-export async function getSRData(): Promise<SREntry[]> {
-  const { data, error } = await supabase
+export async function getSRData(userId?: string | null): Promise<SREntry[]> {
+  let query = supabase
     .from("spaced_repetition")
     .select("*");
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[sr] Failed to read:", error.message);
@@ -57,17 +63,21 @@ export async function getSRData(): Promise<SREntry[]> {
  * - avg >= 3 → interval * ease (competent)
  * - avg < 3 → ease * 0.8, interval = 1 (needs review)
  */
-export async function updateSREntry(conceptId: string, scores: { [key: string]: number }): Promise<void> {
+export async function updateSREntry(conceptId: string, scores: { [key: string]: number }, userId?: string | null): Promise<void> {
   const values = Object.values(scores);
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   const today = new Date().toISOString().split("T")[0];
 
   // Check if entry exists
-  const { data: existing } = await supabase
+  let existingQuery = supabase
     .from("spaced_repetition")
     .select("*")
     .eq("concept_id", conceptId)
     .limit(1);
+
+  if (userId) existingQuery = existingQuery.eq("user_id", userId);
+
+  const { data: existing } = await existingQuery;
 
   if (existing && existing.length > 0) {
     const row = existing[0] as SRRow;
@@ -98,7 +108,7 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
         next_review: next.toISOString().split("T")[0],
         updated_at: new Date().toISOString(),
       })
-      .eq("concept_id", conceptId);
+      .eq("id", row.id);
 
     if (error) console.error("[sr] Failed to update:", error.message);
   } else {
@@ -106,17 +116,20 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
     const next = new Date(today);
     next.setDate(next.getDate() + initialInterval);
 
+    const insertData: Record<string, unknown> = {
+      concept_id: conceptId,
+      last_practiced: today,
+      ease_factor: 2.5,
+      interval: initialInterval,
+      next_review: next.toISOString().split("T")[0],
+      practice_count: 1,
+      last_score_avg: Math.round(avg * 10) / 10,
+    };
+    if (userId) insertData.user_id = userId;
+
     const { error } = await supabase
       .from("spaced_repetition")
-      .insert({
-        concept_id: conceptId,
-        last_practiced: today,
-        ease_factor: 2.5,
-        interval: initialInterval,
-        next_review: next.toISOString().split("T")[0],
-        practice_count: 1,
-        last_score_avg: Math.round(avg * 10) / 10,
-      });
+      .insert(insertData);
 
     if (error) console.error("[sr] Failed to insert:", error.message);
   }
@@ -125,14 +138,18 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
 /**
  * Get concepts due for review (nextReview <= today).
  */
-export async function getDueReviews(): Promise<SREntry[]> {
+export async function getDueReviews(userId?: string | null): Promise<SREntry[]> {
   const today = new Date().toISOString().split("T")[0];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("spaced_repetition")
     .select("*")
     .lte("next_review", today)
     .order("next_review", { ascending: true });
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error || !data) return [];
   return (data as SRRow[]).map(rowToEntry);
@@ -141,12 +158,12 @@ export async function getDueReviews(): Promise<SREntry[]> {
 /**
  * Get SR summary stats for the status API.
  */
-export async function getSRSummary(): Promise<{
+export async function getSRSummary(userId?: string | null): Promise<{
   totalConcepts: number;
   dueForReview: number;
   masteredCount: number;
 }> {
-  const data = await getSRData();
+  const data = await getSRData(userId);
   const today = new Date().toISOString().split("T")[0];
 
   return {

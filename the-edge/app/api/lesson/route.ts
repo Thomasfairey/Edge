@@ -16,9 +16,10 @@ import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
 import { getCompletedConcepts } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth } from "@/lib/auth";
+import { withAuth, getUserId } from "@/lib/auth";
 
 async function handlePost(req: NextRequest) {
+  const userId = getUserId(req);
   const body = (await req.json().catch(() => ({}))) as {
     conceptId?: string;
     stream?: boolean;
@@ -47,8 +48,8 @@ async function handlePost(req: NextRequest) {
     }
     concept = found;
   } else {
-    const completedIds = await getCompletedConcepts();
-    const result = await selectConcept(completedIds);
+    const completedIds = await getCompletedConcepts(userId);
+    const result = await selectConcept(completedIds, userId);
     concept = result.concept;
     isReview = result.isReview;
   }

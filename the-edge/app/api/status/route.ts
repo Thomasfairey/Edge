@@ -9,7 +9,7 @@ import { getLedger, getLastEntry, getLedgerCount } from "@/lib/ledger";
 import { getSRSummary } from "@/lib/spaced-repetition";
 import { SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth } from "@/lib/auth";
+import { withAuth, getUserId } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
 function calculateStreak(entries: { date: string }[]): number {
@@ -45,12 +45,14 @@ function calculateStreak(entries: { date: string }[]): number {
   return streak;
 }
 
-async function handleGet() {
+async function handleGet(req: NextRequest) {
+  const userId = getUserId(req);
+
   const [entries, lastEntry, dayNumber, srSummary] = await Promise.all([
-    getLedger(),
-    getLastEntry(),
-    getLedgerCount().then((c) => c + 1),
-    getSRSummary().catch(() => ({ totalConcepts: 0, dueForReview: 0, masteredCount: 0 })),
+    getLedger(userId),
+    getLastEntry(userId),
+    getLedgerCount(userId).then((c) => c + 1),
+    getSRSummary(userId).catch(() => ({ totalConcepts: 0, dueForReview: 0, masteredCount: 0 })),
   ]);
 
   // Get last 7 entries' scores
@@ -79,6 +81,6 @@ async function handleGet() {
 }
 
 export const GET = withRateLimit(
-  withAuth((_req: NextRequest) => handleGet()),
+  withAuth((req: NextRequest) => handleGet(req)),
   20
 );

@@ -10,10 +10,11 @@ import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildCheckinPrompt } from "@/lib/prompts/checkin";
 import { updateLastMissionOutcome } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth } from "@/lib/auth";
+import { withAuth, getUserId } from "@/lib/auth";
 import { validateStringLength, MAX_TEXT_LENGTH, MAX_LONG_TEXT_LENGTH } from "@/lib/validate-input";
 
 async function handlePost(req: NextRequest) {
+  const userId = getUserId(req);
   const body = await req.json().catch(() => null);
   if (!body || !body.previousMission || !body.outcomeType) {
     return NextResponse.json(
@@ -47,7 +48,7 @@ async function handlePost(req: NextRequest) {
 
   // Handle "skipped" — no API call needed
   if (outcomeType === "skipped") {
-    await updateLastMissionOutcome("NOT EXECUTED");
+    await updateLastMissionOutcome("NOT EXECUTED", userId);
 
     return NextResponse.json({
       response: "No problem. The mission you\u2019re about to get will give you a clean shot.",
@@ -84,7 +85,7 @@ async function handlePost(req: NextRequest) {
     .trim();
 
   // Update the most recent ledger entry's mission_outcome
-  await updateLastMissionOutcome(userOutcome || outcomeType);
+  await updateLastMissionOutcome(userOutcome || outcomeType, userId);
 
   return NextResponse.json({ response, type, insight });
 }

@@ -9,6 +9,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { SessionScores, LedgerEntry } from "@/lib/types";
+import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import Onboarding from "./components/Onboarding";
 import TrendDashboard from "./components/TrendDashboard";
 
@@ -225,9 +226,26 @@ export default function Home() {
     );
   }
 
+  async function handleSignOut() {
+    const supabase = createBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
   return (
     <main className="mx-auto max-w-[720px] px-4 py-8 sm:px-6 sm:py-12">
       <div className="flex min-h-[85vh] flex-col items-center justify-center gap-8">
+        {/* Sign out */}
+        <div className="absolute top-4 right-4">
+          <button
+            onClick={handleSignOut}
+            className="text-xs text-[#8E8C99] hover:text-[#5A52E0] transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+
         {/* Title + tagline + day */}
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight text-primary">

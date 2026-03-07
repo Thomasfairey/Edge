@@ -19,7 +19,7 @@ import { buildDebriefPrompt } from "@/lib/prompts/debrief";
 import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
 import { CharacterArchetype, Concept, Message, SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth } from "@/lib/auth";
+import { withAuth, getUserId } from "@/lib/auth";
 import { validateTranscript } from "@/lib/validate-input";
 
 export const maxDuration = 60;
@@ -120,6 +120,7 @@ function parseLedgerFields(text: string): {
 }
 
 async function handlePost(req: NextRequest) {
+  const userId = getUserId(req);
   const body = await req.json().catch(() => null);
   if (!body || !body.transcript || !body.concept || !body.character) {
     return NextResponse.json(
@@ -143,8 +144,8 @@ async function handlePost(req: NextRequest) {
 
   try {
     const [ledgerCount, serialisedLedger] = await Promise.all([
-      getLedgerCount(),
-      serialiseForPrompt(),
+      getLedgerCount(userId),
+      serialiseForPrompt(7, userId),
     ]);
 
     const debriefPrompt = buildDebriefPrompt(
