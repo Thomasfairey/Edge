@@ -1,7 +1,11 @@
 "use client";
 
 /**
- * 3-screen onboarding flow shown on home page when no ledger entries exist.
+ * 4-screen onboarding flow shown on home page when no ledger entries exist.
+ * Screen 1: Value proposition
+ * Screen 2: How it works (4 phases)
+ * Screen 3: Five scoring dimensions
+ * Screen 4: Implementation intention — "When will you train?"
  * Uses localStorage key 'edge-onboarding-complete' to track completion.
  */
 
@@ -22,13 +26,27 @@ const PHASES = [
   { label: "Deploy", color: "#B8E0C8", desc: "Real-world mission for tomorrow" },
 ];
 
+const TRAINING_WINDOWS = [
+  { label: "Morning commute", emoji: "\u2600\uFE0F", desc: "Start the day sharp" },
+  { label: "Lunch break", emoji: "\uD83C\uDF5C", desc: "Midday reset" },
+  { label: "Evening wind-down", emoji: "\uD83C\uDF19", desc: "Reflect and prepare" },
+];
+
+const TOTAL_SCREENS = 4;
+
 export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [screen, setScreen] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
+  const [selectedWindow, setSelectedWindow] = useState<string | null>(null);
 
   function goForward() {
-    if (screen === 2) {
-      try { localStorage.setItem("edge-onboarding-complete", "1"); } catch {}
+    if (screen === TOTAL_SCREENS - 1) {
+      try {
+        localStorage.setItem("edge-onboarding-complete", "1");
+        if (selectedWindow) {
+          localStorage.setItem("edge-training-window", selectedWindow);
+        }
+      } catch {}
       onComplete();
       return;
     }
@@ -56,10 +74,10 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
             <p className="mb-6 text-sm text-secondary">Daily influence training for your commute</p>
             <div className="mb-6 h-px bg-[#F0EDE8]" />
             <p className="text-base leading-relaxed text-primary">
-              Every day, you\u2019ll learn one influence technique, practise it in a realistic roleplay against a challenging character, and receive a blunt performance debrief.
+              Every day, you&apos;ll learn one influence technique, practise it in a realistic roleplay against a challenging character, and receive a blunt performance debrief.
             </p>
             <p className="mt-4 text-base leading-relaxed text-primary">
-              Then you\u2019ll deploy what you learned with a micro-mission designed for your real conversations.
+              Then you&apos;ll deploy what you learned with a micro-mission designed for your real conversations.
             </p>
             <p className="mt-4 text-sm text-secondary">
               10 minutes. No fluff. Measurable improvement.
@@ -90,7 +108,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         {screen === 2 && (
           <div className="rounded-3xl bg-white p-8 shadow-[var(--shadow-soft)]">
             <p className="mb-1 text-center text-lg font-semibold text-primary">Your five dimensions</p>
-            <p className="mb-6 text-center text-sm text-secondary">Scored 1\u20135 after every roleplay</p>
+            <p className="mb-6 text-center text-sm text-secondary">Scored 1&ndash;5 after every roleplay</p>
             <div className="space-y-3">
               {DIMENSIONS.map((d) => (
                 <div key={d.label} className="flex items-start gap-3">
@@ -106,6 +124,37 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
             </div>
           </div>
         )}
+
+        {screen === 3 && (
+          <div className="rounded-3xl bg-white p-8 shadow-[var(--shadow-soft)]">
+            <p className="mb-1 text-center text-lg font-semibold text-primary">When will you train?</p>
+            <p className="mb-6 text-center text-sm text-secondary">
+              Pick your daily window &mdash; consistency beats intensity
+            </p>
+            <div className="space-y-3">
+              {TRAINING_WINDOWS.map((w) => (
+                <button
+                  key={w.label}
+                  onClick={() => setSelectedWindow(w.label)}
+                  className={`w-full flex items-center gap-3 rounded-2xl p-4 text-left transition-all ${
+                    selectedWindow === w.label
+                      ? "ring-2 ring-[#5A52E0] bg-[#EEEDFF] scale-[1.01]"
+                      : "bg-[#FAF9F6] hover:bg-[#F5F3EE]"
+                  }`}
+                >
+                  <span className="text-2xl">{w.emoji}</span>
+                  <div>
+                    <p className="text-sm font-semibold text-primary">{w.label}</p>
+                    <p className="text-xs text-secondary">{w.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="mt-5 text-center text-xs text-tertiary">
+              You can change this anytime. This helps build your daily habit.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
@@ -119,7 +168,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
         {/* Dots */}
         <div className="flex gap-2">
-          {[0, 1, 2].map((i) => (
+          {Array.from({ length: TOTAL_SCREENS }, (_, i) => (
             <div
               key={i}
               className={`h-2 rounded-full transition-all ${i === screen ? "w-6 bg-[#5A52E0]" : "w-2 bg-[#E0DED8]"}`}
@@ -129,9 +178,10 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
         <button
           onClick={goForward}
-          className="rounded-full bg-[#5A52E0] px-5 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.97]"
+          disabled={screen === 3 && !selectedWindow}
+          className="rounded-full bg-[#5A52E0] px-5 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
         >
-          {screen === 2 ? "Start" : "Next"}
+          {screen === TOTAL_SCREENS - 1 ? "Start" : "Next"}
         </button>
       </div>
     </div>

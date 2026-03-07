@@ -139,7 +139,7 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
 
 const CACHE_KEY = "edge-status-cache";
 const SESSION_STORAGE_KEY = "edge-session-state";
-const SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours — match session page
 
 export default function Home() {
   const router = useRouter();

@@ -25,7 +25,7 @@ import { useVoice } from "@/app/hooks/useVoice";
 // ---------------------------------------------------------------------------
 
 const SESSION_STORAGE_KEY = "edge-session-state";
-const SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours — sessions are same-day
 
 const PHASES: { key: SessionPhase; label: string; color: string }[] = [
   { key: "lesson", label: "Learn", color: "#B8D4E3" },
@@ -718,6 +718,45 @@ function Confetti() {
 // Motivational line based on trajectory
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Variable-reward motivational lines — prevents habituation
+// ---------------------------------------------------------------------------
+
+const IMPROVEMENT_LINES = [
+  "The work is compounding.",
+  "Momentum. Don\u2019t let it go.",
+  "That\u2019s a gear shift. You\u2019re moving differently now.",
+  "You wouldn\u2019t have scored this on Day 1.",
+];
+
+const MARGINAL_LINES = [
+  "Marginal gains. Keep stacking.",
+  "Small edge, big compound. This is how it works.",
+  "Incremental. Relentless. That\u2019s the pattern.",
+];
+
+const STEADY_LINES = [
+  "Holding steady. The next breakthrough is close.",
+  "Plateaus precede breakthroughs. Keep pushing.",
+  "Consistency is a weapon. You\u2019re wielding it.",
+];
+
+const DIP_LINES = [
+  "Tougher session \u2014 that\u2019s where growth happens.",
+  "Hard reps build the edge that easy reps can\u2019t.",
+  "A dip today, a spike tomorrow. Stay in it.",
+];
+
+const HARD_DAY_LINES = [
+  "Hard day. The best sessions often follow the worst.",
+  "This is the session you\u2019ll look back on as a turning point.",
+  "Discomfort is the price of growth. You paid it today.",
+];
+
+function pick(arr: string[]): string {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 function getMotivationalLine(scores: SessionScores, previousScores: SessionScores | null): string {
   if (!previousScores) return "First session in the books. The baseline is set.";
 
@@ -725,11 +764,22 @@ function getMotivationalLine(scores: SessionScores, previousScores: SessionScore
   const prevAvg = Object.values(previousScores).reduce((a, b) => a + b, 0) / 5;
   const diff = currentAvg - prevAvg;
 
-  if (diff > 0.5) return "The work is compounding.";
-  if (diff > 0) return "Marginal gains. Keep stacking.";
-  if (diff === 0) return "Holding steady. The next breakthrough is close.";
-  if (diff > -0.5) return "Tougher session \u2014 that\u2019s where growth happens.";
-  return "Hard day. The best sessions often follow the worst.";
+  if (diff > 0.5) return pick(IMPROVEMENT_LINES);
+  if (diff > 0) return pick(MARGINAL_LINES);
+  if (diff === 0) return pick(STEADY_LINES);
+  if (diff > -0.5) return pick(DIP_LINES);
+  return pick(HARD_DAY_LINES);
+}
+
+/** Milestone messages shown at notable day counts. */
+function getMilestoneLine(day: number): string | null {
+  if (day === 7) return "One week complete. You\u2019ve built the foundation \u2014 most people quit by Day 3.";
+  if (day === 14) return "Two weeks in. The concepts are starting to compound. You\u2019ll notice it in real conversations.";
+  if (day === 21) return "21 days \u2014 the habit is forming. This is no longer a novelty, it\u2019s a practice.";
+  if (day === 30) return "30 days. You\u2019ve completed a full cycle of The Edge. Very few make it here.";
+  if (day === 50) return "50 sessions deep. The person who started this programme wouldn\u2019t recognise you now.";
+  if (day % 10 === 0 && day > 30) return `Day ${day}. Still here. Still sharper than yesterday.`;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2298,6 +2348,14 @@ export default function SessionPage() {
                           Day {dayNumber} &middot; {concept?.name}
                         </p>
 
+                        {/* Milestone badge (Days 7, 14, 21, 30, 50…) */}
+                        {getMilestoneLine(dayNumber) && (
+                          <div className="mb-4 rounded-2xl bg-[#EEEDFF] px-4 py-3 text-center">
+                            <p className="text-xs font-bold text-[#5A52E0] uppercase tracking-wider mb-1">Milestone</p>
+                            <p className="text-sm leading-relaxed text-primary">{getMilestoneLine(dayNumber)}</p>
+                          </div>
+                        )}
+
                         {/* Motivational line (#9) */}
                         {scores && (
                           <p className="mb-5 text-center text-xs font-medium text-[#5A9A7A]">
@@ -2395,7 +2453,8 @@ export default function SessionPage() {
                         {/* Share button */}
                         <button
                           onClick={async () => {
-                            const text = `The Edge - Day ${dayNumber}\nConcept: ${concept?.name}\nScores: ${scores ? Object.values(scores).join(", ") : "-"}\nMission: ${mission || "-"}`;
+                            const avg = scores ? (Object.values(scores).reduce((a, b) => a + b, 0) / 5).toFixed(1) : null;
+                            const text = `${concept?.name ? `Today I practised ${concept.name}` : "The Edge"}${avg ? ` — scored ${avg}/5` : ""} on Day ${dayNumber}.\n${keyMoment ? `\nKey takeaway: ${keyMoment}\n` : ""}\nThe Edge — daily influence training\n${window.location.origin}`;
 
                             try {
                               const canvas = document.createElement("canvas");
@@ -2464,7 +2523,7 @@ export default function SessionPage() {
 
                                 ctx.fillStyle = "#B5B3BD";
                                 ctx.font = "12px sans-serif";
-                                ctx.fillText("the-edge-xi.vercel.app", 32, 384);
+                                ctx.fillText(window.location.hostname, 32, 384);
 
                                 const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
                                 if (blob && navigator.share && navigator.canShare?.({ files: [new File([blob], "edge-session.png", { type: "image/png" })] })) {
