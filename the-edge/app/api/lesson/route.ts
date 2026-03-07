@@ -16,6 +16,7 @@ import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
 import { getCompletedConcepts } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
 
 async function handlePost(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
@@ -85,4 +86,4 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 5);
+export const POST = withRateLimit(withAuth(handlePost), 5);

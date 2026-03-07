@@ -25,6 +25,7 @@ import {
   SessionScores,
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -112,4 +113,4 @@ async function handlePost(req: NextRequest) {
   return NextResponse.json({ mission, rationale, ledgerEntry });
 }
 
-export const POST = withRateLimit(handlePost, 5);
+export const POST = withRateLimit(withAuth(handlePost), 5);

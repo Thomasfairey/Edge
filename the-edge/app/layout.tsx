@@ -30,16 +30,6 @@ export const metadata: Metadata = {
   },
 };
 
-function ServiceWorkerScript() {
-  return (
-    <script
-      dangerouslySetInnerHTML={{
-        __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(sw){sw.unregister()})});caches.keys().then(function(k){k.forEach(function(c){caches.delete(c)})})}`,
-      }}
-    />
-  );
-}
-
 export default function RootLayout({
   children,
 }: {
@@ -52,7 +42,6 @@ export default function RootLayout({
       </head>
       <body className={`${dmSans.className} bg-background text-primary antialiased`} style={{ backgroundColor: "#FAF9F6" }}>
         {children}
-        <ServiceWorkerScript />
       </body>
     </html>
   );

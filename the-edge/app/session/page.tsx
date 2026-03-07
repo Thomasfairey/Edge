@@ -1056,7 +1056,11 @@ export default function SessionPage() {
       // Extract concept from header
       const conceptHeader = res.headers.get("X-Concept");
       if (conceptHeader) {
-        setConcept(JSON.parse(decodeURIComponent(conceptHeader)));
+        try {
+          setConcept(JSON.parse(decodeURIComponent(conceptHeader)));
+        } catch {
+          console.warn("[session] Failed to parse X-Concept header");
+        }
       }
 
       // Check if review session

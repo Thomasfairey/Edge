@@ -19,6 +19,8 @@ import { buildDebriefPrompt } from "@/lib/prompts/debrief";
 import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
 import { CharacterArchetype, Concept, Message, SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
+import { validateTranscript } from "@/lib/validate-input";
 
 export const maxDuration = 60;
 
@@ -134,6 +136,11 @@ async function handlePost(req: NextRequest) {
     checkinContext?: string;
   };
 
+  const transcriptError = validateTranscript(transcript);
+  if (transcriptError) {
+    return NextResponse.json({ error: transcriptError }, { status: 400 });
+  }
+
   try {
     const [ledgerCount, serialisedLedger] = await Promise.all([
       getLedgerCount(),
@@ -187,4 +194,4 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 5);
+export const POST = withRateLimit(withAuth(handlePost), 5);

@@ -10,6 +10,8 @@ import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildCheckinPrompt } from "@/lib/prompts/checkin";
 import { updateLastMissionOutcome } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
+import { validateStringLength, MAX_TEXT_LENGTH, MAX_LONG_TEXT_LENGTH } from "@/lib/validate-input";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -25,6 +27,15 @@ async function handlePost(req: NextRequest) {
     outcomeType: "completed" | "tried" | "skipped";
     userOutcome?: string;
   };
+
+  const missionError = validateStringLength(previousMission, "previousMission", MAX_LONG_TEXT_LENGTH);
+  if (missionError) {
+    return NextResponse.json({ error: missionError }, { status: 400 });
+  }
+  const outcomeError = validateStringLength(userOutcome, "userOutcome", MAX_TEXT_LENGTH);
+  if (outcomeError) {
+    return NextResponse.json({ error: outcomeError }, { status: 400 });
+  }
 
   // Validate outcomeType
   if (!["completed", "tried", "skipped"].includes(outcomeType)) {
@@ -78,4 +89,4 @@ async function handlePost(req: NextRequest) {
   return NextResponse.json({ response, type, insight });
 }
 
-export const POST = withRateLimit(handlePost, 10);
+export const POST = withRateLimit(withAuth(handlePost), 10);

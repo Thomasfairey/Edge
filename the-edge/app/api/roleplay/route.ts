@@ -22,6 +22,8 @@ import {
 } from "@/lib/prompts/roleplay";
 import { CharacterArchetype, Concept, Message } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
+import { validateTranscript, validateStringLength, MAX_TEXT_LENGTH } from "@/lib/validate-input";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -40,6 +42,16 @@ async function handlePost(req: NextRequest) {
       userMessage: string | null;
       scenarioContext?: string;
     };
+
+  const transcriptError = validateTranscript(transcript);
+  if (transcriptError) {
+    return NextResponse.json({ error: transcriptError }, { status: 400 });
+  }
+
+  const msgError = validateStringLength(userMessage, "userMessage", MAX_TEXT_LENGTH);
+  if (msgError) {
+    return NextResponse.json({ error: msgError }, { status: 400 });
+  }
 
   // Generate or reuse scenario context
   const scenario = scenarioContext ?? buildScenarioContext(concept, character);
@@ -82,4 +94,4 @@ async function handlePost(req: NextRequest) {
   });
 }
 
-export const POST = withRateLimit(handlePost, 10);
+export const POST = withRateLimit(withAuth(handlePost), 10);

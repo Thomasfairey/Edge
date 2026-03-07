@@ -13,6 +13,8 @@ import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildRetrievalBridgePrompt } from "@/lib/prompts/retrieval-bridge";
 import { Concept } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
+import { validateStringLength, MAX_TEXT_LENGTH } from "@/lib/validate-input";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -34,6 +36,11 @@ async function handlePost(req: NextRequest) {
     return NextResponse.json({ response: question, ready: false });
   }
 
+  const responseError = validateStringLength(userResponse, "userResponse", MAX_TEXT_LENGTH);
+  if (responseError) {
+    return NextResponse.json({ error: responseError }, { status: 400 });
+  }
+
   // Second call — evaluate the user's response via LLM
   const retrievalPrompt = buildRetrievalBridgePrompt(concept);
   const systemPrompt = `${await buildPersistentContext()}\n\n${retrievalPrompt}`;
@@ -49,4 +56,4 @@ async function handlePost(req: NextRequest) {
   return NextResponse.json({ response: rawResponse, ready });
 }
 
-export const POST = withRateLimit(handlePost, 10);
+export const POST = withRateLimit(withAuth(handlePost), 10);

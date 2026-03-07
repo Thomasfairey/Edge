@@ -14,6 +14,8 @@ import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildCoachPrompt } from "@/lib/prompts/coach";
 import { Concept, Message } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
+import { validateTranscript } from "@/lib/validate-input";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -29,6 +31,11 @@ async function handlePost(req: NextRequest) {
     concept: Concept;
   };
 
+  const transcriptError = validateTranscript(transcript);
+  if (transcriptError) {
+    return NextResponse.json({ error: transcriptError }, { status: 400 });
+  }
+
   const systemPrompt = buildCoachPrompt(transcript, concept);
 
   const advice = await generateResponse(
@@ -40,4 +47,4 @@ async function handlePost(req: NextRequest) {
   return NextResponse.json({ advice });
 }
 
-export const POST = withRateLimit(handlePost, 10);
+export const POST = withRateLimit(withAuth(handlePost), 10);
