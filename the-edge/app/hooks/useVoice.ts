@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
+import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 
 // ---------------------------------------------------------------------------
 // Web Speech API type shims (not all TS libs include these)
@@ -21,6 +23,12 @@ interface SpeechRecognitionShim extends EventTarget {
   abort(): void;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+// ---------------------------------------------------------------------------
+// Capacitor detection
+// ---------------------------------------------------------------------------
+
+const isNative = Capacitor.isNativePlatform();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,10 +101,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   onTranscriptRef.current = onTranscript;
   characterIdRef.current = characterId;
 
-  // Feature detection
+  // Feature detection — native Capacitor always supports STT
   const sttSupported =
-    typeof window !== "undefined" &&
-    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+    isNative ||
+    (typeof window !== "undefined" &&
+      ("SpeechRecognition" in window || "webkitSpeechRecognition" in window));
   // TTS is always supported since we use server-side ElevenLabs
   const ttsSupported = true;
 
@@ -175,7 +184,68 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // Speech Recognition (STT) — browser Web Speech API
   // -------------------------------------------------------------------------
 
-  const startListening = useCallback(() => {
+  // ---- Native (Capacitor) speech recognition ----
+  const startListeningNative = useCallback(async () => {
+    // Stop any current audio playback
+    abortRef.current?.abort();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+
+    // Request permission if needed
+    const { speechRecognition } = await SpeechRecognition.requestPermissions();
+    if (speechRecognition !== "granted") {
+      showError("Microphone permission denied. Please allow it in Settings.");
+      return;
+    }
+
+    setState("listening");
+    setInterimTranscript("");
+    setError(null);
+
+    // Listen for partial results
+    SpeechRecognition.addListener("partialResults", (data: { matches: string[] }) => {
+      if (data.matches?.[0]) {
+        setInterimTranscript(data.matches[0]);
+      }
+    });
+
+    try {
+      const result = await SpeechRecognition.start({
+        language: lang,
+        partialResults: true,
+        popup: false,
+      });
+
+      setInterimTranscript("");
+      if (result.matches?.[0]) {
+        setState("processing");
+        onTranscriptRef.current?.(result.matches[0].trim());
+      } else {
+        setState("idle");
+      }
+    } catch (err) {
+      console.warn("[useVoice] Native recognition error:", err);
+      showError("Speech recognition failed. Please try again.");
+      setState("idle");
+    } finally {
+      SpeechRecognition.removeAllListeners();
+    }
+  }, [lang, showError]);
+
+  const stopListeningNative = useCallback(async () => {
+    try {
+      await SpeechRecognition.stop();
+    } catch {}
+    SpeechRecognition.removeAllListeners();
+    setState("idle");
+    setInterimTranscript("");
+  }, []);
+
+  // ---- Web (browser) speech recognition ----
+  const startListeningWeb = useCallback(() => {
     if (!sttSupported) {
       showError("Speech recognition is not supported in this browser. Try Chrome or Safari.");
       return;
@@ -269,11 +339,28 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     unlockAudio();
   }, [sttSupported, lang, showError, unlockAudio]);
 
-  const stopListening = useCallback(() => {
+  const stopListeningWeb = useCallback(() => {
     recognitionRef.current?.stop();
     setState("idle");
     setInterimTranscript("");
   }, []);
+
+  // ---- Route to native or web implementation ----
+  const startListening = useCallback(() => {
+    if (isNative) {
+      startListeningNative();
+    } else {
+      startListeningWeb();
+    }
+  }, [startListeningNative, startListeningWeb]);
+
+  const stopListening = useCallback(() => {
+    if (isNative) {
+      stopListeningNative();
+    } else {
+      stopListeningWeb();
+    }
+  }, [stopListeningNative, stopListeningWeb]);
 
   // -------------------------------------------------------------------------
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
