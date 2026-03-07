@@ -41,11 +41,13 @@ function rowToEntry(row: SRRow): SREntry {
 }
 
 export async function getSRData(userId?: string | null): Promise<SREntry[]> {
+  // Guard: without userId, return empty to prevent leaking all users' data
+  if (!userId) return [];
+
   let query = supabase
     .from("spaced_repetition")
-    .select("*");
-
-  if (userId) query = query.eq("user_id", userId);
+    .select("*")
+    .eq("user_id", userId);
 
   const { data, error } = await query;
 
@@ -65,6 +67,10 @@ export async function getSRData(userId?: string | null): Promise<SREntry[]> {
  */
 export async function updateSREntry(conceptId: string, scores: { [key: string]: number }, userId?: string | null): Promise<void> {
   const values = Object.values(scores);
+  if (values.length === 0) {
+    console.warn("[sr] updateSREntry called with empty scores — skipping");
+    return;
+  }
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   const today = new Date().toISOString().split("T")[0];
 
@@ -139,17 +145,17 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
  * Get concepts due for review (nextReview <= today).
  */
 export async function getDueReviews(userId?: string | null): Promise<SREntry[]> {
+  // Guard: without userId, return empty to prevent leaking all users' data
+  if (!userId) return [];
+
   const today = new Date().toISOString().split("T")[0];
 
-  let query = supabase
+  const { data, error } = await supabase
     .from("spaced_repetition")
     .select("*")
+    .eq("user_id", userId)
     .lte("next_review", today)
     .order("next_review", { ascending: true });
-
-  if (userId) query = query.eq("user_id", userId);
-
-  const { data, error } = await query;
 
   if (error || !data) return [];
   return (data as SRRow[]).map(rowToEntry);

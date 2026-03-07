@@ -50,8 +50,9 @@ async function getAuthUser(req: NextRequest): Promise<{ userId: string | null; e
       // API key users have no user scoping (backwards compat)
       return { userId: null, error: null };
     }
-  } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NODE_ENV === "development") {
     // No Supabase and no API key configured — development mode only
+    console.warn("[auth] No auth configured — allowing unauthenticated access (development only)");
     return { userId: null, error: null };
   }
 

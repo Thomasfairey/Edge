@@ -342,9 +342,17 @@ export async function selectConcept(completedIds: string[], userId?: string | nu
   return { concept: selectNewConcept(completedIds), isReview: false };
 }
 
-function selectNewConcept(completedIds: string[]): Concept {
-  const completedSet = new Set(completedIds);
-  const available = CONCEPTS.filter((c) => !completedSet.has(c.id));
+function selectNewConcept(completedConceptStrings: string[]): Concept {
+  // Ledger stores concepts as "Name (Source)" — map back to IDs for comparison
+  const completedIdSet = new Set<string>();
+  for (const stored of completedConceptStrings) {
+    const match = CONCEPTS.find(
+      (c) => c.id === stored || `${c.name} (${c.source})` === stored
+    );
+    if (match) completedIdSet.add(match.id);
+  }
+
+  const available = CONCEPTS.filter((c) => !completedIdSet.has(c.id));
 
   // All concepts exhausted — reset the pool
   if (available.length === 0) {
@@ -353,9 +361,11 @@ function selectNewConcept(completedIds: string[]): Concept {
 
   // Determine the domain of the most recently completed concept
   let lastDomain: ConceptDomain | null = null;
-  if (completedIds.length > 0) {
-    const lastId = completedIds[completedIds.length - 1];
-    const lastConcept = CONCEPTS.find((c) => c.id === lastId);
+  if (completedConceptStrings.length > 0) {
+    const lastStored = completedConceptStrings[completedConceptStrings.length - 1];
+    const lastConcept = CONCEPTS.find(
+      (c) => c.id === lastStored || `${c.name} (${c.source})` === lastStored
+    );
     if (lastConcept) {
       lastDomain = lastConcept.domain;
     }
