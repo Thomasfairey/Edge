@@ -54,10 +54,13 @@ const PHASE_TINT: Record<string, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function haptic(ms = 10) {
-  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-    navigator.vibrate(ms);
-  }
+function haptic() {
+  // Use Capacitor haptics (works on iOS + Android), fallback to vibrate API
+  import("@/lib/haptics").then((h) => h.hapticImpact()).catch(() => {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate(10);
+    }
+  });
 }
 
 /** Normalise scores that may use abbreviated keys (TA/TW/FC/ER/SO) to canonical form. */
@@ -1942,7 +1945,7 @@ export default function SessionPage() {
                     {/* Outcome pills */}
                     <div className="flex gap-3">
                       <button
-                        onClick={() => { setCheckinPillSelected("completed"); haptic(20); }}
+                        onClick={() => { setCheckinPillSelected("completed"); haptic(); }}
                         className={`flex-1 rounded-2xl px-4 py-3.5 text-sm font-semibold transition-all ${
                           checkinPillSelected === "completed" ? "ring-2 ring-[#2D6A4F] shadow-[0_4px_12px_rgba(107,201,160,0.3)] animate-celebrate scale-[1.02]" : ""
                         }`}
@@ -2363,7 +2366,7 @@ export default function SessionPage() {
       {/* Fixed bottom bar (roleplay)                                         */}
       {/* ================================================================== */}
       {isRoleplay && !completedPhases.has("roleplay") && (
-        <div className="flex-shrink-0 bottom-bar rounded-t-3xl bg-white px-3 pt-3 shadow-[var(--shadow-elevated)]">
+        <div className="flex-shrink-0 bottom-bar pb-safe rounded-t-3xl bg-white px-3 pt-3 shadow-[var(--shadow-elevated)]">
 
           {/* Voice error banner */}
           {voice.error && (
@@ -2528,7 +2531,7 @@ export default function SessionPage() {
               <button onClick={handleDone} className="flex h-12 w-12 items-center justify-center rounded-full text-base font-bold text-white shadow-[0_2px_8px_rgba(107,201,160,0.3)]" style={{ backgroundColor: "#6BC9A0" }} title="Done">
                 &#10003;
               </button>
-              <span className="text-[9px] text-[#2D6A4F] font-medium">Done</span>
+              <span className="text-[11px] text-[#2D6A4F] font-medium">Done</span>
             </div>
           </div>
         </div>
@@ -2584,7 +2587,7 @@ export default function SessionPage() {
             onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
           />
           <div
-            className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-3xl p-5 shadow-[var(--shadow-elevated)] sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-[#F0EDE8]"
+            className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-3xl p-5 pb-safe shadow-[var(--shadow-elevated)] sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-[#F0EDE8]"
             style={{ backgroundColor: "#FFF8E7" }}
           >
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#E0DED8] sm:hidden" />

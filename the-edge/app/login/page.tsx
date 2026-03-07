@@ -185,6 +185,10 @@ export default function LoginPage() {
             )}
           </p>
         </form>
+
+        <p className="mt-6 text-center text-xs text-[#B5B3C0]">
+          <a href="/privacy" className="underline">Privacy Policy</a>
+        </p>
       </div>
     </main>
   );

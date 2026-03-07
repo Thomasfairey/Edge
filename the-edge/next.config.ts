@@ -27,6 +27,7 @@ const securityHeaders = [
       "img-src 'self' data: blob:",
       "connect-src 'self' https://api.elevenlabs.io https://*.supabase.co",
       "media-src 'self' blob:",
+      "worker-src 'self'",
       "frame-ancestors 'none'",
     ].join("; "),
   },

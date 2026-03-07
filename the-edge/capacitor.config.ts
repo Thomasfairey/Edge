@@ -12,7 +12,7 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: "automatic",
     preferredContentMode: "mobile",
-    scheme: "The Edge",
+    scheme: "theedge",
   },
   android: {
     allowMixedContent: false,

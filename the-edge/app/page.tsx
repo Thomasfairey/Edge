@@ -10,6 +10,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { SessionScores, LedgerEntry } from "@/lib/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
+import { hapticTap } from "@/lib/haptics";
 import Onboarding from "./components/Onboarding";
 import TrendDashboard from "./components/TrendDashboard";
 
@@ -355,7 +356,7 @@ export default function Home() {
         {/* Begin session button */}
         {!hasIncompleteSession && (
           <button
-            onClick={() => { if (online) router.push("/session"); }}
+            onClick={() => { hapticTap(); if (online) router.push("/session"); }}
             disabled={!online}
             className="w-full max-w-sm rounded-2xl bg-[#5A52E0] px-10 py-5 text-lg font-bold text-white disabled:opacity-40 shadow-[0_4px_20px_rgba(90,82,224,0.25)] transition-shadow hover:shadow-[0_6px_28px_rgba(90,82,224,0.35)]"
           >

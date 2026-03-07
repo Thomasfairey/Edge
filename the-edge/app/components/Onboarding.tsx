@@ -45,7 +45,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const animClass = direction === "forward" ? "slide-in-right" : "slide-in-left";
 
   return (
-    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6 px-4">
+    <div className="flex min-h-[85dvh] flex-col items-center justify-center gap-6 px-4">
       <div
         key={screen}
         className={`w-full max-w-sm ${animClass}`}

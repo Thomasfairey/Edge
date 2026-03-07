@@ -51,5 +51,18 @@
 	<string>The Edge uses speech recognition so you can practice conversations hands-free.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>The Edge needs microphone access to listen to your voice during roleplay sessions.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.theedge.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>theedge</string>
+			</array>
+		</dict>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

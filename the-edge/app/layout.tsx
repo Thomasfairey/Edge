@@ -6,6 +6,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import "./globals.css";
+import { ServiceWorkerRegistrar } from "./sw-register";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -15,6 +16,8 @@ const dmSans = DM_Sans({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
   themeColor: "#5A52E0",
 };
@@ -25,7 +28,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "The Edge",
   },
 };
@@ -42,6 +45,7 @@ export default function RootLayout({
       </head>
       <body className={`${dmSans.className} bg-background text-primary antialiased`} style={{ backgroundColor: "#FAF9F6" }}>
         {children}
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );
