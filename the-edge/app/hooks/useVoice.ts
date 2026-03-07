@@ -60,6 +60,8 @@ interface UseVoiceReturn {
   stopSpeaking: () => void;
   /** Interim (partial) transcript while listening */
   interimTranscript: string;
+  /** User-facing error message (auto-clears after a few seconds) */
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +69,7 @@ interface UseVoiceReturn {
 // ---------------------------------------------------------------------------
 
 const VOICE_PREF_KEY = "edge-voice-enabled";
+const AUDIO_UNLOCKED_KEY = "edge-audio-unlocked";
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -78,12 +81,15 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const [state, setState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionShim | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const onTranscriptRef = useRef(onTranscript);
   const characterIdRef = useRef(characterId);
+  const audioUnlockedRef = useRef(false);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   onTranscriptRef.current = onTranscript;
   characterIdRef.current = characterId;
 
@@ -94,13 +100,52 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // TTS is always supported since we use server-side ElevenLabs
   const ttsSupported = true;
 
-  // Restore preference from localStorage
+  // Show error to user and auto-clear after 4 seconds
+  const showError = useCallback((msg: string) => {
+    setError(msg);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setError(null), 4000);
+  }, []);
+
+  // Unlock audio playback on first user interaction (mobile browsers require this)
+  const unlockAudio = useCallback(() => {
+    if (audioUnlockedRef.current) return;
+    const silent = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+    silent.play().then(() => {
+      silent.pause();
+      audioUnlockedRef.current = true;
+      try { sessionStorage.setItem(AUDIO_UNLOCKED_KEY, "true"); } catch {}
+    }).catch(() => {
+      // Still locked — will retry on next interaction
+    });
+  }, []);
+
+  // Restore preference from localStorage; default to ON for new users
   useEffect(() => {
     try {
       const saved = localStorage.getItem(VOICE_PREF_KEY);
-      if (saved === "true") setVoiceEnabled(true);
-    } catch {}
+      if (saved === null) {
+        // First visit — enable voice by default
+        setVoiceEnabled(true);
+        localStorage.setItem(VOICE_PREF_KEY, "true");
+      } else {
+        setVoiceEnabled(saved === "true");
+      }
+    } catch {
+      setVoiceEnabled(true);
+    }
   }, []);
+
+  // Unlock audio on any user interaction (needed for mobile autoplay policy)
+  useEffect(() => {
+    const handler = () => unlockAudio();
+    document.addEventListener("touchstart", handler, { once: true });
+    document.addEventListener("click", handler, { once: true });
+    return () => {
+      document.removeEventListener("touchstart", handler);
+      document.removeEventListener("click", handler);
+    };
+  }, [unlockAudio]);
 
   const toggleVoice = useCallback(() => {
     setVoiceEnabled((prev) => {
@@ -122,14 +167,25 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       }
       return next;
     });
-  }, []);
+    // Any toggle is a user gesture — unlock audio
+    unlockAudio();
+  }, [unlockAudio]);
 
   // -------------------------------------------------------------------------
   // Speech Recognition (STT) — browser Web Speech API
   // -------------------------------------------------------------------------
 
   const startListening = useCallback(() => {
-    if (!sttSupported) return;
+    if (!sttSupported) {
+      showError("Speech recognition is not supported in this browser. Try Chrome or Safari.");
+      return;
+    }
+
+    // Stop any previous recognition instance
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
+    }
 
     // Stop any current audio playback
     abortRef.current?.abort();
@@ -141,7 +197,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR) {
+      showError("Speech recognition is not available.");
+      return;
+    }
 
     const recognition: SpeechRecognitionShim = new SR();
     recognition.lang = lang;
@@ -152,6 +211,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     recognition.onstart = () => {
       setState("listening");
       setInterimTranscript("");
+      setError(null);
     };
 
     recognition.onresult = (event: any) => {
@@ -174,8 +234,14 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     };
 
     recognition.onerror = (event: any) => {
-      if (event.error !== "no-speech" && event.error !== "aborted") {
-        console.warn("[useVoice] recognition error:", event.error);
+      const err = event.error;
+      if (err === "not-allowed" || err === "service-not-allowed") {
+        showError("Microphone access denied. Please allow microphone permission in your browser settings.");
+      } else if (err === "network") {
+        showError("Speech recognition requires an internet connection.");
+      } else if (err !== "no-speech" && err !== "aborted") {
+        console.warn("[useVoice] recognition error:", err);
+        showError("Speech recognition error. Please try again.");
       }
       setState("idle");
       setInterimTranscript("");
@@ -189,8 +255,19 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-  }, [sttSupported, lang]);
+
+    try {
+      recognition.start();
+    } catch (err) {
+      console.warn("[useVoice] Failed to start recognition:", err);
+      showError("Could not start microphone. Please check permissions and try again.");
+      setState("idle");
+      recognitionRef.current = null;
+    }
+
+    // User tapped mic — unlock audio for future TTS
+    unlockAudio();
+  }, [sttSupported, lang, showError, unlockAudio]);
 
   const stopListening = useCallback(() => {
     recognitionRef.current?.stop();
@@ -248,14 +325,15 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
           audio.onerror = () => {
             console.warn("[useVoice] audio playback error");
+            showError("Audio playback failed. Try tapping the screen first.");
             setState("idle");
             URL.revokeObjectURL(url);
             audioRef.current = null;
           };
 
           audio.play().catch((err) => {
-            // Autoplay might be blocked — user needs to interact first
             console.warn("[useVoice] audio play blocked:", err.message);
+            showError("Tap anywhere on the screen to enable audio, then try again.");
             setState("idle");
             URL.revokeObjectURL(url);
             audioRef.current = null;
@@ -264,10 +342,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         .catch((err) => {
           if (err.name === "AbortError") return;
           console.warn("[useVoice] TTS fetch error:", err.message);
+          showError("Voice synthesis failed. Check your connection.");
           setState("idle");
         });
     },
-    [ttsEnabled, voiceEnabled]
+    [ttsEnabled, voiceEnabled, showError]
   );
 
   const stopSpeaking = useCallback(() => {
@@ -289,6 +368,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         audioRef.current.pause();
         audioRef.current.src = "";
       }
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
   }, []);
 
@@ -303,5 +383,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     speak,
     stopSpeaking,
     interimTranscript,
+    error,
   };
 }

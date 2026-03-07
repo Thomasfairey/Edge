@@ -1628,6 +1628,12 @@ export default function SessionPage() {
 
                   {!retrievalResponse && (
                     <div className="space-y-3">
+                      {/* Voice error banner for retrieval */}
+                      {voice.error && (
+                        <div className="rounded-xl bg-[#FDF2F2] px-4 py-2.5 text-sm text-[#C4524B] text-center">
+                          {voice.error}
+                        </div>
+                      )}
                       {/* Voice listening state for retrieval */}
                       {voice.voiceEnabled && voice.state === "listening" && (
                         <div className="flex flex-col items-center gap-3 py-4">
@@ -1966,6 +1972,12 @@ export default function SessionPage() {
                         }}>
                           {checkinPillSelected === "completed" ? "Nice work! Quick follow-up:" : "Good effort. Tell me more:"}
                         </p>
+                        {/* Voice error banner for check-in */}
+                        {voice.error && (
+                          <div className="rounded-xl bg-[#FDF2F2] px-4 py-2.5 text-sm text-[#C4524B] text-center">
+                            {voice.error}
+                          </div>
+                        )}
                         {/* Voice listening state for check-in */}
                         {voice.voiceEnabled && voice.state === "listening" && (
                           <div className="flex flex-col items-center gap-3 py-4">
@@ -2348,6 +2360,13 @@ export default function SessionPage() {
       {/* ================================================================== */}
       {isRoleplay && !completedPhases.has("roleplay") && (
         <div className="flex-shrink-0 bottom-bar rounded-t-3xl bg-white px-3 pt-3 shadow-[var(--shadow-elevated)]">
+
+          {/* Voice error banner */}
+          {voice.error && (
+            <div className="mb-2 rounded-xl bg-[#FDF2F2] px-4 py-2.5 text-sm text-[#C4524B] text-center animate-in fade-in duration-200">
+              {voice.error}
+            </div>
+          )}
 
           {/* Voice listening state — replaces text input when actively listening */}
           {voice.voiceEnabled && voice.state === "listening" && (
