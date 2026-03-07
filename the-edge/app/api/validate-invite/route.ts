@@ -5,8 +5,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { withRateLimit } from "@/lib/with-rate-limit";
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body || !body.code) {
     return NextResponse.json({ error: "Missing code" }, { status: 400 });
@@ -24,3 +25,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ valid: true });
 }
+
+// Rate limit: 5 attempts per minute to prevent brute-forcing invite codes
+export const POST = withRateLimit(handler, 5);

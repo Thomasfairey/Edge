@@ -54,8 +54,12 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    // API routes get 401 JSON; pages get redirected to login
+    // API routes: let requests with X-API-Key through to route-level auth
     if (pathname.startsWith("/api/")) {
+      const apiKey = request.headers.get("x-api-key");
+      if (apiKey) {
+        return supabaseResponse;
+      }
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const url = request.nextUrl.clone();

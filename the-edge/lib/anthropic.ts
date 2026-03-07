@@ -13,20 +13,26 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 // ---------------------------------------------------------------------------
-// Client singleton
+// Client singleton (lazy init — avoids crashing at import/build time)
 // ---------------------------------------------------------------------------
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error(
-    "ANTHROPIC_API_KEY is not set. Add it to .env.local before starting the server."
-  );
+let _anthropic: Anthropic | null = null;
+
+function getClient(): Anthropic {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error(
+        "ANTHROPIC_API_KEY is not set. Add it to .env.local before starting the server."
+      );
+    }
+    _anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return _anthropic;
 }
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-export default anthropic;
+export default getClient;
 
 // ---------------------------------------------------------------------------
 // Model constants
@@ -98,10 +104,10 @@ async function callWithRetry(
   > => {
     try {
       if (stream) {
-        const streamResponse = anthropic.messages.stream(params);
+        const streamResponse = getClient().messages.stream(params);
         return streamResponse;
       } else {
-        const response = await anthropic.messages.create(params);
+        const response = await getClient().messages.create(params);
         return response;
       }
     } catch (error: unknown) {

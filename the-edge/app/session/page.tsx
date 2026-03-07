@@ -827,6 +827,11 @@ export default function SessionPage() {
       voiceAutoSubmitRef.current = null;
       if (currentPhase === "roleplay") {
         handleRoleplayInput(text);
+      } else if (currentPhase === "retrieval" && !retrievalResponse) {
+        submitRetrievalResponse(text);
+        setInputValue("");
+      } else if (currentPhase === "mission" && checkinPillSelected && !checkinDone) {
+        submitCheckin(checkinPillSelected, text);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1372,6 +1377,7 @@ export default function SessionPage() {
     if (!lastMission || submittingRef.current) return;
     submittingRef.current = true;
     setIsLoading(true);
+    setInputValue("");
     // Store user text for debrief context
     if (userOutcome) setCheckinUserText(userOutcome);
     try {
