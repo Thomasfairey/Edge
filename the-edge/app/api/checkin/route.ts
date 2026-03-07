@@ -89,4 +89,5 @@ async function handlePost(req: NextRequest, userId: string | null) {
   return NextResponse.json({ response, type, insight });
 }
 
+export const maxDuration = 30;
 export const POST = withRateLimit(withAuth(handlePost), 10);

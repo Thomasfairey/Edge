@@ -53,6 +53,11 @@ async function handlePost(req: NextRequest, _userId: string | null) {
     return NextResponse.json({ error: msgError }, { status: 400 });
   }
 
+  const scenarioError = validateStringLength(scenarioContext, "scenarioContext", MAX_TEXT_LENGTH);
+  if (scenarioError) {
+    return NextResponse.json({ error: scenarioError }, { status: 400 });
+  }
+
   // Generate or reuse scenario context
   const scenario = scenarioContext ?? buildScenarioContext(concept, character);
 
@@ -94,4 +99,5 @@ async function handlePost(req: NextRequest, _userId: string | null) {
   });
 }
 
+export const maxDuration = 30;
 export const POST = withRateLimit(withAuth(handlePost), 10);

@@ -51,9 +51,10 @@ async function handlePost(req: NextRequest, userId: string | null) {
     PHASE_CONFIG.checkin
   );
 
-  const ready = rawResponse.includes("Let's go.");
+  const ready = /let[''\u2019]?s go/i.test(rawResponse);
 
   return NextResponse.json({ response: rawResponse, ready });
 }
 
+export const maxDuration = 15;
 export const POST = withRateLimit(withAuth(handlePost), 10);

@@ -54,6 +54,21 @@ async function handlePost(req: NextRequest, userId: string | null) {
     checkinOutcome: string | null;
   };
 
+  // Validate scores are integers 1-5
+  const scoreKeys: (keyof SessionScores)[] = [
+    "technique_application", "tactical_awareness",
+    "frame_control", "emotional_regulation", "strategic_outcome",
+  ];
+  for (const key of scoreKeys) {
+    const val = scores[key];
+    if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 5) {
+      return NextResponse.json(
+        { error: `Invalid score for ${key}: must be an integer 1-5` },
+        { status: 400 }
+      );
+    }
+  }
+
   // Generate the mission
   const serialisedLedger = await serialiseForPrompt(7, userId);
   const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
@@ -113,4 +128,5 @@ async function handlePost(req: NextRequest, userId: string | null) {
   return NextResponse.json({ mission, rationale, ledgerEntry });
 }
 
+export const maxDuration = 30;
 export const POST = withRateLimit(withAuth(handlePost), 5);
