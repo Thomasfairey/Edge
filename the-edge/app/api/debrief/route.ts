@@ -19,7 +19,7 @@ import { buildDebriefPrompt } from "@/lib/prompts/debrief";
 import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
 import { CharacterArchetype, Concept, Message, SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth, getUserId } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import { validateTranscript } from "@/lib/validate-input";
 
 export const maxDuration = 60;
@@ -119,8 +119,7 @@ function parseLedgerFields(text: string): {
   };
 }
 
-async function handlePost(req: NextRequest) {
-  const userId = getUserId(req);
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.transcript || !body.concept || !body.character) {
     return NextResponse.json(
@@ -157,7 +156,7 @@ async function handlePost(req: NextRequest) {
       checkinContext
     );
 
-    const systemPrompt = `${await buildPersistentContext()}\n\n${debriefPrompt}`;
+    const systemPrompt = `${await buildPersistentContext(userId)}\n\n${debriefPrompt}`;
 
     // Use streaming internally to keep connection alive
     const debriefContent = await generateResponseViaStream(

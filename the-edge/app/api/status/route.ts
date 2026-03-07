@@ -9,7 +9,7 @@ import { getLedger, getLastEntry, getLedgerCount } from "@/lib/ledger";
 import { getSRSummary } from "@/lib/spaced-repetition";
 import { SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth, getUserId } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
 function calculateStreak(entries: { date: string }[]): number {
@@ -45,9 +45,7 @@ function calculateStreak(entries: { date: string }[]): number {
   return streak;
 }
 
-async function handleGet(req: NextRequest) {
-  const userId = getUserId(req);
-
+async function handleGet(_req: NextRequest, userId: string | null) {
   const [entries, lastEntry, dayNumber, srSummary] = await Promise.all([
     getLedger(userId),
     getLastEntry(userId),
@@ -80,7 +78,4 @@ async function handleGet(req: NextRequest) {
   });
 }
 
-export const GET = withRateLimit(
-  withAuth((req: NextRequest) => handleGet(req)),
-  20
-);
+export const GET = withRateLimit(withAuth(handleGet), 20);

@@ -17,7 +17,7 @@ import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { validateTranscript } from "@/lib/validate-input";
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, _userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.transcript || !body.concept) {
     return NextResponse.json(

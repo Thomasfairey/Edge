@@ -25,10 +25,9 @@ import {
   SessionScores,
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth, getUserId } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 
-async function handlePost(req: NextRequest) {
-  const userId = getUserId(req);
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.concept || !body.character || !body.scores) {
     return NextResponse.json(
@@ -58,7 +57,7 @@ async function handlePost(req: NextRequest) {
   // Generate the mission
   const serialisedLedger = await serialiseForPrompt(7, userId);
   const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
-  const systemPrompt = `${buildPersistentContext()}\n\n${missionPrompt}`;
+  const systemPrompt = `${await buildPersistentContext(userId)}\n\n${missionPrompt}`;
 
   const rawMission = await generateResponse(
     systemPrompt,

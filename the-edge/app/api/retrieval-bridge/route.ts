@@ -16,7 +16,7 @@ import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { validateStringLength, MAX_TEXT_LENGTH } from "@/lib/validate-input";
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.concept) {
     return NextResponse.json(
@@ -43,7 +43,7 @@ async function handlePost(req: NextRequest) {
 
   // Second call — evaluate the user's response via LLM
   const retrievalPrompt = buildRetrievalBridgePrompt(concept);
-  const systemPrompt = `${await buildPersistentContext()}\n\n${retrievalPrompt}`;
+  const systemPrompt = `${await buildPersistentContext(userId)}\n\n${retrievalPrompt}`;
 
   const rawResponse = await generateResponse(
     systemPrompt,

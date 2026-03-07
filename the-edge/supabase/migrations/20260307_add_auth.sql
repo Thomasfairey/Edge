@@ -26,24 +26,26 @@ ALTER TABLE ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE spaced_repetition ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
--- RLS policies: users can only see/modify their own data
+-- RLS policies: users can see/modify their own data.
+-- Legacy rows (user_id IS NULL) are readable/updatable by anyone authenticated
+-- so pre-auth data isn't lost. New inserts must have a user_id.
 CREATE POLICY "Users read own ledger" ON ledger
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
 
 CREATE POLICY "Users insert own ledger" ON ledger
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users update own ledger" ON ledger
-  FOR UPDATE USING (auth.uid() = user_id);
+  FOR UPDATE USING (auth.uid() = user_id OR user_id IS NULL);
 
 CREATE POLICY "Users read own SR" ON spaced_repetition
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
 
 CREATE POLICY "Users insert own SR" ON spaced_repetition
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users update own SR" ON spaced_repetition
-  FOR UPDATE USING (auth.uid() = user_id);
+  FOR UPDATE USING (auth.uid() = user_id OR user_id IS NULL);
 
 CREATE POLICY "Users read own profile" ON profiles
   FOR SELECT USING (auth.uid() = id);
@@ -51,10 +53,11 @@ CREATE POLICY "Users read own profile" ON profiles
 CREATE POLICY "Users update own profile" ON profiles
   FOR UPDATE USING (auth.uid() = id);
 
--- Allow service role full access (bypasses RLS automatically)
--- The service role key is only used server-side so this is safe.
+-- Service role key bypasses RLS automatically (used by server-side code).
 
--- Function to auto-create profile on signup
+-- Function to auto-create profile on signup.
+-- All users default to 'tester'. To make yourself admin after signup, run:
+--   UPDATE profiles SET role = 'admin' WHERE email = 'your@email.com';
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -63,10 +66,7 @@ BEGIN
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1)),
-    CASE
-      WHEN NEW.email = current_setting('app.admin_email', true) THEN 'admin'
-      ELSE 'tester'
-    END
+    'tester'
   );
   RETURN NEW;
 END;

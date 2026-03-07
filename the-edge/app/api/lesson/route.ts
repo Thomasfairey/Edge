@@ -16,10 +16,9 @@ import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
 import { getCompletedConcepts } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth, getUserId } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 
-async function handlePost(req: NextRequest) {
-  const userId = getUserId(req);
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = (await req.json().catch(() => ({}))) as {
     conceptId?: string;
     stream?: boolean;
@@ -55,7 +54,7 @@ async function handlePost(req: NextRequest) {
   }
 
   const lessonPrompt = buildLessonPrompt(concept, isReview);
-  const systemPrompt = `${await buildPersistentContext()}\n\n${lessonPrompt}`;
+  const systemPrompt = `${await buildPersistentContext(userId)}\n\n${lessonPrompt}`;
 
   const userMessage = {
     role: "user" as const,

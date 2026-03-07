@@ -10,11 +10,10 @@ import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildCheckinPrompt } from "@/lib/prompts/checkin";
 import { updateLastMissionOutcome } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { withAuth, getUserId } from "@/lib/auth";
+import { withAuth } from "@/lib/auth";
 import { validateStringLength, MAX_TEXT_LENGTH, MAX_LONG_TEXT_LENGTH } from "@/lib/validate-input";
 
-async function handlePost(req: NextRequest) {
-  const userId = getUserId(req);
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.previousMission || !body.outcomeType) {
     return NextResponse.json(
@@ -62,7 +61,7 @@ async function handlePost(req: NextRequest) {
     userOutcome || "",
     outcomeType
   );
-  const systemPrompt = `${await buildPersistentContext()}\n\n${checkinPrompt}`;
+  const systemPrompt = `${await buildPersistentContext(userId)}\n\n${checkinPrompt}`;
 
   const rawResponse = await generateResponse(
     systemPrompt,

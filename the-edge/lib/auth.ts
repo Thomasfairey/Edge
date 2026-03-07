@@ -3,18 +3,18 @@
  *
  * Uses Supabase session auth (cookie-based) as primary auth.
  * Falls back to X-API-Key header for programmatic access.
- * Extracts user_id and attaches it to the request via header.
+ * Passes userId directly to route handlers via closure.
  */
 
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
+export type AuthRouteHandler = (req: NextRequest, userId: string | null) => Promise<Response | NextResponse>;
 type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
 
 /**
  * Extract authenticated user_id from the request.
  * Checks Supabase session cookies first, then X-API-Key header.
- * Returns { userId, error } — userId is null if auth fails.
  */
 async function getAuthUser(req: NextRequest): Promise<{ userId: string | null; error: NextResponse | null }> {
   // Try Supabase session auth first
@@ -28,7 +28,7 @@ async function getAuthUser(req: NextRequest): Promise<{ userId: string | null; e
             return req.cookies.getAll();
           },
           setAll() {
-            // No-op in route handlers
+            // No-op in route handlers — middleware handles token refresh
           },
         },
       }
@@ -47,11 +47,11 @@ async function getAuthUser(req: NextRequest): Promise<{ userId: string | null; e
   if (requiredKey) {
     const headerKey = req.headers.get("x-api-key");
     if (headerKey && headerKey === requiredKey) {
-      // API key users get the admin user_id (first profile, or null for backwards compat)
+      // API key users have no user scoping (backwards compat)
       return { userId: null, error: null };
     }
-  } else {
-    // No EDGE_API_KEY and no Supabase session — development mode, allow
+  } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    // No Supabase and no API key configured — development mode only
     return { userId: null, error: null };
   }
 
@@ -62,26 +62,13 @@ async function getAuthUser(req: NextRequest): Promise<{ userId: string | null; e
 }
 
 /**
- * HOF wrapper — authenticates the request and attaches user_id.
- * The user_id is available via req.headers.get("x-user-id").
+ * HOF wrapper — authenticates the request and passes userId to the handler.
+ * Handler signature: (req: NextRequest, userId: string | null) => Promise<Response>
  */
-export function withAuth(handler: RouteHandler): RouteHandler {
+export function withAuth(handler: AuthRouteHandler): RouteHandler {
   return async (req: NextRequest) => {
     const { userId, error } = await getAuthUser(req);
     if (error) return error;
-
-    // Attach user_id to request headers so route handlers can read it
-    if (userId) {
-      req.headers.set("x-user-id", userId);
-    }
-
-    return handler(req);
+    return handler(req, userId);
   };
-}
-
-/**
- * Extract user_id from the request (set by withAuth middleware).
- */
-export function getUserId(req: NextRequest): string | null {
-  return req.headers.get("x-user-id");
 }
