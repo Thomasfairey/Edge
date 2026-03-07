@@ -794,6 +794,12 @@ export default function SessionPage() {
   // Completion
   const [showConfetti, setShowConfetti] = useState(false);
 
+  // Onboarding (profile capture)
+  const [onboardingNeeded, setOnboardingNeeded] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"bio" | "style" | "saving">("bio");
+  const [onboardingBio, setOnboardingBio] = useState("");
+  const [onboardingDisplayName, setOnboardingDisplayName] = useState("");
+
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -825,7 +831,11 @@ export default function SessionPage() {
     if (voiceAutoSubmitRef.current && !isStreaming && !isLoading) {
       const text = voiceAutoSubmitRef.current;
       voiceAutoSubmitRef.current = null;
-      if (currentPhase === "roleplay") {
+      if (onboardingNeeded && onboardingStep === "bio") {
+        // Voice transcript goes to onboarding bio — don't auto-submit, let user review
+        setOnboardingBio(text);
+        setInputValue("");
+      } else if (currentPhase === "roleplay") {
         handleRoleplayInput(text);
       } else if (currentPhase === "retrieval" && !retrievalResponse) {
         submitRetrievalResponse(text);
@@ -983,24 +993,61 @@ export default function SessionPage() {
       }
     } catch {}
 
-    // Always start with lesson — fetch status to check if checkin needed later
-    fetch("/api/status")
-      .then((res) => res.json())
-      .then((data) => {
-        setDayNumber(data.dayNumber);
-        if (data.lastEntry) {
-          setLastMission(data.lastEntry.mission);
-          setCheckinNeeded(true);
-          // Store previous scores for completion screen deltas
-          if (data.lastEntry.scores) {
-            setPreviousScores(normaliseScores(data.lastEntry.scores));
+    // Fetch status + profile in parallel
+    Promise.all([
+      fetch("/api/status").then((r) => r.json()).catch(() => null),
+      fetch("/api/profile").then((r) => r.json()).catch(() => null),
+    ]).then(([statusData, profileData]) => {
+        if (statusData) {
+          setDayNumber(statusData.dayNumber);
+          if (statusData.lastEntry) {
+            setLastMission(statusData.lastEntry.mission);
+            setCheckinNeeded(true);
+            if (statusData.lastEntry.scores) {
+              setPreviousScores(normaliseScores(statusData.lastEntry.scores));
+            }
           }
         }
+
+        // Check if user has completed profile setup
+        if (profileData && !profileData.profileData) {
+          setOnboardingNeeded(true);
+          setOnboardingDisplayName(profileData.displayName || "");
+          setIsLoading(false);
+          return; // Don't fetch lesson yet — onboarding first
+        }
+
         fetchLesson();
       })
       .catch(() => { fetchLesson(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Onboarding: save profile and proceed to lesson
+  // ---------------------------------------------------------------------------
+
+  async function completeOnboarding(feedbackStyle: "direct" | "balanced" | "supportive") {
+    setOnboardingStep("saving");
+    try {
+      const res = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileData: {
+            bio: onboardingBio.trim(),
+            feedbackStyle,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setOnboardingNeeded(false);
+      fetchLesson();
+    } catch {
+      setError("Couldn't save your profile. Tap retry.");
+      setOnboardingStep("style");
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Phase transition
@@ -1566,9 +1613,133 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
+          {/* ONBOARDING (profile capture — Day 1 only, before lesson)        */}
+          {/* ============================================================== */}
+          {onboardingNeeded && (
+            <div className="space-y-6 animate-fade-in-up">
+              {onboardingStep === "bio" && (
+                <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <h2 className="text-xl font-semibold text-primary mb-2">
+                    Welcome to The Edge{onboardingDisplayName ? `, ${onboardingDisplayName}` : ""}
+                  </h2>
+                  <p className="text-sm text-secondary mb-5">
+                    Before we begin, tell me about yourself. Your role, your company,
+                    what you&apos;re working on, and what you&apos;re trying to achieve.
+                  </p>
+                  <p className="text-xs text-tertiary mb-4">
+                    This is used to personalise every scenario, lesson, and mission to your world.
+                  </p>
+
+                  <textarea
+                    className="w-full rounded-2xl border border-[#E8E5E0] bg-[#FAF9F6] px-4 py-3 text-sm text-primary placeholder-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-[#5A52E0]/30"
+                    rows={5}
+                    placeholder="e.g. I'm the CEO of a fintech startup. We're raising our seed round and trying to sign our first enterprise clients in banking. I need to get better at high-stakes negotiations and investor pitches..."
+                    value={onboardingBio}
+                    onChange={(e) => setOnboardingBio(e.target.value)}
+                    maxLength={2000}
+                  />
+
+                  <div className="flex items-center justify-between mt-3">
+                    {/* Voice input button */}
+                    {voice.sttSupported && voice.voiceEnabled && (
+                      <button
+                        onClick={() => {
+                          if (voice.state === "listening") {
+                            voice.stopListening();
+                          } else {
+                            voice.startListening();
+                          }
+                        }}
+                        className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
+                          voice.state === "listening"
+                            ? "bg-[#5A52E0] text-white"
+                            : "bg-[#EEEDFF] text-[#5A52E0]"
+                        }`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                          <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
+                          <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
+                        </svg>
+                        {voice.state === "listening" ? "Listening..." : "Speak"}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        if (onboardingBio.trim().length >= 20) {
+                          setOnboardingStep("style");
+                          haptic();
+                        }
+                      }}
+                      disabled={onboardingBio.trim().length < 20}
+                      className="rounded-2xl bg-[#5A52E0] px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+
+                  {voice.state === "listening" && voice.interimTranscript && (
+                    <p className="mt-2 text-xs text-secondary italic">{voice.interimTranscript}</p>
+                  )}
+                </div>
+              )}
+
+              {onboardingStep === "style" && (
+                <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <h2 className="text-lg font-semibold text-primary mb-2">
+                    How do you prefer feedback?
+                  </h2>
+                  <p className="text-sm text-secondary mb-5">
+                    This shapes how The Edge speaks to you — in debriefs, coaching, and missions.
+                  </p>
+
+                  <div className="space-y-3">
+                    {([
+                      { value: "direct" as const, label: "Direct & blunt", desc: "No softening. Tell me exactly what I did wrong.", color: "#E88B8B" },
+                      { value: "balanced" as const, label: "Balanced", desc: "Clear and honest, but measured. Direct without being harsh.", color: "#F5C563" },
+                      { value: "supportive" as const, label: "Supportive", desc: "Encouraging with constructive framing. Still honest, but warm.", color: "#6BC9A0" },
+                    ]).map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          haptic();
+                          completeOnboarding(opt.value);
+                        }}
+                        className="w-full rounded-2xl border-2 border-[#E8E5E0] bg-[#FAF9F6] p-4 text-left transition-all hover:border-[#5A52E0]/30 active:scale-[0.98]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
+                          <div>
+                            <p className="text-sm font-semibold text-primary">{opt.label}</p>
+                            <p className="text-xs text-secondary mt-0.5">{opt.desc}</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setOnboardingStep("bio")}
+                    className="mt-4 text-xs text-secondary underline"
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {onboardingStep === "saving" && (
+                <div className="text-center py-8">
+                  <p className="mb-2 text-sm text-secondary">Setting up your profile...</p>
+                  <LoadingDots />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ============================================================== */}
           {/* LEARN                                                           */}
           {/* ============================================================== */}
-          {currentPhase === "lesson" && (
+          {currentPhase === "lesson" && !onboardingNeeded && (
             <>
               {isLoading && (
                 <div className="text-center">
