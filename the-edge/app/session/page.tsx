@@ -1008,6 +1008,7 @@ export default function SessionPage() {
 
   function advancePhase(from: SessionPhase, to: SessionPhase) {
     setPhaseAnimation("exit");
+    setInputValue("");
     setTimeout(() => {
       setCompletedPhases((prev) => new Set([...prev, from]));
       setCurrentPhase(to);
@@ -1633,8 +1634,13 @@ export default function SessionPage() {
                   </div>
 
                   {retrievalResponse && (
-                    <div className="animate-fade-in-up rounded-3xl p-6 text-center shadow-[0_4px_20px_rgba(0,0,0,0.06)]" style={{ backgroundColor: "#EEEDFF" }}>
-                      <p className="mb-1 text-sm font-semibold text-[#5A52E0]">Solid recall</p>
+                    <div
+                      className="animate-fade-in-up rounded-3xl p-6 text-center shadow-[0_4px_20px_rgba(0,0,0,0.06)]"
+                      style={{ backgroundColor: retrievalReady ? "#EEEDFF" : "#FEF3CD" }}
+                    >
+                      <p className="mb-1 text-sm font-semibold" style={{ color: retrievalReady ? "#5A52E0" : "#6B4F00" }}>
+                        {retrievalReady ? "Solid recall" : "Close — keep building"}
+                      </p>
                       <p className="text-sm leading-relaxed text-primary">{retrievalResponse}</p>
                     </div>
                   )}
@@ -2110,7 +2116,8 @@ export default function SessionPage() {
                       Session complete &#10003;
                     </button>
                   ) : (
-                    <div className="animate-fade-in-up space-y-5">
+                    <div className="animate-fade-in-up space-y-5 relative">
+                      <Confetti />
                       {/* Enhanced completion card */}
                       <div className="rounded-3xl p-6 shadow-[var(--shadow-soft)] animate-celebrate" style={{ backgroundColor: "#E8F5ED" }}>
                         <p className="mb-1 text-center text-xl font-semibold text-primary">
