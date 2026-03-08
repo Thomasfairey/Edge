@@ -39,8 +39,10 @@ async function handler(req: NextRequest): Promise<Response> {
   }
 
   try {
+    // Preserve the original filename/extension from the client (e.g. recording.wav, recording.mp4)
+    const originalName = audioFile instanceof File ? audioFile.name : "audio.wav";
     const body = new FormData();
-    body.append("file", audioFile, "audio.webm");
+    body.append("file", audioFile, originalName);
     body.append("model_id", "scribe_v1");
     body.append("language_code", "eng");
 

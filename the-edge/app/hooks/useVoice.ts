@@ -42,7 +42,7 @@ interface UseVoiceOptions {
 interface UseVoiceReturn {
   /** Current voice state */
   state: VoiceState;
-  /** Whether any form of speech recognition is supported (native or MediaRecorder fallback) */
+  /** Whether any form of speech recognition is supported */
   sttSupported: boolean;
   /** TTS is always supported via ElevenLabs API */
   ttsSupported: boolean;
@@ -79,27 +79,63 @@ function hasNativeSpeechRecognition(): boolean {
   );
 }
 
-function hasMediaRecorder(): boolean {
-  return typeof window !== "undefined" && "MediaRecorder" in window;
+/** Check if getUserMedia is available (for mic recording fallback). Works on iOS Safari 11+. */
+function hasMicAccess(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === "function"
+  );
 }
 
-/** Detect iOS Safari for audio workarounds */
-function isIOSSafari(): boolean {
+/** Detect iOS for audio workarounds */
+function isIOS(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
-  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
-  return isIOS && isSafari;
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
-/** Pick a supported MIME type for MediaRecorder */
-function getRecorderMimeType(): string {
-  if (typeof MediaRecorder === "undefined") return "audio/webm";
-  // Safari supports mp4/aac, Chrome/Firefox support webm/opus
-  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
-  if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
-  if (MediaRecorder.isTypeSupported("audio/mp4")) return "audio/mp4";
-  return "audio/webm";
+/** Encode Float32Array PCM samples to a WAV Blob at 16-bit 16kHz mono */
+function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
+  // Downsample to 16kHz for smaller upload and faster transcription
+  const targetRate = 16000;
+  const ratio = sampleRate / targetRate;
+  const newLength = Math.floor(samples.length / ratio);
+  const downsampled = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    downsampled[i] = samples[Math.floor(i * ratio)];
+  }
+
+  const buffer = new ArrayBuffer(44 + downsampled.length * 2);
+  const view = new DataView(buffer);
+
+  // WAV header
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + downsampled.length * 2, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);           // chunk size
+  view.setUint16(20, 1, true);            // PCM format
+  view.setUint16(22, 1, true);            // mono
+  view.setUint32(24, targetRate, true);    // sample rate
+  view.setUint32(28, targetRate * 2, true); // byte rate
+  view.setUint16(32, 2, true);            // block align
+  view.setUint16(34, 16, true);           // bits per sample
+  writeStr(36, "data");
+  view.setUint32(40, downsampled.length * 2, true);
+
+  // Write PCM samples
+  let offset = 44;
+  for (let i = 0; i < downsampled.length; i++) {
+    const s = Math.max(-1, Math.min(1, downsampled[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
 }
 
 // ---------------------------------------------------------------------------
@@ -121,17 +157,16 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   onTranscriptRef.current = onTranscript;
   characterIdRef.current = characterId;
 
-  // MediaRecorder refs for fallback STT
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  // Web Audio API refs for mic recording fallback
+  const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-
-  // Pre-warmed Audio element ref for Safari autoplay compliance
-  const warmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const workletNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const recordingChunksRef = useRef<Float32Array[]>([]);
+  const isRecordingRef = useRef(false);
 
   // Feature detection
   const nativeSTT = hasNativeSpeechRecognition();
-  const fallbackSTT = hasMediaRecorder();
+  const fallbackSTT = hasMicAccess();
   const sttSupported = nativeSTT || fallbackSTT;
   const ttsSupported = true;
 
@@ -143,29 +178,33 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     } catch {}
   }, []);
 
+  // Cleanup helper for mic recording
+  const cleanupRecording = useCallback(() => {
+    isRecordingRef.current = false;
+    if (workletNodeRef.current) {
+      workletNodeRef.current.disconnect();
+      workletNodeRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+  }, []);
+
   const toggleVoice = useCallback(() => {
     setVoiceEnabled((prev) => {
       const next = !prev;
       try {
         localStorage.setItem(VOICE_PREF_KEY, String(next));
       } catch {}
-      // If enabling on iOS Safari, warm up the audio element during this user gesture
-      if (next && isIOSSafari()) {
-        try {
-          const audio = new Audio();
-          audio.muted = true;
-          audio.play().then(() => { audio.pause(); }).catch(() => {});
-          warmAudioRef.current = audio;
-        } catch {}
-      }
       // If disabling, stop everything
       if (!next) {
         recognitionRef.current?.stop();
-        mediaRecorderRef.current?.stop();
-        if (mediaStreamRef.current) {
-          mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-          mediaStreamRef.current = null;
-        }
+        cleanupRecording();
         abortRef.current?.abort();
         if (audioRef.current) {
           audioRef.current.pause();
@@ -177,7 +216,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       }
       return next;
     });
-  }, []);
+  }, [cleanupRecording]);
 
   // -------------------------------------------------------------------------
   // Speech Recognition (STT) — native Web Speech API
@@ -238,78 +277,55 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   }, [lang]);
 
   // -------------------------------------------------------------------------
-  // Speech Recognition (STT) — MediaRecorder fallback (iOS Safari etc.)
+  // Speech Recognition (STT) — getUserMedia + Web Audio API fallback
+  // Records raw PCM via ScriptProcessorNode, encodes to WAV, sends to /api/stt
+  // Works on iOS Safari 11+ (no MediaRecorder dependency)
   // -------------------------------------------------------------------------
 
   const startFallbackListening = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
       mediaStreamRef.current = stream;
 
-      const mimeType = getRecorderMimeType();
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
-      chunksRef.current = [];
+      // Use webkitAudioContext for older iOS Safari
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      const audioContext = new AC();
+      audioContextRef.current = audioContext;
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+      // On iOS Safari, the AudioContext starts in "suspended" state and must
+      // be resumed inside a user-gesture call stack. Since startFallbackListening
+      // is called from a click handler, this resume() should work.
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
+      const source = audioContext.createMediaStreamSource(stream);
+
+      // Use ScriptProcessorNode (deprecated but universally supported including iOS Safari)
+      // Buffer size 4096 gives ~93ms chunks at 44.1kHz
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      workletNodeRef.current = processor;
+      recordingChunksRef.current = [];
+      isRecordingRef.current = true;
+
+      processor.onaudioprocess = (e) => {
+        if (!isRecordingRef.current) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        // Copy the buffer since it gets reused
+        recordingChunksRef.current.push(new Float32Array(inputData));
       };
 
-      recorder.onstop = async () => {
-        // Stop mic access
-        stream.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
+      source.connect(processor);
+      processor.connect(audioContext.destination);
 
-        const blob = new Blob(chunksRef.current, { type: mimeType });
-        chunksRef.current = [];
-
-        if (blob.size < 1000) {
-          // Too short / empty recording
-          setState("idle");
-          setInterimTranscript("");
-          return;
-        }
-
-        setState("processing");
-        setInterimTranscript("Transcribing...");
-
-        try {
-          const formData = new FormData();
-          formData.append("audio", blob, `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
-
-          const res = await fetch("/api/stt", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (!res.ok) throw new Error(`STT API error: ${res.status}`);
-
-          const data = await res.json();
-          const text = (data.text ?? "").trim();
-
-          setInterimTranscript("");
-
-          if (text) {
-            onTranscriptRef.current?.(text);
-          } else {
-            setState("idle");
-          }
-        } catch (err) {
-          console.warn("[useVoice] fallback STT error:", err);
-          setState("idle");
-          setInterimTranscript("");
-        }
-      };
-
-      recorder.onerror = () => {
-        console.warn("[useVoice] MediaRecorder error");
-        stream.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
-        setState("idle");
-        setInterimTranscript("");
-      };
-
-      recorder.start();
       setState("listening");
       setInterimTranscript("");
     } catch (err) {
@@ -318,6 +334,65 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       setInterimTranscript("");
     }
   }, []);
+
+  const stopFallbackListening = useCallback(async () => {
+    if (!isRecordingRef.current) return;
+
+    const sampleRate = audioContextRef.current?.sampleRate ?? 44100;
+    isRecordingRef.current = false;
+
+    // Concatenate all recorded chunks
+    const chunks = recordingChunksRef.current;
+    recordingChunksRef.current = [];
+    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+
+    cleanupRecording();
+
+    if (totalLength < sampleRate * 0.5) {
+      // Less than 0.5 seconds of audio — too short
+      setState("idle");
+      setInterimTranscript("");
+      return;
+    }
+
+    const allSamples = new Float32Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      allSamples.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    setState("processing");
+    setInterimTranscript("Transcribing...");
+
+    try {
+      const wavBlob = encodeWAV(allSamples, sampleRate);
+      const formData = new FormData();
+      formData.append("audio", wavBlob, "recording.wav");
+
+      const res = await fetch("/api/stt", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error(`STT API error: ${res.status}`);
+
+      const data = await res.json();
+      const text = (data.text ?? "").trim();
+
+      setInterimTranscript("");
+
+      if (text) {
+        onTranscriptRef.current?.(text);
+      } else {
+        setState("idle");
+      }
+    } catch (err) {
+      console.warn("[useVoice] fallback STT error:", err);
+      setState("idle");
+      setInterimTranscript("");
+    }
+  }, [cleanupRecording]);
 
   // -------------------------------------------------------------------------
   // Unified start/stop listening
@@ -344,16 +419,13 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
-    }
-    // Don't set idle here for MediaRecorder — onstop handler will transition through "processing"
-    if (nativeSTT) {
       setState("idle");
       setInterimTranscript("");
     }
-  }, [nativeSTT]);
+    if (isRecordingRef.current) {
+      stopFallbackListening();
+    }
+  }, [stopFallbackListening]);
 
   // -------------------------------------------------------------------------
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
@@ -394,17 +466,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           if (controller.signal.aborted) return;
 
           const url = URL.createObjectURL(blob);
-
-          // On iOS Safari, reuse the pre-warmed audio element to satisfy autoplay
-          let audio: HTMLAudioElement;
-          if (isIOSSafari() && warmAudioRef.current) {
-            audio = warmAudioRef.current;
-            audio.muted = false;
-            audio.src = url;
-          } else {
-            audio = new Audio(url);
-          }
-
+          const audio = new Audio();
           audioRef.current = audio;
 
           audio.onended = () => {
@@ -420,7 +482,8 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
             audioRef.current = null;
           };
 
-          // For Safari: use load() + play() pattern
+          // Set src and use load()+play() for Safari compatibility
+          audio.src = url;
           audio.load();
           audio.play().catch((err) => {
             console.warn("[useVoice] audio play blocked:", err.message);
@@ -452,19 +515,15 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop();
-      if (mediaRecorderRef.current?.state === "recording") {
-        mediaRecorderRef.current.stop();
-      }
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
+      isRecordingRef.current = false;
+      cleanupRecording();
       abortRef.current?.abort();
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
       }
     };
-  }, []);
+  }, [cleanupRecording]);
 
   return {
     state,
