@@ -1,8 +1,10 @@
 "use client";
 
 /**
- * 3-screen onboarding flow shown on home page when no ledger entries exist.
- * Uses localStorage key 'edge-onboarding-complete' to track completion.
+ * 3-screen onboarding flow — premium, emotionally compelling.
+ * Screen 1: Hook + value prop
+ * Screen 2: How it works (4 phases)
+ * Screen 3: Five scoring dimensions
  */
 
 import { useState } from "react";
@@ -16,10 +18,10 @@ const DIMENSIONS = [
 ];
 
 const PHASES = [
-  { label: "Learn", color: "#B8D4E3", desc: "Micro-lesson on today\u2019s concept" },
-  { label: "Recall", color: "#B8D4E3", desc: "Test your memory before practice" },
-  { label: "Simulate", color: "#F2C4C4", desc: "Roleplay against a character" },
-  { label: "Deploy", color: "#B8E0C8", desc: "Real-world mission for tomorrow" },
+  { label: "Learn", color: "var(--phase-learn)", tint: "var(--phase-learn-tint)", desc: "Micro-lesson on today\u2019s concept" },
+  { label: "Recall", color: "var(--phase-learn)", tint: "var(--phase-learn-tint)", desc: "Test your memory before practice" },
+  { label: "Simulate", color: "var(--phase-simulate)", tint: "var(--phase-simulate-tint)", desc: "Roleplay against a character" },
+  { label: "Deploy", color: "var(--phase-deploy)", tint: "var(--phase-deploy-tint)", desc: "Real-world mission for tomorrow" },
 ];
 
 export default function Onboarding({ onComplete }: { onComplete: () => void }) {
@@ -45,41 +47,48 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const animClass = direction === "forward" ? "slide-in-right" : "slide-in-left";
 
   return (
-    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6 px-4">
+    <div className="flex min-h-[75dvh] flex-col items-center justify-center gap-8">
       <div
         key={screen}
         className={`w-full max-w-sm ${animClass}`}
       >
         {screen === 0 && (
-          <div className="rounded-3xl bg-white p-8 shadow-[var(--shadow-soft)] text-center">
-            <p className="mb-2 text-3xl font-bold text-primary">the edge</p>
-            <p className="mb-6 text-sm text-secondary">Daily influence training for your commute</p>
-            <div className="mb-6 h-px bg-[#F0EDE8]" />
-            <p className="text-base leading-relaxed text-primary">
-              Every day, you\u2019ll learn one influence technique, practise it in a realistic roleplay against a challenging character, and receive a blunt performance debrief.
+          <div className="card text-center" style={{ padding: "32px 24px" }}>
+            <h1 className="text-display font-bold" style={{ color: "var(--text-primary)" }}>
+              <span style={{ color: "var(--accent)" }}>the</span> edge
+            </h1>
+            <p className="mt-2 text-body" style={{ color: "var(--text-secondary)" }}>
+              Daily influence training
             </p>
-            <p className="mt-4 text-base leading-relaxed text-primary">
-              Then you\u2019ll deploy what you learned with a micro-mission designed for your real conversations.
+            <div className="my-6 h-px" style={{ background: "var(--border)" }} />
+            <p className="text-lead leading-relaxed" style={{ color: "var(--text-primary)" }}>
+              Every day, you learn one influence technique, practise it in a realistic roleplay, and receive a blunt performance debrief.
             </p>
-            <p className="mt-4 text-sm text-secondary">
+            <p className="mt-4 text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>
+              Then you deploy what you learned with a micro-mission designed for your real conversations.
+            </p>
+            <p className="mt-5 text-caption font-medium" style={{ color: "var(--text-secondary)" }}>
               10 minutes. No fluff. Measurable improvement.
             </p>
           </div>
         )}
 
         {screen === 1 && (
-          <div className="rounded-3xl bg-white p-8 shadow-[var(--shadow-soft)]">
-            <p className="mb-1 text-center text-lg font-semibold text-primary">How it works</p>
-            <p className="mb-6 text-center text-sm text-secondary">Four phases, every session</p>
-            <div className="space-y-3">
-              {PHASES.map((p) => (
-                <div key={p.label} className="flex items-center gap-3 rounded-2xl p-3" style={{ backgroundColor: `${p.color}33` }}>
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: p.color }}>
-                    <span className="text-xs font-bold text-white">{PHASES.indexOf(p) + 1}</span>
+          <div className="card" style={{ padding: "28px 24px" }}>
+            <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>How it works</p>
+            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>Four phases, every session</p>
+            <div className="mt-6 space-y-3">
+              {PHASES.map((p, idx) => (
+                <div key={p.label} className="flex items-center gap-3.5 rounded-[var(--radius-md)] p-3.5" style={{ backgroundColor: p.tint }}>
+                  <div
+                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-caption font-bold"
+                    style={{ backgroundColor: p.color, color: "white" }}
+                  >
+                    {idx + 1}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-primary">{p.label}</p>
-                    <p className="text-xs text-secondary">{p.desc}</p>
+                    <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>{p.label}</p>
+                    <p className="text-caption" style={{ color: "var(--text-secondary)" }}>{p.desc}</p>
                   </div>
                 </div>
               ))}
@@ -88,18 +97,21 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         )}
 
         {screen === 2 && (
-          <div className="rounded-3xl bg-white p-8 shadow-[var(--shadow-soft)]">
-            <p className="mb-1 text-center text-lg font-semibold text-primary">Your five dimensions</p>
-            <p className="mb-6 text-center text-sm text-secondary">Scored 1\u20135 after every roleplay</p>
-            <div className="space-y-3">
+          <div className="card" style={{ padding: "28px 24px" }}>
+            <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>Your five dimensions</p>
+            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>Scored 1\u20135 after every roleplay</p>
+            <div className="mt-6 space-y-4">
               {DIMENSIONS.map((d) => (
-                <div key={d.label} className="flex items-start gap-3">
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#EEEDFF] text-xs font-bold text-[#5A52E0]">
+                <div key={d.label} className="flex items-start gap-3.5">
+                  <div
+                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-caption font-bold"
+                    style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}
+                  >
                     {d.label}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-primary">{d.name}</p>
-                    <p className="text-xs leading-relaxed text-secondary">{d.desc}</p>
+                    <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>{d.name}</p>
+                    <p className="text-caption leading-relaxed" style={{ color: "var(--text-secondary)" }}>{d.desc}</p>
                   </div>
                 </div>
               ))}
@@ -109,27 +121,34 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
       </div>
 
       {/* Navigation */}
-      <div className="flex w-full max-w-sm items-center justify-between">
+      <div className="flex w-full max-w-sm items-center justify-between px-1">
         <button
           onClick={goBack}
-          className={`text-sm font-medium text-secondary transition-opacity ${screen === 0 ? "opacity-0 pointer-events-none" : ""}`}
+          className={`touch-target text-body font-medium transition-opacity ${screen === 0 ? "opacity-0 pointer-events-none" : ""}`}
+          style={{ color: "var(--text-secondary)" }}
         >
           Back
         </button>
 
         {/* Dots */}
-        <div className="flex gap-2">
+        <div className="flex gap-2.5">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className={`h-2 rounded-full transition-all ${i === screen ? "w-6 bg-[#5A52E0]" : "w-2 bg-[#E0DED8]"}`}
+              className="rounded-full transition-all"
+              style={{
+                width: i === screen ? 24 : 8,
+                height: 8,
+                backgroundColor: i === screen ? "var(--accent)" : "var(--border)",
+              }}
             />
           ))}
         </div>
 
         <button
           onClick={goForward}
-          className="rounded-full bg-[#5A52E0] px-5 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.97]"
+          className="btn-primary"
+          style={{ width: "auto", minWidth: 100 }}
         >
           {screen === 2 ? "Start" : "Next"}
         </button>
