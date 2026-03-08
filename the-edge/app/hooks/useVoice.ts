@@ -42,7 +42,7 @@ interface UseVoiceOptions {
 interface UseVoiceReturn {
   /** Current voice state */
   state: VoiceState;
-  /** Whether the browser supports speech recognition */
+  /** Whether any form of speech recognition is supported (native or MediaRecorder fallback) */
   sttSupported: boolean;
   /** TTS is always supported via ElevenLabs API */
   ttsSupported: boolean;
@@ -69,6 +69,40 @@ interface UseVoiceReturn {
 const VOICE_PREF_KEY = "edge-voice-enabled";
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function hasNativeSpeechRecognition(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)
+  );
+}
+
+function hasMediaRecorder(): boolean {
+  return typeof window !== "undefined" && "MediaRecorder" in window;
+}
+
+/** Detect iOS Safari for audio workarounds */
+function isIOSSafari(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
+  return isIOS && isSafari;
+}
+
+/** Pick a supported MIME type for MediaRecorder */
+function getRecorderMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "audio/webm";
+  // Safari supports mp4/aac, Chrome/Firefox support webm/opus
+  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
+  if (MediaRecorder.isTypeSupported("audio/mp4")) return "audio/mp4";
+  return "audio/webm";
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -87,11 +121,18 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   onTranscriptRef.current = onTranscript;
   characterIdRef.current = characterId;
 
+  // MediaRecorder refs for fallback STT
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  // Pre-warmed Audio element ref for Safari autoplay compliance
+  const warmAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // Feature detection
-  const sttSupported =
-    typeof window !== "undefined" &&
-    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
-  // TTS is always supported since we use server-side ElevenLabs
+  const nativeSTT = hasNativeSpeechRecognition();
+  const fallbackSTT = hasMediaRecorder();
+  const sttSupported = nativeSTT || fallbackSTT;
   const ttsSupported = true;
 
   // Restore preference from localStorage
@@ -108,9 +149,23 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       try {
         localStorage.setItem(VOICE_PREF_KEY, String(next));
       } catch {}
+      // If enabling on iOS Safari, warm up the audio element during this user gesture
+      if (next && isIOSSafari()) {
+        try {
+          const audio = new Audio();
+          audio.muted = true;
+          audio.play().then(() => { audio.pause(); }).catch(() => {});
+          warmAudioRef.current = audio;
+        } catch {}
+      }
       // If disabling, stop everything
       if (!next) {
         recognitionRef.current?.stop();
+        mediaRecorderRef.current?.stop();
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+          mediaStreamRef.current = null;
+        }
         abortRef.current?.abort();
         if (audioRef.current) {
           audioRef.current.pause();
@@ -125,20 +180,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   }, []);
 
   // -------------------------------------------------------------------------
-  // Speech Recognition (STT) — browser Web Speech API
+  // Speech Recognition (STT) — native Web Speech API
   // -------------------------------------------------------------------------
 
-  const startListening = useCallback(() => {
-    if (!sttSupported) return;
-
-    // Stop any current audio playback
-    abortRef.current?.abort();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-
+  const startNativeListening = useCallback(() => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
@@ -190,13 +235,125 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [sttSupported, lang]);
+  }, [lang]);
+
+  // -------------------------------------------------------------------------
+  // Speech Recognition (STT) — MediaRecorder fallback (iOS Safari etc.)
+  // -------------------------------------------------------------------------
+
+  const startFallbackListening = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      const mimeType = getRecorderMimeType();
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        // Stop mic access
+        stream.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        chunksRef.current = [];
+
+        if (blob.size < 1000) {
+          // Too short / empty recording
+          setState("idle");
+          setInterimTranscript("");
+          return;
+        }
+
+        setState("processing");
+        setInterimTranscript("Transcribing...");
+
+        try {
+          const formData = new FormData();
+          formData.append("audio", blob, `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
+
+          const res = await fetch("/api/stt", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) throw new Error(`STT API error: ${res.status}`);
+
+          const data = await res.json();
+          const text = (data.text ?? "").trim();
+
+          setInterimTranscript("");
+
+          if (text) {
+            onTranscriptRef.current?.(text);
+          } else {
+            setState("idle");
+          }
+        } catch (err) {
+          console.warn("[useVoice] fallback STT error:", err);
+          setState("idle");
+          setInterimTranscript("");
+        }
+      };
+
+      recorder.onerror = () => {
+        console.warn("[useVoice] MediaRecorder error");
+        stream.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+        setState("idle");
+        setInterimTranscript("");
+      };
+
+      recorder.start();
+      setState("listening");
+      setInterimTranscript("");
+    } catch (err) {
+      console.warn("[useVoice] mic access error:", err);
+      setState("idle");
+      setInterimTranscript("");
+    }
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Unified start/stop listening
+  // -------------------------------------------------------------------------
+
+  const startListening = useCallback(() => {
+    if (!sttSupported) return;
+
+    // Stop any current audio playback
+    abortRef.current?.abort();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+
+    if (nativeSTT) {
+      startNativeListening();
+    } else {
+      startFallbackListening();
+    }
+  }, [sttSupported, nativeSTT, startNativeListening, startFallbackListening]);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setState("idle");
-    setInterimTranscript("");
-  }, []);
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    // Don't set idle here for MediaRecorder — onstop handler will transition through "processing"
+    if (nativeSTT) {
+      setState("idle");
+      setInterimTranscript("");
+    }
+  }, [nativeSTT]);
 
   // -------------------------------------------------------------------------
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
@@ -237,7 +394,17 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           if (controller.signal.aborted) return;
 
           const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
+
+          // On iOS Safari, reuse the pre-warmed audio element to satisfy autoplay
+          let audio: HTMLAudioElement;
+          if (isIOSSafari() && warmAudioRef.current) {
+            audio = warmAudioRef.current;
+            audio.muted = false;
+            audio.src = url;
+          } else {
+            audio = new Audio(url);
+          }
+
           audioRef.current = audio;
 
           audio.onended = () => {
@@ -253,8 +420,9 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
             audioRef.current = null;
           };
 
+          // For Safari: use load() + play() pattern
+          audio.load();
           audio.play().catch((err) => {
-            // Autoplay might be blocked — user needs to interact first
             console.warn("[useVoice] audio play blocked:", err.message);
             setState("idle");
             URL.revokeObjectURL(url);
@@ -284,6 +452,12 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop();
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
       abortRef.current?.abort();
       if (audioRef.current) {
         audioRef.current.pause();
