@@ -377,10 +377,13 @@ function LessonCards({
   sections,
   isStreaming,
   onCardChange,
+  onSetCardRef,
 }: {
   sections: { title: string; content: string }[];
   isStreaming: boolean;
   onCardChange?: (current: number, total: number) => void;
+  /** Exposes a callback to programmatically set the current card (for voice auto-advance) */
+  onSetCardRef?: React.MutableRefObject<((card: number) => void) | null>;
 }) {
   const [currentCard, setCurrentCard] = useState(0);
   const [showSwipeHint, setShowSwipeHint] = useState(true);
@@ -397,6 +400,16 @@ function LessonCards({
   useEffect(() => {
     onCardChange?.(currentCard, sections.length);
   }, [currentCard, sections.length, onCardChange]);
+
+  // Expose card setter for voice auto-advance
+  useEffect(() => {
+    if (onSetCardRef) {
+      onSetCardRef.current = (card: number) => {
+        if (card >= 0 && card < sections.length) setCurrentCard(card);
+      };
+      return () => { onSetCardRef.current = null; };
+    }
+  }, [onSetCardRef, sections.length]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -788,6 +801,9 @@ export default function SessionPage() {
   // Phase animation
   const [phaseAnimation, setPhaseAnimation] = useState<"enter" | "active" | "exit">("active");
 
+  // Lesson streaming (declared early for voice effects)
+  const [lessonStreaming, setLessonStreaming] = useState(false);
+
   // Completion
   const [showConfetti, setShowConfetti] = useState(false);
 
@@ -803,17 +819,32 @@ export default function SessionPage() {
   // Voice (STT + TTS)
   // ---------------------------------------------------------------------------
 
+  // Voice speak-end handler — drives lesson card auto-advance and phase transitions
+  const voiceSpeakEndActionRef = useRef<(() => void) | null>(null);
+  const handleSpeakEnd = useCallback(() => {
+    if (voiceSpeakEndActionRef.current) {
+      const action = voiceSpeakEndActionRef.current;
+      voiceSpeakEndActionRef.current = null;
+      // Small delay so user hears the ending before advancing
+      setTimeout(action, 300);
+    }
+  }, []);
+
   const voice = useVoice({
     onTranscript: useCallback((text: string) => {
       // Route transcribed speech to the active phase
       if (text.trim()) {
         setInputValue(text);
-        // Auto-submit for roleplay
+        // Auto-submit for roleplay, retrieval, and check-in
         voiceAutoSubmitRef.current = text.trim();
       }
     }, []),
+    onSpeakEnd: handleSpeakEnd,
     characterId: character?.id,
   });
+
+  /** Mentor character ID for TTS — uses the dedicated mentor voice */
+  const MENTOR_VOICE_ID = "__mentor__";
 
   const voiceAutoSubmitRef = useRef<string | null>(null);
 
@@ -824,10 +855,14 @@ export default function SessionPage() {
       voiceAutoSubmitRef.current = null;
       if (currentPhase === "roleplay") {
         handleRoleplayInput(text);
+      } else if (currentPhase === "retrieval" && retrievalQuestion && !retrievalResponse) {
+        submitRetrievalResponse(text);
+      } else if (currentPhase === "mission" && checkinPillSelected && !checkinDone) {
+        submitCheckin(checkinPillSelected, text);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputValue, isStreaming, isLoading, currentPhase]);
+  }, [inputValue, isStreaming, isLoading, currentPhase, retrievalQuestion, retrievalResponse, checkinPillSelected, checkinDone]);
 
   // Auto-speak AI roleplay responses when voice mode is on
   const lastSpokenIndex = useRef(-1);
@@ -845,7 +880,96 @@ export default function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roleplayTranscript, currentPhase, voice.voiceEnabled]);
 
-  // After TTS finishes speaking, auto-start listening again
+  // Auto-speak lesson content when voice mode is on
+  const lessonSpokenRef = useRef<string | null>(null);
+  const lessonCardAdvanceRef = useRef<((card: number) => void) | null>(null);
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "lesson") return;
+    if (!lessonContent || isLoading || lessonStreaming) return;
+    if (lessonSpokenRef.current === lessonContent) return;
+    lessonSpokenRef.current = lessonContent;
+
+    // Speak through lesson cards sequentially
+    const sections = splitLessonSections(lessonContent);
+    let currentIdx = 0;
+
+    function speakNextCard() {
+      if (currentIdx < sections.length) {
+        const cardText = sections[currentIdx].title + ". " + sections[currentIdx].content;
+        // Set up advance action for when this card finishes speaking
+        if (currentIdx < sections.length - 1) {
+          const nextIdx = currentIdx + 1;
+          voiceSpeakEndActionRef.current = () => {
+            lessonCardAdvanceRef.current?.(nextIdx);
+            currentIdx = nextIdx;
+            speakNextCard();
+          };
+        } else {
+          // Last card — no action needed, user taps to proceed
+          voiceSpeakEndActionRef.current = null;
+        }
+        voice.speak(cardText, MENTOR_VOICE_ID);
+      }
+    }
+
+    speakNextCard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonContent, currentPhase, voice.voiceEnabled, isLoading, lessonStreaming]);
+
+  // Auto-speak retrieval question when voice mode is on
+  const retrievalSpokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "retrieval") return;
+    if (!retrievalQuestion || retrievalSpokenRef.current === retrievalQuestion) return;
+    retrievalSpokenRef.current = retrievalQuestion;
+    // After speaking the question, start listening for the user's answer
+    voiceSpeakEndActionRef.current = () => voice.startListening();
+    voice.speak(retrievalQuestion, MENTOR_VOICE_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retrievalQuestion, currentPhase, voice.voiceEnabled]);
+
+  // Auto-speak retrieval response (feedback) when voice mode is on
+  const retrievalFeedbackSpokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "retrieval") return;
+    if (!retrievalResponse || retrievalFeedbackSpokenRef.current === retrievalResponse) return;
+    retrievalFeedbackSpokenRef.current = retrievalResponse;
+    voice.speak(retrievalResponse, MENTOR_VOICE_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retrievalResponse, currentPhase, voice.voiceEnabled]);
+
+  // Auto-speak debrief content when voice mode is on
+  const debriefSpokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "debrief") return;
+    if (!debriefContent || isLoading || debriefSpokenRef.current === debriefContent) return;
+    debriefSpokenRef.current = debriefContent;
+    voice.speak(debriefContent, MENTOR_VOICE_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debriefContent, currentPhase, voice.voiceEnabled, isLoading]);
+
+  // Auto-speak mission content when voice mode is on
+  const missionSpokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "mission") return;
+    if (!mission || isLoading || missionSpokenRef.current === mission) return;
+    missionSpokenRef.current = mission;
+    const fullText = mission + (rationale ? ". " + rationale : "");
+    voice.speak(fullText, MENTOR_VOICE_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mission, rationale, currentPhase, voice.voiceEnabled, isLoading]);
+
+  // Auto-speak check-in response when voice mode is on
+  const checkinResponseSpokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "mission") return;
+    if (!checkinResponse || checkinResponseSpokenRef.current === checkinResponse) return;
+    checkinResponseSpokenRef.current = checkinResponse;
+    voice.speak(checkinResponse, MENTOR_VOICE_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkinResponse, currentPhase, voice.voiceEnabled]);
+
+  // After TTS finishes speaking, auto-start listening again (roleplay, retrieval, check-in)
   const prevVoiceState = useRef(voice.state);
   useEffect(() => {
     if (
@@ -1014,7 +1138,6 @@ export default function SessionPage() {
   // Phase 1: Lesson
   // ---------------------------------------------------------------------------
 
-  const [lessonStreaming, setLessonStreaming] = useState(false);
   const [lessonCardPos, setLessonCardPos] = useState<{ current: number; total: number }>({ current: 0, total: 999 });
   const onLessonCardChange = useCallback((current: number, total: number) => {
     setLessonCardPos({ current, total });
@@ -1588,6 +1711,7 @@ export default function SessionPage() {
                     sections={splitLessonSections(lessonContent)}
                     isStreaming={lessonStreaming}
                     onCardChange={onLessonCardChange}
+                    onSetCardRef={lessonCardAdvanceRef}
                   />
                 </>
               )}
@@ -2519,6 +2643,29 @@ export default function SessionPage() {
         >
           &darr; New
         </button>
+      )}
+
+      {/* ================================================================== */}
+      {/* Floating voice indicator (non-roleplay phases)                      */}
+      {/* ================================================================== */}
+      {voice.voiceEnabled && !isRoleplay && voice.state === "speaking" && (
+        <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_4px_20px_rgba(0,0,0,0.12)]">
+          <div className="flex items-center gap-1.5 h-5 text-[#5A52E0]">
+            <span className="voice-bar" />
+            <span className="voice-bar" />
+            <span className="voice-bar" />
+          </div>
+          <span className="text-sm font-medium text-secondary">Speaking...</span>
+          <button
+            onClick={voice.stopSpeaking}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F0EDE8] text-secondary transition-transform active:scale-[0.93]"
+            title="Stop"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+              <path fillRule="evenodd" d="M4.5 7.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
       )}
 
       {/* ================================================================== */}

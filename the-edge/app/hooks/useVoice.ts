@@ -31,6 +31,8 @@ export type VoiceState = "idle" | "listening" | "processing" | "speaking";
 interface UseVoiceOptions {
   /** Called when speech recognition produces a final transcript */
   onTranscript?: (text: string) => void;
+  /** Called when TTS finishes speaking */
+  onSpeakEnd?: () => void;
   /** Language for recognition (default: "en-GB") */
   lang?: string;
   /** Whether TTS is enabled (default: true) */
@@ -54,8 +56,8 @@ interface UseVoiceReturn {
   startListening: () => void;
   /** Stop listening */
   stopListening: () => void;
-  /** Speak text aloud via ElevenLabs TTS */
-  speak: (text: string) => void;
+  /** Speak text aloud via ElevenLabs TTS. Optional voiceOverride uses a different characterId for this call. */
+  speak: (text: string, voiceOverride?: string) => void;
   /** Stop any current speech */
   stopSpeaking: () => void;
   /** Interim (partial) transcript while listening */
@@ -73,7 +75,7 @@ const VOICE_PREF_KEY = "edge-voice-enabled";
 // ---------------------------------------------------------------------------
 
 export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
-  const { onTranscript, lang = "en-GB", ttsEnabled = true, characterId } = options;
+  const { onTranscript, onSpeakEnd, lang = "en-GB", ttsEnabled = true, characterId } = options;
 
   const [state, setState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -83,8 +85,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const onTranscriptRef = useRef(onTranscript);
+  const onSpeakEndRef = useRef(onSpeakEnd);
   const characterIdRef = useRef(characterId);
   onTranscriptRef.current = onTranscript;
+  onSpeakEndRef.current = onSpeakEnd;
   characterIdRef.current = characterId;
 
   // Feature detection
@@ -203,7 +207,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // -------------------------------------------------------------------------
 
   const speak = useCallback(
-    (text: string) => {
+    (text: string, voiceOverride?: string) => {
       if (!ttsEnabled || !voiceEnabled) return;
       if (!text || text.trim().length === 0) return;
 
@@ -225,7 +229,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          characterId: characterIdRef.current,
+          characterId: voiceOverride ?? characterIdRef.current,
         }),
         signal: controller.signal,
       })
@@ -244,6 +248,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
             setState("idle");
             URL.revokeObjectURL(url);
             audioRef.current = null;
+            onSpeakEndRef.current?.();
           };
 
           audio.onerror = () => {

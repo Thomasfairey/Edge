@@ -54,6 +54,13 @@ export const CHARACTER_VOICE_MAP: Record<string, VoiceMapping> = {
   },
 };
 
+/** Mentor voice — used for lesson, debrief, mission, and check-in phases.
+ *  Chris — deep, authoritative British male. Distinct from all character voices. */
+export const MENTOR_VOICE: VoiceMapping = {
+  voiceId: "iP95p4xoKVk53GoZ742B",  // Chris — British, deep, authoritative
+  voiceName: "Chris",
+};
+
 /** Default voice when character not found in map */
 export const DEFAULT_VOICE: VoiceMapping = {
   voiceId: "JBFqnCBsd6RMkjVDRZzb",  // George
@@ -61,5 +68,6 @@ export const DEFAULT_VOICE: VoiceMapping = {
 };
 
 export function getVoiceForCharacter(characterId: string): VoiceMapping {
+  if (characterId === "__mentor__") return MENTOR_VOICE;
   return CHARACTER_VOICE_MAP[characterId] ?? DEFAULT_VOICE;
 }
