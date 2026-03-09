@@ -180,7 +180,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // Auto-clear mic errors after 5 seconds
   useEffect(() => {
     if (!micError) return;
-    const t = setTimeout(() => setMicError(null), 5000);
+    const t = setTimeout(() => setMicError(null), 8000);
     return () => clearTimeout(t);
   }, [micError]);
 
@@ -308,7 +308,32 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       return;
     }
 
+    // *** CRITICAL iOS Safari fix ***
+    // AudioContext MUST be created and resumed SYNCHRONOUSLY in the user
+    // gesture (button click) call stack — BEFORE any `await`. If we await
+    // getUserMedia first, the user gesture expires and iOS Safari refuses
+    // to start the AudioContext (it stays "suspended" forever).
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    if (!AC) {
+      setMicError("Audio not supported on this browser.");
+      return;
+    }
+
+    // Create AudioContext synchronously in the click handler
+    const audioContext = new AC();
+    audioContextRef.current = audioContext;
+
+    // Resume synchronously — still within user gesture call stack
+    // (the first await hasn't happened yet)
+    const resumePromise = audioContext.resume();
+
     try {
+      // Now we can await — user gesture already unlocked the AudioContext
+      await resumePromise;
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -317,26 +342,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       });
       mediaStreamRef.current = stream;
 
-      /* eslint-disable @typescript-eslint/no-explicit-any */
-      const AC = window.AudioContext || (window as any).webkitAudioContext;
-      /* eslint-enable @typescript-eslint/no-explicit-any */
-
-      if (!AC) {
-        setMicError("Audio not supported on this browser.");
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-
-      const audioContext = new AC();
-      audioContextRef.current = audioContext;
-
-      // On iOS Safari, AudioContext starts suspended and must be resumed
-      // during a user gesture. This function is called from a click handler.
-      if (audioContext.state === "suspended") {
-        await audioContext.resume();
-      }
-
-      // Double-check it actually resumed
+      // Verify AudioContext is running
       if (audioContext.state !== "running") {
         setMicError("Could not start audio. Tap the mic button again.");
         stream.getTracks().forEach((t) => t.stop());
@@ -367,6 +373,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       setInterimTranscript("");
       setMicError(null);
     } catch (err: unknown) {
+      // Clean up AudioContext on any failure
+      audioContext.close().catch(() => {});
+      audioContextRef.current = null;
+
       const error = err as Error & { name?: string };
       console.warn("[useVoice] mic access error:", error);
 
@@ -375,7 +385,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       } else if (error.name === "NotFoundError") {
         setMicError("No microphone found on this device.");
       } else if (error.name === "NotSupportedError" || error.name === "TypeError") {
-        // This happens in iOS PWA (WKWebView) where getUserMedia exists but doesn't work
         setMicError("Microphone not supported in this mode. Open in Safari instead of the home screen app.");
       } else {
         setMicError("Could not access microphone. Please try again.");
