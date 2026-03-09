@@ -3,26 +3,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ---------------------------------------------------------------------------
-// Web Speech API type shims (not all TS libs include these)
-// ---------------------------------------------------------------------------
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-interface SpeechRecognitionShim extends EventTarget {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  maxAlternatives: number;
-  onstart: (() => void) | null;
-  onresult: ((event: any) => void) | null;
-  onerror: ((event: any) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
-
-// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -40,26 +20,18 @@ interface UseVoiceOptions {
 }
 
 interface UseVoiceReturn {
-  /** Current voice state */
   state: VoiceState;
-  /** Whether the browser supports speech recognition */
   sttSupported: boolean;
-  /** TTS is always supported via ElevenLabs API */
   ttsSupported: boolean;
-  /** Whether voice mode is active (persisted toggle) */
   voiceEnabled: boolean;
-  /** Toggle voice mode on/off */
   toggleVoice: () => void;
-  /** Start listening for speech */
   startListening: () => void;
-  /** Stop listening */
   stopListening: () => void;
-  /** Speak text aloud via ElevenLabs TTS */
   speak: (text: string) => void;
-  /** Stop any current speech */
   stopSpeaking: () => void;
-  /** Interim (partial) transcript while listening */
   interimTranscript: string;
+  /** Error message for user display */
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,13 +45,16 @@ const VOICE_PREF_KEY = "edge-voice-enabled";
 // ---------------------------------------------------------------------------
 
 export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
-  const { onTranscript, lang = "en-GB", ttsEnabled = true, characterId } = options;
+  const { onTranscript, ttsEnabled = true, characterId } = options;
 
   const [state, setState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognitionShim | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const onTranscriptRef = useRef(onTranscript);
@@ -87,11 +62,13 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   onTranscriptRef.current = onTranscript;
   characterIdRef.current = characterId;
 
-  // Feature detection
+  // Feature detection — MediaRecorder is widely supported including iOS PWA
   const sttSupported =
     typeof window !== "undefined" &&
-    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
-  // TTS is always supported since we use server-side ElevenLabs
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    typeof MediaRecorder !== "undefined";
+
   const ttsSupported = true;
 
   // Restore preference from localStorage
@@ -108,9 +85,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       try {
         localStorage.setItem(VOICE_PREF_KEY, String(next));
       } catch {}
-      // If disabling, stop everything
       if (!next) {
-        recognitionRef.current?.stop();
+        // Stop everything when disabling
+        mediaRecorderRef.current?.stop();
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
         abortRef.current?.abort();
         if (audioRef.current) {
           audioRef.current.pause();
@@ -119,17 +98,23 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         }
         setState("idle");
         setInterimTranscript("");
+        setError(null);
       }
       return next;
     });
   }, []);
 
   // -------------------------------------------------------------------------
-  // Speech Recognition (STT) — browser Web Speech API
+  // Speech Recognition (STT) — MediaRecorder + server-side ElevenLabs Scribe
   // -------------------------------------------------------------------------
 
-  const startListening = useCallback(() => {
-    if (!sttSupported) return;
+  const startListening = useCallback(async () => {
+    if (!sttSupported) {
+      setError("Voice input not supported on this device");
+      return;
+    }
+
+    setError(null);
 
     // Stop any current audio playback
     abortRef.current?.abort();
@@ -139,63 +124,129 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       audioRef.current = null;
     }
 
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
+    try {
+      // Request microphone permission
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
+      streamRef.current = stream;
 
-    const recognition: SpeechRecognitionShim = new SR();
-    recognition.lang = lang;
-    recognition.interimResults = true;
-    recognition.continuous = false;
-    recognition.maxAlternatives = 1;
+      // Determine supported MIME type
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "audio/webm";
 
-    recognition.onstart = () => {
-      setState("listening");
-      setInterimTranscript("");
-    };
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      chunksRef.current = [];
 
-    recognition.onresult = (event: any) => {
-      let interim = "";
-      let finalText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalText += transcript;
-        } else {
-          interim += transcript;
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
         }
-      }
-      if (interim) setInterimTranscript(interim);
-      if (finalText) {
-        setInterimTranscript("");
+      };
+
+      recorder.onstop = async () => {
+        // Stop the microphone stream
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        chunksRef.current = [];
+
+        if (blob.size < 1000) {
+          // Too short — probably no speech
+          setState("idle");
+          setInterimTranscript("");
+          return;
+        }
+
         setState("processing");
-        onTranscriptRef.current?.(finalText.trim());
-      }
-    };
+        setInterimTranscript("Transcribing...");
 
-    recognition.onerror = (event: any) => {
-      if (event.error !== "no-speech" && event.error !== "aborted") {
-        console.warn("[useVoice] recognition error:", event.error);
-      }
+        try {
+          const formData = new FormData();
+          formData.append("audio", blob, `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
+
+          const res = await fetch("/api/stt", {
+            method: "POST",
+            body: formData,
+            signal: AbortSignal.timeout(15000),
+          });
+
+          if (!res.ok) {
+            throw new Error(`STT API error: ${res.status}`);
+          }
+
+          const data = await res.json();
+          const text = data.text?.trim();
+
+          if (text) {
+            setInterimTranscript("");
+            onTranscriptRef.current?.(text);
+          } else {
+            setInterimTranscript("");
+            setError("Couldn\u2019t hear that \u2014 try again");
+            setTimeout(() => setError(null), 3000);
+          }
+        } catch (err) {
+          console.warn("[useVoice] transcription error:", err);
+          setInterimTranscript("");
+          setError("Transcription failed \u2014 try again");
+          setTimeout(() => setError(null), 3000);
+        }
+
+        setState("idle");
+      };
+
+      recorder.onerror = () => {
+        console.warn("[useVoice] recorder error");
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setState("idle");
+        setInterimTranscript("");
+        setError("Recording failed");
+        setTimeout(() => setError(null), 3000);
+      };
+
+      recorder.start(250); // Collect chunks every 250ms
+      setState("listening");
+      setInterimTranscript("Listening...");
+    } catch (err) {
+      console.warn("[useVoice] getUserMedia error:", err);
       setState("idle");
-      setInterimTranscript("");
-    };
-    /* eslint-enable @typescript-eslint/no-explicit-any */
 
-    recognition.onend = () => {
-      setState((prev) => (prev === "listening" ? "idle" : prev));
-      setInterimTranscript("");
-      recognitionRef.current = null;
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [sttSupported, lang]);
+      // Provide helpful error messages
+      if (err instanceof DOMException) {
+        if (err.name === "NotAllowedError") {
+          setError("Microphone access denied \u2014 check your browser settings");
+        } else if (err.name === "NotFoundError") {
+          setError("No microphone found");
+        } else {
+          setError("Microphone not available");
+        }
+      } else {
+        setError("Could not access microphone");
+      }
+      setTimeout(() => setError(null), 5000);
+    }
+  }, [sttSupported]);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setState("idle");
-    setInterimTranscript("");
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop(); // This triggers onstop -> transcription
+    } else {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setState("idle");
+      setInterimTranscript("");
+    }
   }, []);
 
   // -------------------------------------------------------------------------
@@ -207,7 +258,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       if (!ttsEnabled || !voiceEnabled) return;
       if (!text || text.trim().length === 0) return;
 
-      // Abort any in-flight TTS request
       abortRef.current?.abort();
       if (audioRef.current) {
         audioRef.current.pause();
@@ -217,7 +267,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
       const controller = new AbortController();
       abortRef.current = controller;
-
       setState("speaking");
 
       fetch("/api/tts", {
@@ -254,7 +303,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           };
 
           audio.play().catch((err) => {
-            // Autoplay might be blocked — user needs to interact first
             console.warn("[useVoice] audio play blocked:", err.message);
             setState("idle");
             URL.revokeObjectURL(url);
@@ -283,7 +331,8 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      recognitionRef.current?.stop();
+      mediaRecorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
       abortRef.current?.abort();
       if (audioRef.current) {
         audioRef.current.pause();
@@ -303,5 +352,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     speak,
     stopSpeaking,
     interimTranscript,
+    error,
   };
 }

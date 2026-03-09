@@ -2372,6 +2372,21 @@ export default function SessionPage() {
             </div>
           )}
 
+          {/* Voice processing state — transcribing */}
+          {voice.voiceEnabled && voice.state === "processing" && (
+            <div className="flex flex-col items-center gap-2 mb-2 py-2">
+              <LoadingDots />
+              <p className="text-sm text-secondary">{voice.interimTranscript || "Processing..."}</p>
+            </div>
+          )}
+
+          {/* Voice error feedback */}
+          {voice.error && (
+            <div className="mb-2 px-3 py-2 rounded-2xl text-center text-xs font-medium" style={{ backgroundColor: "#FFF8E7", color: "#C4A24E" }}>
+              {voice.error}
+            </div>
+          )}
+
           {/* Voice speaking state — show indicator while AI talks */}
           {voice.voiceEnabled && voice.state === "speaking" && (
             <div className="flex flex-col items-center gap-3 mb-2 py-2">
@@ -2393,8 +2408,8 @@ export default function SessionPage() {
             </div>
           )}
 
-          {/* Normal text input (shown when not listening/speaking in voice mode) */}
-          {(!voice.voiceEnabled || (voice.state !== "listening" && voice.state !== "speaking")) && (
+          {/* Normal text input (shown when not listening/speaking/processing in voice mode) */}
+          {(!voice.voiceEnabled || (voice.state !== "listening" && voice.state !== "speaking" && voice.state !== "processing")) && (
             <div className="flex items-end gap-2 mb-2">
               <textarea
                 ref={inputRef}
