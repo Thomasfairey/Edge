@@ -377,15 +377,25 @@ function LessonCards({
   sections,
   isStreaming,
   onCardChange,
+  onSpeak,
+  onStopSpeaking,
+  isSpeaking,
+  voiceEnabled,
 }: {
   sections: { title: string; content: string }[];
   isStreaming: boolean;
   onCardChange?: (current: number, total: number) => void;
+  onSpeak?: (text: string) => void;
+  onStopSpeaking?: () => void;
+  isSpeaking?: boolean;
+  voiceEnabled?: boolean;
 }) {
   const [currentCard, setCurrentCard] = useState(0);
   const [showSwipeHint, setShowSwipeHint] = useState(true);
+  const [autoPlay, setAutoPlay] = useState(false);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
+  const autoPlaySpokenCard = useRef(-1);
 
   // Fade swipe hint after 3s
   useEffect(() => {
@@ -397,6 +407,31 @@ function LessonCards({
   useEffect(() => {
     onCardChange?.(currentCard, sections.length);
   }, [currentCard, sections.length, onCardChange]);
+
+  // Auto-play: speak each card, then advance
+  useEffect(() => {
+    if (!autoPlay || !onSpeak || isStreaming) return;
+    if (currentCard > autoPlaySpokenCard.current) {
+      autoPlaySpokenCard.current = currentCard;
+      const section = sections[currentCard];
+      if (section) {
+        onSpeak(`${section.title}. ${section.content}`);
+      }
+    }
+  }, [autoPlay, currentCard, sections, onSpeak, isStreaming]);
+
+  // Auto-advance to next card when speaking finishes during auto-play
+  useEffect(() => {
+    if (!autoPlay) return;
+    if (!isSpeaking && autoPlaySpokenCard.current === currentCard && currentCard < sections.length - 1) {
+      const t = setTimeout(() => setCurrentCard((c) => c + 1), 600);
+      return () => clearTimeout(t);
+    }
+    // Stop auto-play when last card finishes
+    if (!isSpeaking && autoPlaySpokenCard.current === currentCard && currentCard === sections.length - 1) {
+      setAutoPlay(false);
+    }
+  }, [isSpeaking, autoPlay, currentCard, sections.length]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -413,6 +448,29 @@ function LessonCards({
         setCurrentCard((c) => c - 1);
       }
     }
+  };
+
+  const handleListenCard = () => {
+    if (isSpeaking) {
+      onStopSpeaking?.();
+      setAutoPlay(false);
+      return;
+    }
+    const section = sections[currentCard];
+    if (section && onSpeak) {
+      onSpeak(`${section.title}. ${section.content}`);
+    }
+  };
+
+  const handleAutoPlayAll = () => {
+    if (autoPlay) {
+      setAutoPlay(false);
+      onStopSpeaking?.();
+      return;
+    }
+    autoPlaySpokenCard.current = -1;
+    setCurrentCard(0);
+    setAutoPlay(true);
   };
 
   const section = sections[currentCard];
@@ -439,10 +497,77 @@ function LessonCards({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="mb-4 flex items-center gap-2">
-          <div className="h-1.5 w-1.5 rounded-full bg-[#5B8BA8]" />
-          <h2 className="text-xs font-semibold text-[#5B8BA8] uppercase tracking-widest">{section.title}</h2>
+        {/* Header with title and audio controls */}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-[#5B8BA8]" />
+            <h2 className="text-xs font-semibold text-[#5B8BA8] uppercase tracking-widest">{section.title}</h2>
+          </div>
+
+          {/* Audio controls */}
+          {onSpeak && !isStreaming && (
+            <div className="flex items-center gap-1.5">
+              {/* Listen to current card */}
+              <button
+                onClick={handleListenCard}
+                className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all active:scale-[0.95] ${
+                  isSpeaking && !autoPlay
+                    ? "bg-[#5A52E0] text-white"
+                    : "bg-white/80 text-[#5B8BA8] hover:bg-white"
+                }`}
+                title={isSpeaking ? "Stop" : "Listen to this section"}
+              >
+                {isSpeaking && !autoPlay ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                    <path fillRule="evenodd" d="M4.5 7.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                    <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06ZM15.932 7.757a.75.75 0 0 1 1.061 0 6 6 0 0 1 0 8.486.75.75 0 0 1-1.06-1.061 4.5 4.5 0 0 0 0-6.364.75.75 0 0 1 0-1.06Z" />
+                  </svg>
+                )}
+                {isSpeaking && !autoPlay ? "Stop" : "Listen"}
+              </button>
+
+              {/* Auto-play all sections */}
+              <button
+                onClick={handleAutoPlayAll}
+                className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all active:scale-[0.95] ${
+                  autoPlay
+                    ? "bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
+                    : "bg-white/80 text-[#5B8BA8] hover:bg-white"
+                }`}
+                title={autoPlay ? "Stop auto-play" : "Listen to full lesson"}
+              >
+                {autoPlay ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                    <path fillRule="evenodd" d="M4.5 7.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                    <path fillRule="evenodd" d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z" clipRule="evenodd" />
+                  </svg>
+                )}
+                {autoPlay ? "Stop" : "Play all"}
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Auto-play indicator */}
+        {autoPlay && (
+          <div className="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-[#EEEDFF] py-2">
+            <div className="flex items-center gap-1 h-4 text-[#5A52E0]">
+              <span className="voice-bar" />
+              <span className="voice-bar" />
+              <span className="voice-bar" />
+            </div>
+            <span className="text-xs font-medium text-[#5A52E0]">
+              Playing lesson — {currentCard + 1} of {sections.length}
+            </span>
+          </div>
+        )}
+
         <div className="space-y-1">
           {renderMarkdown(section.content, "lesson")}
           {isStreaming && currentCard === sections.length - 1 && (
@@ -824,6 +949,8 @@ export default function SessionPage() {
       voiceAutoSubmitRef.current = null;
       if (currentPhase === "roleplay") {
         handleRoleplayInput(text);
+      } else if (currentPhase === "retrieval") {
+        submitRetrievalResponse(text);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -845,14 +972,50 @@ export default function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roleplayTranscript, currentPhase, voice.voiceEnabled]);
 
-  // After TTS finishes speaking, auto-start listening again
+  // Auto-speak AI responses in non-roleplay phases (retrieval, debrief, check-in, mission)
+  const lastSpokenRetrieval = useRef<string | null>(null);
+  const lastSpokenDebrief = useRef<string | null>(null);
+  const lastSpokenCheckin = useRef<string | null>(null);
+  const lastSpokenMission = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!voice.voiceEnabled || !voice.ttsSupported) return;
+
+    // Speak retrieval feedback
+    if (currentPhase === "retrieval" && retrievalResponse && retrievalResponse !== lastSpokenRetrieval.current) {
+      lastSpokenRetrieval.current = retrievalResponse;
+      voice.speak(retrievalResponse);
+    }
+
+    // Speak debrief content
+    if (currentPhase === "debrief" && debriefContent && debriefContent !== lastSpokenDebrief.current) {
+      lastSpokenDebrief.current = debriefContent;
+      voice.speak(debriefContent);
+    }
+
+    // Speak check-in response
+    if (currentPhase === "mission" && checkinResponse && checkinResponse !== lastSpokenCheckin.current) {
+      lastSpokenCheckin.current = checkinResponse;
+      voice.speak(checkinResponse);
+    }
+
+    // Speak mission content
+    if (currentPhase === "mission" && mission && mission !== lastSpokenMission.current) {
+      lastSpokenMission.current = mission;
+      voice.speak(mission);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPhase, retrievalResponse, debriefContent, checkinResponse, mission, voice.voiceEnabled]);
+
+  // After TTS finishes speaking, auto-start listening again (for conversational phases)
   const prevVoiceState = useRef(voice.state);
   useEffect(() => {
+    const isConversationalPhase = currentPhase === "roleplay" || currentPhase === "retrieval";
     if (
       prevVoiceState.current === "speaking" &&
       voice.state === "idle" &&
       voice.voiceEnabled &&
-      currentPhase === "roleplay" &&
+      isConversationalPhase &&
       !isStreaming &&
       !isLoading
     ) {
@@ -1588,6 +1751,10 @@ export default function SessionPage() {
                     sections={splitLessonSections(lessonContent)}
                     isStreaming={lessonStreaming}
                     onCardChange={onLessonCardChange}
+                    onSpeak={voice.speakDirect}
+                    onStopSpeaking={voice.stopSpeaking}
+                    isSpeaking={voice.state === "speaking"}
+                    voiceEnabled={voice.voiceEnabled}
                   />
                 </>
               )}

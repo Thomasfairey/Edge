@@ -28,6 +28,8 @@ interface UseVoiceReturn {
   startListening: () => void;
   stopListening: () => void;
   speak: (text: string) => void;
+  /** Speak text regardless of voiceEnabled — for lesson audio mode */
+  speakDirect: (text: string) => void;
   stopSpeaking: () => void;
   interimTranscript: string;
   /** Error message for user display */
@@ -253,9 +255,8 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
   // -------------------------------------------------------------------------
 
-  const speak = useCallback(
+  const speakInternal = useCallback(
     (text: string) => {
-      if (!ttsEnabled || !voiceEnabled) return;
       if (!text || text.trim().length === 0) return;
 
       abortRef.current?.abort();
@@ -315,7 +316,24 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           setState("idle");
         });
     },
-    [ttsEnabled, voiceEnabled]
+    []
+  );
+
+  const speak = useCallback(
+    (text: string) => {
+      if (!ttsEnabled || !voiceEnabled) return;
+      speakInternal(text);
+    },
+    [ttsEnabled, voiceEnabled, speakInternal]
+  );
+
+  /** Speak regardless of voiceEnabled — for lesson audio mode */
+  const speakDirect = useCallback(
+    (text: string) => {
+      if (!ttsEnabled) return;
+      speakInternal(text);
+    },
+    [ttsEnabled, speakInternal]
   );
 
   const stopSpeaking = useCallback(() => {
@@ -350,6 +368,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     startListening,
     stopListening,
     speak,
+    speakDirect,
     stopSpeaking,
     interimTranscript,
     error,
