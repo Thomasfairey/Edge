@@ -1183,6 +1183,28 @@ export default function SessionPage() {
     setLessonCardPos({ current, total });
   }, []);
 
+  // Auto-read lesson aloud when voice mode is on and lesson finishes streaming
+  const lessonAutoReadDone = useRef(false);
+  useEffect(() => {
+    if (!lessonContent) {
+      lessonAutoReadDone.current = false;
+    }
+  }, [lessonContent]);
+
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "lesson") return;
+    if (lessonStreaming || !lessonContent || lessonAutoReadDone.current) return;
+
+    // Lesson just finished streaming — read it aloud
+    lessonAutoReadDone.current = true;
+    const sections = splitLessonSections(lessonContent);
+    if (sections.length > 0) {
+      const fullText = sections.map((s) => `${s.title}. ${s.content}`).join(" ... ");
+      voice.speakDirect(fullText);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonStreaming, lessonContent, currentPhase, voice.voiceEnabled]);
+
   async function fetchLesson() {
     setIsLoading(true);
     setError(null);
