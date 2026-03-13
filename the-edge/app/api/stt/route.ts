@@ -55,8 +55,13 @@ async function handler(req: NextRequest): Promise<Response> {
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Unknown error");
       console.error(`[stt] ElevenLabs error ${response.status}: ${errorText}`);
+      if (response.status === 401) {
+        console.error("[stt] API key missing speech_to_text permission — regenerate key in ElevenLabs dashboard");
+      }
       return NextResponse.json(
-        { error: `Transcription failed: ${response.status}` },
+        { error: response.status === 401
+          ? "Voice transcription not configured — API key needs STT permission"
+          : `Transcription failed: ${response.status}` },
         { status: 502 }
       );
     }

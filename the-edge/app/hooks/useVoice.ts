@@ -27,7 +27,7 @@ interface UseVoiceReturn {
   toggleVoice: () => void;
   startListening: () => void;
   stopListening: () => void;
-  speak: (text: string) => void;
+  speak: (text: string, options?: { narrator?: boolean }) => void;
   stopSpeaking: () => void;
   interimTranscript: string;
   /** Error message for user display */
@@ -49,7 +49,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
   const [state, setState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -71,12 +71,63 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
   const ttsSupported = true;
 
-  // Restore preference from localStorage
+  // Restore preference from localStorage (default: enabled)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(VOICE_PREF_KEY);
-      if (saved === "true") setVoiceEnabled(true);
+      if (saved === "false") setVoiceEnabled(false);
     } catch {}
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Audio unlock — browsers block audio.play() until a user gesture occurs.
+  // On first touch/click, play a tiny silent audio to establish the session,
+  // then replay any pending narration that was queued before the gesture.
+  // -------------------------------------------------------------------------
+
+  const audioUnlockedRef = useRef(false);
+  const pendingSpeakRef = useRef<{ text: string; options?: { narrator?: boolean }; ts: number } | null>(null);
+  const speakFnRef = useRef<((text: string, options?: { narrator?: boolean }) => void) | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const unlock = () => {
+      if (audioUnlockedRef.current) return;
+
+      // Tiny silent WAV — establishes the browser audio session
+      const silent = new Audio(
+        "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
+      );
+      silent.volume = 0;
+      silent.play()
+        .then(() => {
+          audioUnlockedRef.current = true;
+
+          // Replay pending narration if queued recently (< 8s ago)
+          const pending = pendingSpeakRef.current;
+          if (pending && Date.now() - pending.ts < 8000) {
+            pendingSpeakRef.current = null;
+            speakFnRef.current?.(pending.text, pending.options);
+          } else {
+            pendingSpeakRef.current = null;
+          }
+        })
+        .catch(() => {
+          // Even the silent play failed — mark as unlocked anyway
+          // so future user-initiated plays aren't blocked by our queue
+          audioUnlockedRef.current = true;
+        });
+    };
+
+    // Listen for the first user gesture
+    document.addEventListener("touchstart", unlock, { passive: true });
+    document.addEventListener("click", unlock);
+
+    return () => {
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("click", unlock);
+    };
   }, []);
 
   const toggleVoice = useCallback(() => {
@@ -254,9 +305,16 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // -------------------------------------------------------------------------
 
   const speak = useCallback(
-    (text: string) => {
+    (text: string, options?: { narrator?: boolean }) => {
       if (!ttsEnabled || !voiceEnabled) return;
       if (!text || text.trim().length === 0) return;
+
+      // If audio not yet unlocked by a user gesture, queue for playback
+      // once the first touch/click occurs.
+      if (!audioUnlockedRef.current) {
+        pendingSpeakRef.current = { text, options, ts: Date.now() };
+        return;
+      }
 
       abortRef.current?.abort();
       if (audioRef.current) {
@@ -274,7 +332,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          characterId: characterIdRef.current,
+          characterId: options?.narrator ? undefined : characterIdRef.current,
         }),
         signal: controller.signal,
       })
@@ -317,6 +375,9 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     },
     [ttsEnabled, voiceEnabled]
   );
+
+  // Keep speak ref updated so the unlock callback can call the latest version
+  speakFnRef.current = speak;
 
   const stopSpeaking = useCallback(() => {
     abortRef.current?.abort();

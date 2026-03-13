@@ -66,9 +66,9 @@ async function handler(req: NextRequest): Promise<Response> {
           text: cleaned,
           model_id: ELEVENLABS_MODEL,
           voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.3,
+            stability: 0.4,
+            similarity_boost: 0.8,
+            style: 0.45,
             use_speaker_boost: true,
           },
         }),
@@ -114,5 +114,5 @@ async function handler(req: NextRequest): Promise<Response> {
   }
 }
 
-// Rate limit: 15 requests per minute (covers rapid back-and-forth roleplay)
-export const POST = withRateLimit(handler, 15);
+// Rate limit: 30 requests per minute (narration across all phases + roleplay)
+export const POST = withRateLimit(handler, 30);
