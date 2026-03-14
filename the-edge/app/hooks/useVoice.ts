@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  whenAudioUnlocked,
+  playOnSharedAudio,
+  stopSharedAudio,
+} from "@/app/components/AudioUnlock";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,7 +60,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const onTranscriptRef = useRef(onTranscript);
   const characterIdRef = useRef(characterId);
@@ -79,56 +83,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     } catch {}
   }, []);
 
-  // -------------------------------------------------------------------------
-  // Audio unlock — browsers block audio.play() until a user gesture occurs.
-  // On first touch/click, play a tiny silent audio to establish the session,
-  // then replay any pending narration that was queued before the gesture.
-  // -------------------------------------------------------------------------
-
-  const audioUnlockedRef = useRef(false);
-  const pendingSpeakRef = useRef<{ text: string; options?: { narrator?: boolean }; ts: number } | null>(null);
-  const speakFnRef = useRef<((text: string, options?: { narrator?: boolean }) => void) | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const unlock = () => {
-      if (audioUnlockedRef.current) return;
-
-      // Tiny silent WAV — establishes the browser audio session
-      const silent = new Audio(
-        "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
-      );
-      silent.volume = 0;
-      silent.play()
-        .then(() => {
-          audioUnlockedRef.current = true;
-
-          // Replay pending narration if queued recently (< 8s ago)
-          const pending = pendingSpeakRef.current;
-          if (pending && Date.now() - pending.ts < 8000) {
-            pendingSpeakRef.current = null;
-            speakFnRef.current?.(pending.text, pending.options);
-          } else {
-            pendingSpeakRef.current = null;
-          }
-        })
-        .catch(() => {
-          // Even the silent play failed — mark as unlocked anyway
-          // so future user-initiated plays aren't blocked by our queue
-          audioUnlockedRef.current = true;
-        });
-    };
-
-    // Listen for the first user gesture
-    document.addEventListener("touchstart", unlock, { passive: true });
-    document.addEventListener("click", unlock);
-
-    return () => {
-      document.removeEventListener("touchstart", unlock);
-      document.removeEventListener("click", unlock);
-    };
-  }, []);
+  // Audio unlock is handled by the AudioUnlock component in root layout.
+  // It creates a singleton Audio element, unlocks it on first user gesture,
+  // and exports helpers (whenAudioUnlocked, playOnSharedAudio, stopSharedAudio)
+  // that this hook uses for Safari-compatible TTS playback.
 
   const toggleVoice = useCallback(() => {
     setVoiceEnabled((prev) => {
@@ -142,11 +100,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         abortRef.current?.abort();
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current.src = "";
-          audioRef.current = null;
-        }
+        stopSharedAudio();
         setState("idle");
         setInterimTranscript("");
         setError(null);
@@ -169,11 +123,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
     // Stop any current audio playback
     abortRef.current?.abort();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
+    stopSharedAudio();
 
     try {
       // Request microphone permission
@@ -309,24 +259,15 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       if (!ttsEnabled || !voiceEnabled) return;
       if (!text || text.trim().length === 0) return;
 
-      // If audio not yet unlocked by a user gesture, queue for playback
-      // once the first touch/click occurs.
-      if (!audioUnlockedRef.current) {
-        pendingSpeakRef.current = { text, options, ts: Date.now() };
-        return;
-      }
-
+      // Cancel any in-flight fetch (but don't touch the audio element yet —
+      // it may still be finishing its unlock play)
       abortRef.current?.abort();
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-        audioRef.current = null;
-      }
 
       const controller = new AbortController();
       abortRef.current = controller;
       setState("speaking");
 
+      // Fetch TTS audio first — runs in parallel with any pending unlock
       fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -344,27 +285,28 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           if (controller.signal.aborted) return;
 
           const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audioRef.current = audio;
 
-          audio.onended = () => {
-            setState("idle");
-            URL.revokeObjectURL(url);
-            audioRef.current = null;
-          };
+          // Schedule playback — runs immediately if audio is unlocked,
+          // or queues until the AudioUnlock component's silent play resolves
+          whenAudioUnlocked(() => {
+            if (controller.signal.aborted) {
+              URL.revokeObjectURL(url);
+              return;
+            }
 
-          audio.onerror = () => {
-            console.warn("[useVoice] audio playback error");
-            setState("idle");
-            URL.revokeObjectURL(url);
-            audioRef.current = null;
-          };
+            // Play on the SAME element that was unlocked by the gesture
+            const audio = playOnSharedAudio(url);
 
-          audio.play().catch((err) => {
-            console.warn("[useVoice] audio play blocked:", err.message);
-            setState("idle");
-            URL.revokeObjectURL(url);
-            audioRef.current = null;
+            audio.onended = () => {
+              setState("idle");
+              URL.revokeObjectURL(url);
+            };
+
+            audio.onerror = () => {
+              console.warn("[useVoice] audio playback error");
+              setState("idle");
+              URL.revokeObjectURL(url);
+            };
           });
         })
         .catch((err) => {
@@ -376,16 +318,9 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     [ttsEnabled, voiceEnabled]
   );
 
-  // Keep speak ref updated so the unlock callback can call the latest version
-  speakFnRef.current = speak;
-
   const stopSpeaking = useCallback(() => {
     abortRef.current?.abort();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
+    stopSharedAudio();
     setState((prev) => (prev === "speaking" ? "idle" : prev));
   }, []);
 
@@ -395,10 +330,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       mediaRecorderRef.current?.stop();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       abortRef.current?.abort();
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-      }
+      stopSharedAudio();
     };
   }, []);
 

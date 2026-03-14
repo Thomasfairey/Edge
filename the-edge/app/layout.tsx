@@ -5,6 +5,7 @@
 
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
+import AudioUnlock from "@/app/components/AudioUnlock";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -51,6 +52,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className={`${dmSans.className} bg-background text-primary antialiased`} style={{ backgroundColor: "#FAF9F6" }}>
+        <AudioUnlock />
         {children}
         <ServiceWorkerScript />
       </body>
