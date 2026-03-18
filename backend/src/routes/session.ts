@@ -37,9 +37,10 @@ import { selectConcept, CONCEPTS } from "../content/concepts.js";
 import { selectCharacter, CHARACTERS } from "../content/characters.js";
 import { buildSystemContext } from "../prompts/system-context.js";
 import { SCORING_RUBRIC, parseScores, parseLedgerFields, generateScoringContext } from "../services/scoring.js";
-import { CheckinSchema, RoleplayMessageSchema, CoachRequestSchema, DebriefRequestSchema } from "../types/api.js";
+import { CheckinSchema, RoleplayMessageSchema, CoachRequestSchema, DebriefRequestSchema, RetrievalBridgeSchema } from "../types/api.js";
 import { TIER_LIMITS, type LedgerEntry, type SessionScores } from "../types/domain.js";
 import { TierLimitError, ValidationError } from "../types/errors.js";
+import { buildRetrievalBridgePrompt } from "../prompts/retrieval-bridge.js";
 
 const session = new Hono<AppEnv>();
 
@@ -262,6 +263,60 @@ One example of the same technique being used AGAINST someone. Show how to recogn
       "X-Concept-Domain": concept.domain,
     },
   });
+});
+
+// ---------------------------------------------------------------------------
+// POST /v1/session/retrieval — Retrieval Bridge (between Learn and Simulate)
+// ---------------------------------------------------------------------------
+
+session.post("/retrieval", rateLimit(10), zValidator("json", RetrievalBridgeSchema), async (c) => {
+  const user = c.get("user") as AuthUser;
+  const db = createUserClient(c.get("token") as string);
+  const { session_id, user_response } = c.req.valid("json");
+
+  const { data: sessionData } = await db
+    .from("sessions")
+    .select("concept_id")
+    .eq("id", session_id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!sessionData) throw new ValidationError("Session not found");
+
+  const concept = CONCEPTS.find((c) => c.id === sessionData.concept_id);
+  if (!concept) throw new ValidationError("Concept not found");
+
+  // First call — return the question without LLM call
+  if (!user_response) {
+    const question = `Before we begin — in one sentence, what is ${concept.name} and when would you deploy it?`;
+    return c.json({ success: true, data: { response: question, ready: false } });
+  }
+
+  // Second call — evaluate via LLM
+  const profile = await getProfile(db, user.id);
+  const ledgerSummary = await serialiseForPrompt(db, user.id);
+  const completedConcepts = await getCompletedConcepts(db, user.id);
+  const systemContext = buildSystemContext(profile, ledgerSummary, completedConcepts);
+  const retrievalPrompt = buildRetrievalBridgePrompt(concept);
+
+  const response = await generateResponse(
+    `${systemContext}\n\n${retrievalPrompt}`,
+    [{ role: "user", content: user_response }],
+    PHASE_CONFIG.checkin
+  );
+
+  const ready = response.includes("Let's go.");
+
+  // Update session phase to roleplay
+  if (ready) {
+    await db
+      .from("sessions")
+      .update({ phase: "roleplay" })
+      .eq("id", session_id)
+      .eq("user_id", user.id);
+  }
+
+  return c.json({ success: true, data: { response, ready } });
 });
 
 // ---------------------------------------------------------------------------

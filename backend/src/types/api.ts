@@ -71,6 +71,11 @@ export const DebriefRequestSchema = z.object({
   session_id: z.string().uuid(),
 });
 
+export const RetrievalBridgeSchema = z.object({
+  session_id: z.string().uuid(),
+  user_response: z.string().max(1000).optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Subscription
 // ---------------------------------------------------------------------------

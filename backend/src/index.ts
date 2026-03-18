@@ -14,6 +14,7 @@ import authRoutes from "./routes/auth.js";
 import profileRoutes from "./routes/profile.js";
 import statusRoutes from "./routes/status.js";
 import sessionRoutes from "./routes/session.js";
+import subscriptionRoutes from "./routes/subscription.js";
 import type { AppEnv } from "./types/env.js";
 
 const app = new Hono<AppEnv>();
@@ -59,6 +60,7 @@ app.route("/v1/auth", authRoutes);
 app.route("/v1/profile", profileRoutes);
 app.route("/v1/status", statusRoutes);
 app.route("/v1/session", sessionRoutes);
+app.route("/v1/subscription", subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
 // Global error handler
