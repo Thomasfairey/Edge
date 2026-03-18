@@ -238,30 +238,30 @@ Each score level (1-5) per dimension gets:
 
 ### Phase 1: Quality & Content (Weeks 4-6)
 - [x] Scoring calibration (rubric-anchored with explicit 1-5 criteria per dimension)
-- [ ] Self-assessment step
+- [x] Self-assessment step (optional self-scores compared to AI debrief, gap analysis)
 - [x] Expand to 12+ characters (12 archetypes with full personalities)
 - [x] Dynamic scenario generation (domain-character mapping, random selection)
-- [ ] Adaptive difficulty
+- [x] Adaptive difficulty (1-5 scale, auto-adjusts based on rolling performance)
 - [x] Reliability hardening (retries, fallbacks, timeouts per phase)
 - [x] Session persistence (DB via Supabase with RLS)
 - [x] Integration tests (10 tests covering health, auth, route protection)
 
 ### Phase 2: iOS MVP (Weeks 7-12)
-- [ ] Xcode project + SwiftUI scaffold
-- [ ] API client layer (URLSession + async/await)
-- [ ] Authentication flow (Apple Sign-In + email)
-- [ ] Home dashboard
-- [ ] Session flow (all 5 phases)
-- [ ] Streaming chat UI
-- [ ] Push notifications
-- [ ] Haptic feedback
-- [ ] Accessibility (VoiceOver, Dynamic Type)
-- [ ] TestFlight deployment
+- [x] Xcode project + SwiftUI scaffold (11 Swift files, MVVM architecture)
+- [x] API client layer (URLSession actor + async/await + streaming)
+- [x] Authentication flow (Apple Sign-In + email/password)
+- [x] Home dashboard (progress ring, dimension scores, streak, stats)
+- [x] Session flow (all 5 phases with phase-specific views)
+- [x] Streaming chat UI (ChatBubble, real-time roleplay)
+- [x] Push notifications (daily reminders, session incomplete alerts)
+- [x] Haptic feedback (light, medium, success, error)
+- [x] Accessibility (VoiceOver labels, Dynamic Type support)
+- [ ] TestFlight deployment (requires Apple Developer account)
 
 ### Phase 3: Monetisation & Launch (Weeks 13-16)
-- [ ] StoreKit 2 subscription integration
-- [ ] Server-side receipt validation
-- [ ] Free/Pro tier gating
+- [x] StoreKit 2 subscription integration (purchase, restore, transaction listener)
+- [x] Server-side receipt validation (POST /v1/subscription/verify)
+- [x] Free/Pro tier gating (TIER_LIMITS, session count enforcement)
 - [ ] App Store assets (screenshots, preview)
 - [ ] Privacy policy & terms
 - [ ] App Store submission
