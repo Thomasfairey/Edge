@@ -73,6 +73,7 @@ create table if not exists public.sessions (
                        check (phase in ('checkin', 'lesson', 'retrieval', 'roleplay', 'debrief', 'mission', 'complete')),
   concept_id           text,
   character_id         text,
+  difficulty           integer not null default 3 check (difficulty between 1 and 5),
   is_review            boolean not null default false,
   roleplay_transcript  jsonb not null default '[]'::jsonb,
   coach_messages       text[] not null default '{}',

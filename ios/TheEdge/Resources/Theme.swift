@@ -96,4 +96,21 @@ extension View {
     func card(backgroundColor: Color = .surface, cornerRadius: CGFloat = 24) -> some View {
         modifier(CardStyle(backgroundColor: backgroundColor, cornerRadius: cornerRadius))
     }
+
+    /// Apply consistent accessibility modifiers for interactive elements.
+    func accessibleButton(label: String, hint: String? = nil) -> some View {
+        self
+            .accessibilityLabel(label)
+            .accessibilityHint(hint ?? "")
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+// MARK: - Dynamic Type Scaling
+
+extension Font {
+    /// Scaled body font that respects Dynamic Type.
+    static func scaledBody(size: CGFloat = 16, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .default)
+    }
 }

@@ -69,6 +69,13 @@ export const CoachRequestSchema = z.object({
 
 export const DebriefRequestSchema = z.object({
   session_id: z.string().uuid(),
+  self_assessment: z.object({
+    technique_application: z.number().int().min(1).max(5),
+    tactical_awareness: z.number().int().min(1).max(5),
+    frame_control: z.number().int().min(1).max(5),
+    emotional_regulation: z.number().int().min(1).max(5),
+    strategic_outcome: z.number().int().min(1).max(5),
+  }).optional(),
 });
 
 export const RetrievalBridgeSchema = z.object({

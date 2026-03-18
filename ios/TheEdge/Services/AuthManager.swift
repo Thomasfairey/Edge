@@ -58,6 +58,26 @@ class AuthManager: ObservableObject {
         }
     }
 
+    /// Sign in with Apple — handles the ASAuthorization result.
+    func signInWithApple(idToken: String, nonce: String?) async {
+        do {
+            var body: [String: String] = ["id_token": idToken]
+            if let nonce { body["nonce"] = nonce }
+
+            let response: AuthResponse = try await APIClient.shared.request(
+                method: "POST", path: "auth/apple", body: body
+            )
+
+            if let session = response.session {
+                await saveTokens(access: session.accessToken, refresh: session.refreshToken)
+                await APIClient.shared.setTokens(access: session.accessToken, refresh: session.refreshToken)
+                await loadProfile()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func signOut() async {
         deleteTokens()
         await APIClient.shared.clearTokens()

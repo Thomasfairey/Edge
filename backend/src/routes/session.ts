@@ -41,6 +41,7 @@ import { CheckinSchema, RoleplayMessageSchema, CoachRequestSchema, DebriefReques
 import { TIER_LIMITS, type LedgerEntry, type SessionScores } from "../types/domain.js";
 import { TierLimitError, ValidationError } from "../types/errors.js";
 import { buildRetrievalBridgePrompt } from "../prompts/retrieval-bridge.js";
+import { calculateDifficulty, difficultyModifier, difficultyContext } from "../services/difficulty.js";
 
 const session = new Hono<AppEnv>();
 
@@ -75,6 +76,11 @@ session.post("/start", rateLimit(5), async (c) => {
   const { concept, isReview } = await selectConcept(db, user.id, completedIds);
   const character = selectCharacter(concept);
 
+  // Calculate adaptive difficulty based on recent performance
+  const recentScoresForDifficulty = await getRecentScores(db, user.id, 5);
+  const lastEntryDifficulty = lastEntry?.difficulty;
+  const difficulty = calculateDifficulty(recentScoresForDifficulty, lastEntryDifficulty);
+
   // Create session record in DB
   const { data: sessionData, error } = await db
     .from("sessions")
@@ -86,6 +92,7 @@ session.post("/start", rateLimit(5), async (c) => {
       concept_id: concept.id,
       character_id: character.id,
       is_review: isReview,
+      difficulty,
     })
     .select("id")
     .single();
@@ -116,6 +123,7 @@ session.post("/start", rateLimit(5), async (c) => {
         description: character.description,
       },
       is_review: isReview,
+      difficulty,
     },
   });
 });
@@ -331,7 +339,7 @@ session.post("/roleplay", rateLimit(20), zValidator("json", RoleplayMessageSchem
   // Get session data
   const { data: sessionData } = await db
     .from("sessions")
-    .select("concept_id, character_id, roleplay_transcript")
+    .select("concept_id, character_id, roleplay_transcript, difficulty")
     .eq("id", session_id)
     .eq("user_id", user.id)
     .single();
@@ -343,6 +351,7 @@ session.post("/roleplay", rateLimit(20), zValidator("json", RoleplayMessageSchem
   if (!concept || !character) throw new ValidationError("Concept or character not found");
 
   const profile = await getProfile(db, user.id);
+  const sessionDifficulty = (sessionData.difficulty as number) ?? 3;
 
   // Build transcript for context
   const transcript = (sessionData.roleplay_transcript as Array<{ role: string; content: string }>) || [];
@@ -367,6 +376,8 @@ ${character.tactics.map((t) => `- ${t}`).join("\n")}
 ## Scenario Context
 The user (${profile.display_name}) is practising the concept of **${concept.name}** (${concept.source}).
 Their professional context: ${profile.professional_context || "Senior professional in a high-stakes environment."}
+
+${difficultyModifier(sessionDifficulty)}
 
 ## Rules
 - NEVER break character
@@ -451,11 +462,11 @@ Be direct. No preamble. Under 150 words total.`;
 session.post("/debrief", rateLimit(5), zValidator("json", DebriefRequestSchema), async (c) => {
   const user = c.get("user") as AuthUser;
   const db = createUserClient(c.get("token") as string);
-  const { session_id } = c.req.valid("json");
+  const { session_id, self_assessment } = c.req.valid("json");
 
   const { data: sessionData } = await db
     .from("sessions")
-    .select("concept_id, character_id, roleplay_transcript, commands_used, day")
+    .select("concept_id, character_id, roleplay_transcript, commands_used, day, difficulty")
     .eq("id", session_id)
     .eq("user_id", user.id)
     .single();
@@ -465,6 +476,7 @@ session.post("/debrief", rateLimit(5), zValidator("json", DebriefRequestSchema),
   const concept = CONCEPTS.find((c) => c.id === sessionData.concept_id);
   const character = CHARACTERS.find((c) => c.id === sessionData.character_id);
   const transcript = sessionData.roleplay_transcript as Array<{ role: string; content: string }>;
+  const debriefDifficulty = (sessionData.difficulty as number) ?? 3;
 
   const profile = await getProfile(db, user.id);
   const ledgerSummary = await serialiseForPrompt(db, user.id);
@@ -478,6 +490,19 @@ session.post("/debrief", rateLimit(5), zValidator("json", DebriefRequestSchema),
     ? "\n\nIMPORTANT: This user has fewer than 3 prior sessions. Focus ENTIRELY on the current session's execution. Do NOT attempt to identify longitudinal behavioural patterns or make cross-session comparisons — there is insufficient data."
     : "\n\nThe user has 3+ prior sessions. You SHOULD identify recurring behavioural patterns from the session history and make specific callbacks to previous sessions.";
 
+  // Self-assessment integration — builds metacognition
+  const selfAssessmentBlock = self_assessment
+    ? `\n\n### User Self-Assessment (submitted before seeing your analysis)
+The user scored themselves:
+- Technique Application: ${self_assessment.technique_application}/5
+- Tactical Awareness: ${self_assessment.tactical_awareness}/5
+- Frame Control: ${self_assessment.frame_control}/5
+- Emotional Regulation: ${self_assessment.emotional_regulation}/5
+- Strategic Outcome: ${self_assessment.strategic_outcome}/5
+
+IMPORTANT: Compare your scores to the user's self-assessment. If there is a significant gap (2+ points) on any dimension, explicitly call it out. If the user over-rated themselves, explain what they missed. If they under-rated themselves, acknowledge the skill they didn't recognise.`
+    : "";
+
   const debriefPrompt = `${systemContext}
 
 ## Phase 3: Debrief — Forensic Performance Analysis
@@ -487,7 +512,9 @@ You are an elite executive coach delivering a forensic debrief of a roleplay sim
 ### Session Context
 - Concept practised: ${concept?.name} (${concept?.source})
 - Character faced: ${character?.name}
+- Difficulty level: ${debriefDifficulty}/5
 - Commands used: ${sessionData.commands_used?.join(", ") || "none"}
+${difficultyContext(debriefDifficulty)}
 
 ### Roleplay Transcript
 ${transcript.map((m) => `**${m.role === "user" ? profile.display_name : character?.name ?? "Character"}:** ${m.content}`).join("\n\n")}
@@ -496,6 +523,7 @@ ${SCORING_RUBRIC}
 
 ${scoringContext}
 ${coldStartGuard}
+${selfAssessmentBlock}
 
 ### Required Output Format
 
@@ -569,7 +597,7 @@ session.post("/mission", rateLimit(5), async (c) => {
 
   const { data: sessionData } = await db
     .from("sessions")
-    .select("concept_id, character_id, scores, day, debrief_content, roleplay_transcript, commands_used")
+    .select("concept_id, character_id, scores, day, debrief_content, roleplay_transcript, commands_used, difficulty")
     .eq("id", sessionId)
     .eq("user_id", user.id)
     .single();
@@ -630,7 +658,7 @@ RATIONALE: [why this reinforces the learning]`;
       concept: `${concept.name} (${concept.source})`,
       domain: concept.domain,
       character: character.name,
-      difficulty: 3,
+      difficulty: (sessionData.difficulty as number) ?? 3,
       scores,
       behavioral_weakness_summary: ledgerFields?.behavioral_weakness_summary ?? "",
       key_moment: ledgerFields?.key_moment ?? "",

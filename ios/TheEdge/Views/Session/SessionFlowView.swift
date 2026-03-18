@@ -157,6 +157,8 @@ struct CheckinView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.accent)
                 .disabled(response.isEmpty || session.isLoading)
+                .accessibilityLabel("Submit mission check-in")
+                .accessibilityHint("Submits your mission outcome for review")
             }
         }
         .padding(20)
@@ -261,6 +263,8 @@ struct RoleplayView: View {
                 }
                 .font(.subheadline.bold())
                 .foregroundColor(.scoreLow)
+                .accessibilityLabel("End roleplay")
+                .accessibilityHint("Ends the roleplay simulation and moves to debrief")
             }
             .padding(16)
             .background(.ultraThinMaterial)

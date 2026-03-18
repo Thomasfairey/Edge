@@ -11,8 +11,7 @@ actor APIClient {
     private var refreshToken: String?
 
     private init() {
-        // TODO: Configure from environment or build settings
-        self.baseURL = URL(string: "http://localhost:3001/v1")!
+        self.baseURL = AppConfig.apiBaseURL
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 120
