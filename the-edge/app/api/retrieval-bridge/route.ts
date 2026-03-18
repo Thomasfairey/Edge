@@ -13,6 +13,7 @@ import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildRetrievalBridgePrompt } from "@/lib/prompts/retrieval-bridge";
 import { Concept } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { validateText, ValidationError } from "@/lib/validate";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -32,6 +33,16 @@ async function handlePost(req: NextRequest) {
   if (!userResponse) {
     const question = `Before we begin — in one sentence, what is ${concept.name} and when would you deploy it?`;
     return NextResponse.json({ response: question, ready: false });
+  }
+
+  // Validate user response length
+  try {
+    validateText(userResponse, "userResponse");
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
   }
 
   // Second call — evaluate the user's response via LLM

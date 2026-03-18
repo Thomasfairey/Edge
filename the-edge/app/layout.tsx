@@ -34,7 +34,7 @@ function ServiceWorkerScript() {
   return (
     <script
       dangerouslySetInnerHTML={{
-        __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(sw){sw.unregister()})});caches.keys().then(function(k){k.forEach(function(c){caches.delete(c)})})}`,
+        __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){})}`,
       }}
     />
   );

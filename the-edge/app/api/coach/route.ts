@@ -14,6 +14,7 @@ import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildCoachPrompt } from "@/lib/prompts/coach";
 import { Concept, Message } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { validateTranscript, ValidationError } from "@/lib/validate";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -22,6 +23,15 @@ async function handlePost(req: NextRequest) {
       { error: "Missing required fields: transcript, concept" },
       { status: 400 }
     );
+  }
+
+  try {
+    body.transcript = validateTranscript(body.transcript);
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
   }
 
   const { transcript, concept } = body as {

@@ -19,6 +19,7 @@ import { buildDebriefPrompt } from "@/lib/prompts/debrief";
 import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
 import { CharacterArchetype, Concept, Message, SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { validateTranscript, ValidationError } from "@/lib/validate";
 
 export const maxDuration = 60;
 
@@ -126,13 +127,23 @@ async function handlePost(req: NextRequest) {
     );
   }
 
-  const { transcript, concept, character, commandsUsed, checkinContext } = body as {
-    transcript: Message[];
+  let validatedTranscript: Message[];
+  try {
+    validatedTranscript = validateTranscript(body.transcript);
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
+  }
+
+  const { concept, character, commandsUsed, checkinContext } = body as {
     concept: Concept;
     character: CharacterArchetype;
     commandsUsed: string[];
     checkinContext?: string;
   };
+  const transcript = validatedTranscript;
 
   try {
     const [ledgerCount, serialisedLedger] = await Promise.all([

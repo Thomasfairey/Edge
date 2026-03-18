@@ -34,6 +34,11 @@ async function handler(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Empty audio file" }, { status: 400 });
   }
 
+  // Limit audio size to 10MB to prevent abuse
+  if (audioBlob.size > 10 * 1024 * 1024) {
+    return NextResponse.json({ error: "Audio file too large (max 10MB)" }, { status: 400 });
+  }
+
   try {
     // Use ElevenLabs Speech-to-Text (Scribe)
     const form = new FormData();
@@ -53,15 +58,15 @@ async function handler(req: NextRequest): Promise<Response> {
     );
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
+      const errorText = await response.text().catch(() => "");
       console.error(`[stt] ElevenLabs error ${response.status}: ${errorText}`);
       if (response.status === 401) {
         console.error("[stt] API key missing speech_to_text permission — regenerate key in ElevenLabs dashboard");
       }
       return NextResponse.json(
         { error: response.status === 401
-          ? "Voice transcription not configured — API key needs STT permission"
-          : `Transcription failed: ${response.status}` },
+          ? "Voice transcription not configured"
+          : "Transcription service unavailable" },
         { status: 502 }
       );
     }

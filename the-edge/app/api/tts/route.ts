@@ -15,6 +15,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { getVoiceForCharacter, ELEVENLABS_MODEL } from "@/lib/voice-map";
 
+const MAX_TTS_LENGTH = 5000;
+
 async function handler(req: NextRequest): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
@@ -37,6 +39,10 @@ async function handler(req: NextRequest): Promise<Response> {
 
   if (!text || typeof text !== "string" || text.trim().length === 0) {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
+  }
+
+  if (text.length > MAX_TTS_LENGTH) {
+    return NextResponse.json({ error: "text exceeds maximum length" }, { status: 400 });
   }
 
   // Clean text for more natural speech
@@ -76,10 +82,10 @@ async function handler(req: NextRequest): Promise<Response> {
     );
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
+      const errorText = await response.text().catch(() => "");
       console.error(`[tts] ElevenLabs error ${response.status}: ${errorText}`);
       return NextResponse.json(
-        { error: `ElevenLabs API error: ${response.status}` },
+        { error: response.status === 401 ? "TTS service authentication failed" : "TTS service unavailable" },
         { status: 502 }
       );
     }
