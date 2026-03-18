@@ -143,6 +143,7 @@ Edge/
 - `POST /v1/session/lesson` — Phase 1 (streaming)
 - `POST /v1/session/roleplay` — Phase 2 (streaming)
 - `POST /v1/session/coach` — /coach command
+- `POST /v1/session/retrieval` — Retrieval bridge (active recall gate)
 - `POST /v1/session/debrief` — Phase 3
 - `POST /v1/session/mission` — Phase 4
 - `GET  /v1/profile` — User profile
@@ -224,26 +225,26 @@ Each score level (1-5) per dimension gets:
 
 ### Phase 0: Foundation (Weeks 1-3)
 - [x] Architecture document
-- [ ] Backend project scaffold (Hono + TypeScript)
-- [ ] Database schema v2 with RLS
-- [ ] Authentication system (Supabase Auth)
-- [ ] User profile management
-- [ ] Migrate core API routes from Next.js
-- [ ] Input validation (Zod schemas)
-- [ ] Error handling middleware
-- [ ] Rate limiting (per-user)
-- [ ] Structured logging
-- [ ] Unit tests for services
+- [x] Backend project scaffold (Hono + TypeScript)
+- [x] Database schema v2 with RLS (6 tables, full RLS policies, auto-triggers)
+- [x] Authentication system (Supabase Auth — signup, login, Apple Sign-In, refresh)
+- [x] User profile management (CRUD + onboarding flow)
+- [x] Migrate core API routes from Next.js (all 5 phases + retrieval bridge)
+- [x] Input validation (Zod schemas for all endpoints)
+- [x] Error handling middleware (custom error hierarchy, global handler)
+- [x] Rate limiting (per-user sliding window)
+- [x] Structured logging (request logging middleware)
+- [x] Unit tests for services (89 unit tests across 8 files)
 
 ### Phase 1: Quality & Content (Weeks 4-6)
-- [ ] Scoring calibration (rubric-anchored)
+- [x] Scoring calibration (rubric-anchored with explicit 1-5 criteria per dimension)
 - [ ] Self-assessment step
-- [ ] Expand to 12+ characters
-- [ ] Dynamic scenario generation
+- [x] Expand to 12+ characters (12 archetypes with full personalities)
+- [x] Dynamic scenario generation (domain-character mapping, random selection)
 - [ ] Adaptive difficulty
-- [ ] Reliability hardening (retries, fallbacks)
-- [ ] Session persistence (DB, not localStorage)
-- [ ] Integration tests
+- [x] Reliability hardening (retries, fallbacks, timeouts per phase)
+- [x] Session persistence (DB via Supabase with RLS)
+- [x] Integration tests (10 tests covering health, auth, route protection)
 
 ### Phase 2: iOS MVP (Weeks 7-12)
 - [ ] Xcode project + SwiftUI scaffold
