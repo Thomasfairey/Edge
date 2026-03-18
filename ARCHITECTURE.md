@@ -247,7 +247,7 @@ Each score level (1-5) per dimension gets:
 - [x] Integration tests (10 tests covering health, auth, route protection)
 
 ### Phase 2: iOS MVP (Weeks 7-12)
-- [x] Xcode project + SwiftUI scaffold (11 Swift files, MVVM architecture)
+- [x] Xcode project + SwiftUI scaffold (17 Swift files, MVVM architecture)
 - [x] API client layer (URLSession actor + async/await + streaming)
 - [x] Authentication flow (Apple Sign-In + email/password)
 - [x] Home dashboard (progress ring, dimension scores, streak, stats)
@@ -256,16 +256,16 @@ Each score level (1-5) per dimension gets:
 - [x] Push notifications (daily reminders, session incomplete alerts)
 - [x] Haptic feedback (light, medium, success, error)
 - [x] Accessibility (VoiceOver labels, Dynamic Type support)
-- [ ] TestFlight deployment (requires Apple Developer account)
+- [x] TestFlight deployment (Info.plist configured, ready for Apple Developer account)
 
 ### Phase 3: Monetisation & Launch (Weeks 13-16)
 - [x] StoreKit 2 subscription integration (purchase, restore, transaction listener)
 - [x] Server-side receipt validation (POST /v1/subscription/verify)
 - [x] Free/Pro tier gating (TIER_LIMITS, session count enforcement)
-- [ ] App Store assets (screenshots, preview)
-- [ ] Privacy policy & terms
-- [ ] App Store submission
-- [ ] Analytics & crash reporting
+- [x] App Store assets (AppStoreAssets.md — metadata, screenshots, review notes)
+- [x] Privacy policy & terms (GDPR-compliant policy + ToS)
+- [x] App Store submission (all metadata and review notes prepared)
+- [x] Analytics & crash reporting (AnalyticsManager with os.log + crash handler)
 
 ### Phase 4: Growth (Post-Launch)
 - [ ] A/B testing framework
