@@ -6,7 +6,7 @@
  * Tiimo-inspired: warm cream, soft purple accent, DM Sans, generous whitespace.
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { SessionScores, LedgerEntry } from "@/lib/types";
 import Onboarding from "./components/Onboarding";
@@ -77,7 +77,13 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative mx-auto" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className={`rotate-[-90deg] ${hasData && average >= 4.0 ? "ring-glow" : ""}`}>
+        <svg
+          width={size}
+          height={size}
+          className={`rotate-[-90deg] ${hasData && average >= 4.0 ? "ring-glow" : ""}`}
+          role="img"
+          aria-label={hasData ? `Overall score: ${average.toFixed(1)} out of 5` : "No score data yet"}
+        >
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -117,7 +123,7 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
               color: average >= 4.0 ? "#5A52E0" : average >= 3.0 ? "#6B4F00" : "#611414",
             }}
           >
-            {average >= 4.0 && <span>&#9733;</span>}
+            {average >= 4.0 && <span aria-hidden="true">&#9733;</span>}
             {averageDescriptor(average)}
           </span>
           {average < 3 && (
@@ -149,12 +155,20 @@ export default function Home() {
   const expandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
+  // Cleanup expand timeout on unmount
   useEffect(() => {
-    setOnline(navigator.onLine);
+    return () => {
+      if (expandTimeout.current) clearTimeout(expandTimeout.current);
+    };
+  }, []);
+
+  useEffect(() => {
     const goOnline = () => setOnline(true);
     const goOffline = () => setOnline(false);
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
+    // Sync initial state via microtask to avoid synchronous setState in effect
+    queueMicrotask(() => setOnline(navigator.onLine));
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
@@ -162,25 +176,29 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) {
-          setHasIncompleteSession(true);
-        } else {
-          localStorage.removeItem(SESSION_STORAGE_KEY);
+    // Use microtask to avoid synchronous setState in effect
+    queueMicrotask(() => {
+      try {
+        const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+        if (raw) {
+          const s = JSON.parse(raw);
+          if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) {
+            setHasIncompleteSession(true);
+          } else {
+            localStorage.removeItem(SESSION_STORAGE_KEY);
+          }
         }
-      }
-    } catch {}
+      } catch { /* localStorage unavailable */ }
+    });
   }, []);
 
   useEffect(() => {
-    fetch("/api/status")
+    const controller = new AbortController();
+    fetch("/api/status", { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
         setStatus(data);
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
 
         // Show onboarding if no sessions and not previously completed
         if (!data.lastEntry) {
@@ -188,16 +206,28 @@ export default function Home() {
             if (!localStorage.getItem("edge-onboarding-complete")) {
               setShowOnboarding(true);
             }
-          } catch {}
+          } catch { /* localStorage unavailable */ }
         }
       })
       .catch(() => {
         try {
           const cached = localStorage.getItem(CACHE_KEY);
           if (cached) setStatus(JSON.parse(cached));
-        } catch {}
+        } catch { /* localStorage unavailable */ }
       })
       .finally(() => setLoading(false));
+
+    return () => controller.abort();
+  }, []);
+
+  // Score circle expand handler — clears previous timeout to prevent leaks
+  const handleScoreCircleClick = useCallback((key: string) => {
+    if (expandTimeout.current) clearTimeout(expandTimeout.current);
+    setExpandedDim((prev) => {
+      if (prev === key) return null;
+      expandTimeout.current = setTimeout(() => setExpandedDim(null), 4000);
+      return key;
+    });
   }, []);
 
   const dayNumber = status?.dayNumber ?? 1;
@@ -236,11 +266,11 @@ export default function Home() {
           <p className="mt-1 text-sm font-medium tracking-wide text-[#5A52E0]/60 uppercase">
             Daily influence training
           </p>
-          <p className="mt-2 text-base text-primary font-medium">
+          <p className="mt-2 text-base text-primary font-medium" aria-live="polite">
             {loading ? "\u2014" : (
               <>
                 Day {dayNumber}
-                {streakCount > 0 && <> &middot; <span className="text-score-mid animate-count-up">&#128293; {streakCount}-day streak</span></>}
+                {streakCount > 0 && <> &middot; <span className="text-score-mid animate-count-up" aria-label={`${streakCount} day streak`}>&#128293; {streakCount}-day streak</span></>}
               </>
             )}
           </p>
@@ -250,7 +280,11 @@ export default function Home() {
         <ProgressRing average={average} hasData={hasData} />
 
         {/* Score circles row */}
-        <div className="flex w-full items-start justify-center gap-3 sm:gap-5 overflow-x-auto px-2">
+        <div
+          className="flex w-full items-start justify-center gap-3 sm:gap-5 overflow-x-auto px-2"
+          role="group"
+          aria-label="Score dimensions"
+        >
           {DIMENSIONS.map(({ key, label, fullName, description }) => {
             const score = latestScores ? latestScores[key] : null;
             const isExpanded = expandedDim === key;
@@ -258,16 +292,8 @@ export default function Home() {
               <div key={key} className="flex flex-col items-center gap-1.5 min-w-0">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (expandTimeout.current) clearTimeout(expandTimeout.current);
-                    if (isExpanded) {
-                      setExpandedDim(null);
-                    } else {
-                      setExpandedDim(key);
-                      expandTimeout.current = setTimeout(() => setExpandedDim(null), 4000);
-                    }
-                  }}
-                  className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold transition-all"
+                  onClick={() => handleScoreCircleClick(key)}
+                  className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
                   style={{
                     backgroundColor: score !== null ? scoreCircleColor(score) : "#E0DED8",
                     color: score !== null ? scoreTextColor(score) : "#8E8C99",
@@ -279,12 +305,16 @@ export default function Home() {
                     opacity: score !== null && score <= 2 ? 0.85 : 1,
                   }}
                   aria-label={`${fullName}: ${score !== null ? score + " out of 5" : "no score yet"}`}
+                  aria-expanded={isExpanded}
                 >
                   {score !== null ? score : "\u2013"}
                 </button>
                 <span className="text-[10px] text-secondary">{label}</span>
                 {isExpanded && (
-                  <div className="animate-fade-in-up w-36 rounded-2xl bg-white p-3 text-center shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+                  <div
+                    className="animate-fade-in-up w-36 rounded-2xl bg-white p-3 text-center shadow-[0_2px_12px_rgba(0,0,0,0.08)]"
+                    role="tooltip"
+                  >
                     <p className="text-xs font-semibold text-primary">{fullName}</p>
                     <p className="mt-1 text-[11px] leading-tight text-secondary">{description}</p>
                   </div>
@@ -308,25 +338,25 @@ export default function Home() {
 
         {/* Resume session card */}
         {hasIncompleteSession && (
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]" role="region" aria-label="Resume session">
             <p className="mb-1 text-sm font-medium text-primary">Session in progress</p>
             <p className="mb-5 text-sm text-secondary">You have an unfinished session. Pick up where you left off?</p>
             <div className="flex gap-3">
               <button
                 onClick={() => { if (online) router.push("/session"); }}
                 disabled={!online}
-                className="flex-1 rounded-2xl bg-[#5A52E0] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                className="flex-1 rounded-2xl bg-[#5A52E0] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
               >
                 Resume
               </button>
               <button
                 onClick={() => {
-                  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
+                  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* ok */ }
                   setHasIncompleteSession(false);
                   if (online) router.push("/session");
                 }}
                 disabled={!online}
-                className="flex-1 rounded-2xl border border-[#F0EDE8] bg-white py-3.5 text-sm font-semibold text-primary transition-transform active:scale-[0.97] disabled:opacity-40"
+                className="flex-1 rounded-2xl border border-[#F0EDE8] bg-white py-3.5 text-sm font-semibold text-primary transition-transform active:scale-[0.97] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
               >
                 Start fresh
               </button>
@@ -339,7 +369,7 @@ export default function Home() {
           <button
             onClick={() => { if (online) router.push("/session"); }}
             disabled={!online}
-            className="w-full max-w-sm rounded-2xl bg-[#5A52E0] px-10 py-5 text-lg font-bold text-white disabled:opacity-40 shadow-[0_4px_20px_rgba(90,82,224,0.25)] transition-shadow hover:shadow-[0_6px_28px_rgba(90,82,224,0.35)]"
+            className="w-full max-w-sm rounded-2xl bg-[#5A52E0] px-10 py-5 text-lg font-bold text-white disabled:opacity-40 shadow-[0_4px_20px_rgba(90,82,224,0.25)] transition-shadow hover:shadow-[0_6px_28px_rgba(90,82,224,0.35)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
           >
             {online ? "Begin today\u2019s session" : "Offline"}
           </button>

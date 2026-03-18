@@ -17,7 +17,14 @@ import { generateResponseViaStream, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildDebriefPrompt } from "@/lib/prompts/debrief";
 import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
-import { CharacterArchetype, Concept, Message, SessionScores } from "@/lib/types";
+import {
+  CharacterArchetype,
+  Concept,
+  Message,
+  SessionScores,
+  validateTranscript,
+  clampScore,
+} from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 
 export const maxDuration = 60;
@@ -39,8 +46,8 @@ function computeFallbackScores(
   transcript: Message[],
   commandsUsed: string[]
 ): SessionScores {
-  const turnCount = transcript.length;
   const userTurns = transcript.filter((t) => t.role === "user").length;
+  const turnCount = transcript.length;
   const usedCoach = commandsUsed.includes("/coach");
   const usedSkip = commandsUsed.includes("/skip");
 
@@ -62,6 +69,7 @@ function computeFallbackScores(
 
 /**
  * Parse the ---SCORES--- block from debrief output.
+ * Uses clampScore to ensure all values are valid 1-5.
  */
 function parseScores(text: string): SessionScores {
   const scoresMatch = text.match(/---SCORES---\s*([\s\S]*?)(?:---LEDGER---|$)/);
@@ -73,10 +81,9 @@ function parseScores(text: string): SessionScores {
   const block = scoresMatch[1];
 
   const extract = (key: string): number => {
-    const match = block.match(new RegExp(`${key}:\\s*(\\d)`));
+    const match = block.match(new RegExp(`${key}:\\s*(\\d+)`));
     if (!match) return 3;
-    const val = parseInt(match[1], 10);
-    return val >= 1 && val <= 5 ? val : 3;
+    return clampScore(parseInt(match[1], 10));
   };
 
   return {
@@ -126,13 +133,25 @@ async function handlePost(req: NextRequest) {
     );
   }
 
-  const { transcript, concept, character, commandsUsed, checkinContext } = body as {
-    transcript: Message[];
+  // Validate transcript
+  const transcript = validateTranscript(body.transcript);
+  if (!transcript) {
+    return NextResponse.json(
+      { error: "Invalid transcript format" },
+      { status: 400 }
+    );
+  }
+
+  const { concept, character, commandsUsed, checkinContext } = body as {
     concept: Concept;
     character: CharacterArchetype;
     commandsUsed: string[];
     checkinContext?: string;
   };
+
+  const safeCommandsUsed = Array.isArray(commandsUsed)
+    ? commandsUsed.filter((c) => typeof c === "string").slice(0, 20)
+    : [];
 
   try {
     const [ledgerCount, serialisedLedger] = await Promise.all([
@@ -165,7 +184,7 @@ async function handlePost(req: NextRequest) {
     console.log(
       `[debrief] Scores: TA=${scores.technique_application} TW=${scores.tactical_awareness} FC=${scores.frame_control} ER=${scores.emotional_regulation} SO=${scores.strategic_outcome}`
     );
-    console.log(`[debrief] Commands used: ${(commandsUsed || []).join(", ") || "none"}`);
+    console.log(`[debrief] Commands used: ${safeCommandsUsed.join(", ") || "none"}`);
 
     return NextResponse.json({
       debriefContent,
@@ -177,7 +196,7 @@ async function handlePost(req: NextRequest) {
     console.error("[debrief] Error:", error);
 
     // Fallback: compute scores from transcript data
-    const fallbackScores = computeFallbackScores(transcript, commandsUsed || []);
+    const fallbackScores = computeFallbackScores(transcript, safeCommandsUsed);
     return NextResponse.json({
       debriefContent: "Debrief generation failed. Scores have been estimated from your session activity.",
       scores: fallbackScores,

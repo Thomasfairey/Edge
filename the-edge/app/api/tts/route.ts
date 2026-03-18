@@ -15,6 +15,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { getVoiceForCharacter, ELEVENLABS_MODEL } from "@/lib/voice-map";
 
+const MAX_TTS_LENGTH = 5000; // ElevenLabs has a 5000 char limit per request
+
 async function handler(req: NextRequest): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
@@ -41,10 +43,14 @@ async function handler(req: NextRequest): Promise<Response> {
 
   // Clean text for more natural speech
   const cleaned = text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")   // remove bold markdown
-    .replace(/[#_~`]/g, "")               // remove markdown chars
-    .replace(/\n+/g, " ")                 // newlines to spaces
-    .trim();
+    .replace(/\*\*([^*]+)\*\*/g, "$1")     // remove bold markdown
+    .replace(/\*([^*]+)\*/g, "$1")          // remove italic markdown
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links → text only
+    .replace(/[#_~`]/g, "")                 // remove markdown chars
+    .replace(/\n+/g, " ")                   // newlines to spaces
+    .replace(/\s{2,}/g, " ")               // collapse whitespace
+    .trim()
+    .slice(0, MAX_TTS_LENGTH);              // enforce length limit
 
   if (cleaned.length === 0) {
     return NextResponse.json({ error: "text is empty after cleaning" }, { status: 400 });

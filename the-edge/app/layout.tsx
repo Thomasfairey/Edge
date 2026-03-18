@@ -1,16 +1,13 @@
 /**
- * Root layout — warm cream PWA shell with DM Sans font.
+ * Root layout — warm cream PWA shell.
  * Tiimo-inspired design: soft, rounded, colourful.
+ *
+ * Uses system font stack with DM Sans as preferred (loaded via CSS)
+ * to avoid build failures when Google Fonts is unreachable.
  */
 
 import type { Metadata, Viewport } from "next";
-import { DM_Sans } from "next/font/google";
 import "./globals.css";
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -30,16 +27,6 @@ export const metadata: Metadata = {
   },
 };
 
-function ServiceWorkerScript() {
-  return (
-    <script
-      dangerouslySetInnerHTML={{
-        __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(sw){sw.unregister()})});caches.keys().then(function(k){k.forEach(function(c){caches.delete(c)})})}`,
-      }}
-    />
-  );
-}
-
 export default function RootLayout({
   children,
 }: {
@@ -49,10 +36,19 @@ export default function RootLayout({
     <html lang="en" style={{ backgroundColor: "#FAF9F6", colorScheme: "light" }}>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"
+        />
       </head>
-      <body className={`${dmSans.className} bg-background text-primary antialiased`} style={{ backgroundColor: "#FAF9F6" }}>
-        {children}
-        <ServiceWorkerScript />
+      <body className="font-sans bg-background text-primary antialiased" style={{ backgroundColor: "#FAF9F6" }}>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-[#5A52E0] focus:px-4 focus:py-2 focus:text-white focus:text-sm">
+          Skip to content
+        </a>
+        <div id="main-content">
+          {children}
+        </div>
       </body>
     </html>
   );

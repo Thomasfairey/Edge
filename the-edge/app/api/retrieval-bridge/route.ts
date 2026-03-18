@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildRetrievalBridgePrompt } from "@/lib/prompts/retrieval-bridge";
-import { Concept } from "@/lib/types";
+import { Concept, truncate } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 
 async function handlePost(req: NextRequest) {
@@ -23,10 +23,8 @@ async function handlePost(req: NextRequest) {
     );
   }
 
-  const { concept, userResponse } = body as {
-    concept: Concept;
-    userResponse?: string;
-  };
+  const concept = body.concept as Concept;
+  const userResponse = body.userResponse ? truncate(body.userResponse, 5000) : undefined;
 
   // First call — return the question without an LLM call
   if (!userResponse) {
@@ -34,19 +32,28 @@ async function handlePost(req: NextRequest) {
     return NextResponse.json({ response: question, ready: false });
   }
 
-  // Second call — evaluate the user's response via LLM
-  const retrievalPrompt = buildRetrievalBridgePrompt(concept);
-  const systemPrompt = `${await buildPersistentContext()}\n\n${retrievalPrompt}`;
+  try {
+    // Second call — evaluate the user's response via LLM
+    const retrievalPrompt = buildRetrievalBridgePrompt(concept);
+    const systemPrompt = `${await buildPersistentContext()}\n\n${retrievalPrompt}`;
 
-  const rawResponse = await generateResponse(
-    systemPrompt,
-    [{ role: "user", content: userResponse }],
-    PHASE_CONFIG.checkin
-  );
+    const rawResponse = await generateResponse(
+      systemPrompt,
+      [{ role: "user", content: userResponse }],
+      PHASE_CONFIG.checkin
+    );
 
-  const ready = rawResponse.includes("Let's go.");
+    // Use case-insensitive check with boundary matching to avoid false positives
+    const ready = /let['']?s go\./i.test(rawResponse);
 
-  return NextResponse.json({ response: rawResponse, ready });
+    return NextResponse.json({ response: rawResponse, ready });
+  } catch (error) {
+    console.error("[retrieval-bridge] Error:", error);
+    return NextResponse.json(
+      { error: "Retrieval evaluation failed. Please try again." },
+      { status: 500 }
+    );
+  }
 }
 
 export const POST = withRateLimit(handlePost, 10);

@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildCoachPrompt } from "@/lib/prompts/coach";
-import { Concept, Message } from "@/lib/types";
+import { Concept, Message, validateTranscript } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 
 async function handlePost(req: NextRequest) {
@@ -24,20 +24,33 @@ async function handlePost(req: NextRequest) {
     );
   }
 
-  const { transcript, concept } = body as {
-    transcript: Message[];
-    concept: Concept;
-  };
+  const transcript = validateTranscript(body.transcript);
+  if (!transcript) {
+    return NextResponse.json(
+      { error: "Invalid transcript format" },
+      { status: 400 }
+    );
+  }
 
-  const systemPrompt = buildCoachPrompt(transcript, concept);
+  const concept = body.concept as Concept;
 
-  const advice = await generateResponse(
-    systemPrompt,
-    [{ role: "user", content: "What are my best moves right now?" }],
-    PHASE_CONFIG.coach
-  );
+  try {
+    const systemPrompt = buildCoachPrompt(transcript as Message[], concept);
 
-  return NextResponse.json({ advice });
+    const advice = await generateResponse(
+      systemPrompt,
+      [{ role: "user", content: "What are my best moves right now?" }],
+      PHASE_CONFIG.coach
+    );
+
+    return NextResponse.json({ advice });
+  } catch (error) {
+    console.error("[coach] Error:", error);
+    return NextResponse.json(
+      { error: "Coach assist failed. Please try again." },
+      { status: 500 }
+    );
+  }
 }
 
 export const POST = withRateLimit(handlePost, 10);
