@@ -72,7 +72,7 @@ async function handlePost(req: NextRequest) {
   // Generate the mission
   const serialisedLedger = await serialiseForPrompt();
   const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
-  const systemPrompt = `${buildPersistentContext()}\n\n${missionPrompt}`;
+  const systemPrompt = `${await buildPersistentContext()}\n\n${missionPrompt}`;
 
   const rawMission = await generateResponse(
     systemPrompt,
