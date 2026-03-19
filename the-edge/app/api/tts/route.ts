@@ -39,6 +39,11 @@ async function handler(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
   }
 
+  // Limit text length to prevent abuse — max 5000 chars (~2 minutes of speech)
+  if (text.length > 5000) {
+    return NextResponse.json({ error: "text too long (max 5000 characters)" }, { status: 400 });
+  }
+
   // Clean text for more natural speech
   const cleaned = text
     .replace(/\*\*([^*]+)\*\*/g, "$1")   // remove bold markdown

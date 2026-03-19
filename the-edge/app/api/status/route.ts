@@ -7,9 +7,8 @@
 import { NextResponse } from "next/server";
 import { getLedger, getLastEntry, getLedgerCount } from "@/lib/ledger";
 import { getSRSummary } from "@/lib/spaced-repetition";
-import { SessionScores } from "@/lib/types";
+import type { SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { NextRequest } from "next/server";
 
 function calculateStreak(entries: { date: string }[]): number {
   if (entries.length === 0) return 0;
@@ -78,6 +77,6 @@ async function handleGet() {
 }
 
 export const GET = withRateLimit(
-  (_req: NextRequest) => handleGet(),
+  () => handleGet(),
   20
 );

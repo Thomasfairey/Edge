@@ -8,15 +8,18 @@ interface RateLimitEntry {
 }
 
 const store = new Map<string, RateLimitEntry>();
+let lastCleanup = Date.now();
 
-// Cleanup old entries every 5 minutes
-setInterval(() => {
+/** Cleanup stale entries lazily on each check — safe for serverless */
+function cleanupIfNeeded() {
   const now = Date.now();
+  if (now - lastCleanup < 60_000) return; // At most once per minute
+  lastCleanup = now;
   for (const [key, entry] of store) {
     entry.timestamps = entry.timestamps.filter((t) => now - t < 120_000);
     if (entry.timestamps.length === 0) store.delete(key);
   }
-}, 300_000);
+}
 
 /**
  * Check rate limit for a given key.
@@ -29,6 +32,7 @@ export function checkRateLimit(
   limit: number,
   windowMs: number = 60_000
 ): { success: boolean; remaining: number; retryAfter: number } {
+  cleanupIfNeeded();
   const now = Date.now();
   const entry = store.get(key) ?? { timestamps: [] };
 

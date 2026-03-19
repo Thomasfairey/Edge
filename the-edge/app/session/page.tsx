@@ -151,9 +151,10 @@ async function fetchWithRetry(
 }
 
 function useOnlineStatus() {
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
   useEffect(() => {
-    setOnline(navigator.onLine);
     const on = () => setOnline(true);
     const off = () => setOnline(false);
     window.addEventListener("online", on);
@@ -175,15 +176,16 @@ function PhaseIndicator({
   completed: Set<SessionPhase>;
 }) {
   return (
-    <div className="flex-shrink-0 z-50 bg-[var(--background)] pt-3 pb-2 border-b border-[#F0EDE8]">
-      <div className="flex items-center justify-center gap-5">
+    <nav aria-label="Session progress" className="flex-shrink-0 z-50 bg-[var(--background)] pt-3 pb-2 border-b border-[#F0EDE8]">
+      <div className="flex items-center justify-center gap-5" role="list">
         {PHASES.map((p) => {
           const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
           const isDone = completed.has(p.key);
 
           return (
-            <div key={p.key} className="flex flex-col items-center gap-1.5" style={{ minWidth: 44 }}>
+            <div key={p.key} className="flex flex-col items-center gap-1.5" style={{ minWidth: 44 }} role="listitem" aria-current={isActive ? "step" : undefined}>
               <div
+                aria-hidden="true"
                 className={`rounded-full ${isActive ? "phase-dot-active" : ""}`}
                 style={{
                   width: isActive ? 14 : 10,
@@ -202,13 +204,13 @@ function PhaseIndicator({
                 {p.label}
               </span>
               {isDone && (
-                <div className="h-0.5 w-3 rounded-full -mt-0.5" style={{ backgroundColor: p.color }} />
+                <div className="h-0.5 w-3 rounded-full -mt-0.5" style={{ backgroundColor: p.color }} aria-hidden="true" />
               )}
             </div>
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 }
 
@@ -698,26 +700,23 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
 // Confetti component
 // ---------------------------------------------------------------------------
 
+// Deterministic positions to avoid Math.random during render
+const CONFETTI_POSITIONS = [12, 25, 38, 50, 62, 75, 88, 20, 45, 70];
+const CONFETTI_DELAYS = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.04, 0.08];
+
 function Confetti() {
   const colors = ["#B8D4E3", "#F2C4C4", "#C5B8E8", "#B8E0C8"];
-  const dots = Array.from({ length: 10 }, (_, i) => ({
-    id: i,
-    color: colors[i % colors.length],
-    left: `${10 + Math.random() * 80}%`,
-    delay: `${Math.random() * 0.4}s`,
-  }));
-
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {dots.map((dot) => (
+      {CONFETTI_POSITIONS.map((pos, i) => (
         <div
-          key={dot.id}
+          key={i}
           className="confetti-dot"
           style={{
-            backgroundColor: dot.color,
-            left: dot.left,
+            backgroundColor: colors[i % colors.length],
+            left: `${pos}%`,
             bottom: "40%",
-            animationDelay: dot.delay,
+            animationDelay: `${CONFETTI_DELAYS[i]}s`,
           }}
         />
       ))}
@@ -1005,7 +1004,6 @@ export default function SessionPage() {
         fetchLesson();
       })
       .catch(() => { fetchLesson(); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -2193,7 +2191,8 @@ export default function SessionPage() {
                       Session complete &#10003;
                     </button>
                   ) : (
-                    <div className="animate-fade-in-up space-y-5">
+                    <div className="animate-fade-in-up space-y-5 relative">
+                      <Confetti />
                       {/* Enhanced completion card */}
                       <div className="rounded-3xl p-6 shadow-[var(--shadow-soft)] animate-celebrate" style={{ backgroundColor: "#E8F5ED" }}>
                         <p className="mb-1 text-center text-xl font-semibold text-primary">

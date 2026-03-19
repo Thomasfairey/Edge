@@ -41,6 +41,20 @@ async function handlePost(req: NextRequest) {
       scenarioContext?: string;
     };
 
+  // Input validation: limit transcript size and message length
+  if (Array.isArray(transcript) && transcript.length > 50) {
+    return NextResponse.json(
+      { error: "Transcript too long (max 50 turns)" },
+      { status: 400 }
+    );
+  }
+  if (userMessage && typeof userMessage === "string" && userMessage.length > 5000) {
+    return NextResponse.json(
+      { error: "Message too long (max 5000 characters)" },
+      { status: 400 }
+    );
+  }
+
   // Generate or reuse scenario context
   const scenario = scenarioContext ?? buildScenarioContext(concept, character);
 

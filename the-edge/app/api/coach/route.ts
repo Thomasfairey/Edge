@@ -29,6 +29,13 @@ async function handlePost(req: NextRequest) {
     concept: Concept;
   };
 
+  if (Array.isArray(transcript) && transcript.length > 50) {
+    return NextResponse.json(
+      { error: "Transcript too long (max 50 turns)" },
+      { status: 400 }
+    );
+  }
+
   const systemPrompt = buildCoachPrompt(transcript, concept);
 
   const advice = await generateResponse(

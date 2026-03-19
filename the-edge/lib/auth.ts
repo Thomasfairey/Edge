@@ -18,13 +18,12 @@ export function checkAuth(req: NextRequest): NextResponse | null {
   // If no key is configured, all requests pass
   if (!requiredKey) return null;
 
+  // Only accept API key via header — never via URL to prevent leaking in logs/referers
   const headerKey = req.headers.get("x-api-key");
-  const urlKey = new URL(req.url).searchParams.get("key");
-  const providedKey = headerKey || urlKey;
 
-  if (!providedKey || providedKey !== requiredKey) {
+  if (!headerKey || headerKey !== requiredKey) {
     return NextResponse.json(
-      { error: "Unauthorized. Provide a valid API key." },
+      { error: "Unauthorized. Provide a valid API key via X-API-Key header." },
       { status: 401 }
     );
   }

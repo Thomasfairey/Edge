@@ -42,7 +42,6 @@ async function handlePost(req: NextRequest) {
     behavioralWeaknessSummary,
     keyMoment,
     commandsUsed,
-    checkinOutcome,
   } = body as {
     concept: Concept;
     character: CharacterArchetype;
@@ -50,13 +49,12 @@ async function handlePost(req: NextRequest) {
     behavioralWeaknessSummary: string;
     keyMoment: string;
     commandsUsed: string[];
-    checkinOutcome: string | null;
   };
 
   // Generate the mission
   const serialisedLedger = await serialiseForPrompt();
   const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
-  const systemPrompt = `${buildPersistentContext()}\n\n${missionPrompt}`;
+  const systemPrompt = `${await buildPersistentContext()}\n\n${missionPrompt}`;
 
   const rawMission = await generateResponse(
     systemPrompt,

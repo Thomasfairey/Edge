@@ -5,6 +5,7 @@
 
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
+import ErrorBoundary from "./components/ErrorBoundary";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -30,7 +31,8 @@ export const metadata: Metadata = {
   },
 };
 
-function ServiceWorkerScript() {
+/** Clean up legacy service workers and stale caches from earlier PWA builds. */
+function LegacySwCleanup() {
   return (
     <script
       dangerouslySetInnerHTML={{
@@ -51,8 +53,18 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className={`${dmSans.className} bg-background text-primary antialiased`} style={{ backgroundColor: "#FAF9F6" }}>
-        {children}
-        <ServiceWorkerScript />
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:rounded-xl focus:bg-[#5A52E0] focus:px-4 focus:py-2 focus:text-white focus:text-sm focus:font-semibold"
+        >
+          Skip to content
+        </a>
+        <ErrorBoundary>
+          <div id="main-content">
+            {children}
+          </div>
+        </ErrorBoundary>
+        <LegacySwCleanup />
       </body>
     </html>
   );

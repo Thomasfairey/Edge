@@ -34,6 +34,11 @@ async function handler(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Empty audio file" }, { status: 400 });
   }
 
+  // Limit file size to 10MB to prevent abuse
+  if (audioBlob.size > 10 * 1024 * 1024) {
+    return NextResponse.json({ error: "Audio file too large (max 10MB)" }, { status: 400 });
+  }
+
   try {
     // Use ElevenLabs Speech-to-Text (Scribe)
     const form = new FormData();
