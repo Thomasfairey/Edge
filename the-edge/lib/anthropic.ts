@@ -30,6 +30,39 @@ const anthropic = new Anthropic({
 export default anthropic;
 
 // ---------------------------------------------------------------------------
+// Token cost tracking — module-level counters (reset on cold start)
+// ---------------------------------------------------------------------------
+
+interface ModelTokenStats {
+  input_tokens: number;
+  output_tokens: number;
+  requests: number;
+}
+
+const tokenStats: Record<string, ModelTokenStats> = {};
+
+function trackTokens(model: string, input: number, output: number) {
+  if (!tokenStats[model]) {
+    tokenStats[model] = { input_tokens: 0, output_tokens: 0, requests: 0 };
+  }
+  tokenStats[model].input_tokens += input;
+  tokenStats[model].output_tokens += output;
+  tokenStats[model].requests += 1;
+}
+
+/**
+ * Returns current session token usage stats per model.
+ * Resets on cold start / redeployment.
+ */
+export function getTokenStats(): Record<string, ModelTokenStats> {
+  const copy: Record<string, ModelTokenStats> = {};
+  for (const [model, stats] of Object.entries(tokenStats)) {
+    copy[model] = { ...stats };
+  }
+  return copy;
+}
+
+// ---------------------------------------------------------------------------
 // Model constants
 // ---------------------------------------------------------------------------
 
@@ -84,7 +117,7 @@ let cbOpenedAt = 0; // timestamp when circuit opened (0 = closed)
 const CB_FAILURE_THRESHOLD = 3;
 const CB_OPEN_DURATION_MS = 30_000;
 
-class CircuitBreakerOpenError extends Error {
+export class CircuitBreakerOpenError extends Error {
   constructor() {
     super(
       "Anthropic API circuit breaker is open — too many consecutive failures. Retry in 30s."
@@ -292,6 +325,10 @@ export function streamResponse(
           }
         }
 
+        // Track tokens (streaming: estimate input from message length)
+        const estimatedInput = Math.ceil(systemPrompt.length / 4) + messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+        trackTokens(config.model, estimatedInput, tokenCount);
+
         logger.info(`${phaseName} | model=${config.model} | ~${tokenCount} tokens`, { phase: "anthropic", model: config.model, tokens: tokenCount });
 
         controller.close();
@@ -299,6 +336,18 @@ export function streamResponse(
         // If aborted by client disconnect, just close cleanly
         if (abortController.signal.aborted) {
           logger.info(`${phaseName} stream cancelled — client disconnected`, { phase: "anthropic" });
+          controller.close();
+          return;
+        }
+
+        // Circuit breaker open — send a clear, retryable message
+        if (error instanceof CircuitBreakerOpenError) {
+          logger.warn(`${phaseName} stream blocked by circuit breaker`, { phase: "anthropic" });
+          controller.enqueue(
+            encoder.encode(
+              "AI is temporarily busy. Please try again in 30 seconds."
+            )
+          );
           controller.close();
           return;
         }
@@ -366,6 +415,10 @@ export async function generateResponseViaStream(
 
     const fullText = chunks.join("");
 
+    // Track tokens (streaming-buffered: estimate input from message length)
+    const estimatedInput = Math.ceil(systemPrompt.length / 4) + messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+    trackTokens(config.model, estimatedInput, tokenCount);
+
     logger.info(`${phaseName} (streamed) | model=${config.model} | ~${tokenCount} tokens`, { phase: "anthropic", model: config.model, tokens: tokenCount });
 
     return fullText;
@@ -406,8 +459,11 @@ export async function generateResponse(
     const textBlock = response.content.find((block) => block.type === "text");
     const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
 
-    const tokenCount = response.usage?.output_tokens ?? Math.ceil(text.length / 4);
-    logger.info(`${phaseName} | model=${config.model} | ${tokenCount} tokens`, { phase: "anthropic", model: config.model, tokens: tokenCount });
+    const inputTokens = response.usage?.input_tokens ?? (Math.ceil(systemPrompt.length / 4) + messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0));
+    const outputTokens = response.usage?.output_tokens ?? Math.ceil(text.length / 4);
+    trackTokens(config.model, inputTokens, outputTokens);
+
+    logger.info(`${phaseName} | model=${config.model} | ${outputTokens} tokens`, { phase: "anthropic", model: config.model, tokens: outputTokens });
 
     return text;
   } catch (error: unknown) {

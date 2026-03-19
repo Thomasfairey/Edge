@@ -11,15 +11,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB — ElevenLabs limit
 
 async function handler(req: NextRequest, _userId: string | null): Promise<Response> {
+  const log = createRequestLogger(req, _userId);
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "ELEVENLABS_API_KEY not configured" },
+      { error: "ELEVENLABS_API_KEY not configured", fallback: "text" },
       { status: 500 }
     );
   }
@@ -71,14 +72,14 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      logger.error(`ElevenLabs error ${response.status}: ${errorText}`, { phase: "stt" });
+      log.error(`ElevenLabs error ${response.status}: ${errorText}`, { phase: "stt" });
       if (response.status === 401) {
-        logger.error("API key missing speech_to_text permission — regenerate key in ElevenLabs dashboard", { phase: "stt" });
+        log.error("API key missing speech_to_text permission — regenerate key in ElevenLabs dashboard", { phase: "stt" });
       }
       return NextResponse.json(
         { error: response.status === 401
           ? "Voice transcription not configured"
-          : "Transcription service unavailable" },
+          : "Transcription service unavailable", fallback: "text" },
         { status: 502 }
       );
     }
@@ -86,13 +87,13 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
     const data = await response.json();
     const text = data.text?.trim() || "";
 
-    logger.info(`transcribed ${audioBlob.size} bytes -> "${text.slice(0, 50)}${text.length > 50 ? "..." : ""}"`, { phase: "stt" });
+    log.info(`transcribed ${audioBlob.size} bytes -> "${text.slice(0, 50)}${text.length > 50 ? "..." : ""}"`, { phase: "stt" });
 
     return NextResponse.json({ text });
   } catch (error) {
-    logger.error(`error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "stt" });
+    log.error(`error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "stt" });
     return NextResponse.json(
-      { error: "Transcription failed" },
+      { error: "Transcription failed", fallback: "text" },
       { status: 502 }
     );
   }

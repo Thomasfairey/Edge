@@ -139,6 +139,16 @@ self.addEventListener("activate", (event) => {
 });
 
 // ---------------------------------------------------------------------------
+// Message — respond to client messages (e.g. update checks)
+// ---------------------------------------------------------------------------
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "CHECK_UPDATE") {
+    // Force the waiting SW to activate immediately
+    self.skipWaiting();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Fetch — network-first, fall back to cache, then offline page
 // ---------------------------------------------------------------------------
 self.addEventListener("fetch", (event) => {

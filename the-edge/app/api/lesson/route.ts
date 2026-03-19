@@ -10,16 +10,17 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateResponse, streamResponse, PHASE_CONFIG } from "@/lib/anthropic";
+import { generateResponse, streamResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
 import { getCompletedConcepts } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, userId: string | null) {
+  const log = createRequestLogger(req, userId);
   const raw: unknown = await req.json().catch(() => ({}));
   if (!raw || typeof raw !== "object") {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
@@ -89,7 +90,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
       return NextResponse.json({ concept, lessonContent, isReview });
     }
   } catch (error) {
-    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "lesson" });
+    if (error instanceof CircuitBreakerOpenError) {
+      return NextResponse.json(
+        { error: "Service temporarily busy", retryAfter: 30 },
+        { status: 503, headers: { "Retry-After": "30" } }
+      );
+    }
+    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "lesson" });
     return NextResponse.json(
       { error: "Lesson generation failed. Please try again." },
       { status: 500 }

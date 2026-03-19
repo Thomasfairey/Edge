@@ -11,6 +11,7 @@
  */
 
 import { CharacterArchetype, Concept, ConceptDomain } from "@/lib/types";
+import { logger } from "@/lib/logger";
 
 export const CHARACTERS: CharacterArchetype[] = [
   // ── 1. The Sceptical Investor ──────────────────────────────────────────
@@ -229,7 +230,7 @@ export function selectCharacter(concept: Concept): CharacterArchetype {
 
   // Guard against empty or missing domain mapping
   if (!appropriateIds || appropriateIds.length === 0) {
-    console.warn(`[characters] No character mapping for domain: ${concept.domain}, using random`);
+    logger.warn(`No character mapping for domain: ${concept.domain}, using random`, { phase: "characters" });
     return CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
   }
 
@@ -239,7 +240,7 @@ export function selectCharacter(concept: Concept): CharacterArchetype {
 
   // Fallback should never fire, but safety first
   if (!character) {
-    console.warn(`[characters] Character ID not found: ${selectedId}, using random`);
+    logger.warn(`Character ID not found: ${selectedId}, using random`, { phase: "characters" });
     return CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
   }
 

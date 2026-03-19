@@ -95,7 +95,7 @@ async function callWithRetry(
         (error instanceof Error && error.message.includes("429"));
 
       if (isRateLimit && !isRetry) {
-        console.warn("[anthropic] Rate limited — retrying in 2s...");
+        console.log(JSON.stringify({ level: "warn", service: "anthropic", message: "Rate limited — retrying in 2s", timestamp: new Date().toISOString() }));
         await new Promise((resolve) => setTimeout(resolve, 2000));
         return attempt(true);
       }
@@ -154,11 +154,11 @@ export function streamResponse(
           }
         }
 
-        console.log(`[anthropic] stream | model=${config.model} | ~${tokenCount} tokens`);
+        console.log(JSON.stringify({ level: "info", service: "anthropic", method: "stream", model: config.model, tokens: tokenCount, timestamp: new Date().toISOString() }));
         controller.close();
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";
-        console.error(`[anthropic] stream error: ${message}`);
+        console.log(JSON.stringify({ level: "error", service: "anthropic", method: "stream", message, timestamp: new Date().toISOString() }));
         controller.enqueue(
           encoder.encode(`\n\n[System: Response generation failed — ${message}. Please try again.]`)
         );
@@ -196,11 +196,11 @@ export async function generateResponseViaStream(
       }
     }
 
-    console.log(`[anthropic] buffered | model=${config.model} | ~${tokenCount} tokens`);
+    console.log(JSON.stringify({ level: "info", service: "anthropic", method: "buffered", model: config.model, tokens: tokenCount, timestamp: new Date().toISOString() }));
     return fullText;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[anthropic] buffered error: ${message}`);
+    console.log(JSON.stringify({ level: "error", service: "anthropic", method: "buffered", message, timestamp: new Date().toISOString() }));
     throw new AIServiceError(message);
   }
 }
@@ -222,11 +222,11 @@ export async function generateResponse(
 
     const text = response.content[0].type === "text" ? response.content[0].text : "";
     const tokenCount = response.usage?.output_tokens ?? Math.ceil(text.length / 4);
-    console.log(`[anthropic] sync | model=${config.model} | ${tokenCount} tokens`);
+    console.log(JSON.stringify({ level: "info", service: "anthropic", method: "sync", model: config.model, tokens: tokenCount, timestamp: new Date().toISOString() }));
     return text;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[anthropic] sync error: ${message}`);
+    console.log(JSON.stringify({ level: "error", service: "anthropic", method: "sync", message, timestamp: new Date().toISOString() }));
     throw new AIServiceError(message);
   }
 }

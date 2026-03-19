@@ -5,18 +5,19 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
+import { generateResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildCheckinPrompt } from "@/lib/prompts/checkin";
 import { updateLastMissionOutcome } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { truncate } from "@/lib/types";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 const VALID_OUTCOME_TYPES = ["completed", "tried", "skipped"] as const;
 
 async function handlePost(req: NextRequest, userId: string | null) {
+  const log = createRequestLogger(req, userId);
   const body = await req.json().catch(() => null);
   if (!body || !body.previousMission || !body.outcomeType) {
     return NextResponse.json(
@@ -89,7 +90,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
 
     return NextResponse.json({ response, type, insight });
   } catch (error) {
-    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "checkin" });
+    if (error instanceof CircuitBreakerOpenError) {
+      return NextResponse.json(
+        { error: "Service temporarily busy", retryAfter: 30 },
+        { status: 503, headers: { "Retry-After": "30" } }
+      );
+    }
+    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "checkin" });
     return NextResponse.json(
       { error: "Check-in failed. Please try again." },
       { status: 500 }

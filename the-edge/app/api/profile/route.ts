@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 async function handleGet(_req: NextRequest, userId: string | null) {
   if (!userId) {
@@ -32,6 +32,7 @@ async function handleGet(_req: NextRequest, userId: string | null) {
 }
 
 async function handlePost(req: NextRequest, userId: string | null) {
+  const log = createRequestLogger(req, userId);
   if (!userId) {
     return NextResponse.json({ error: "User ID required" }, { status: 400 });
   }
@@ -60,7 +61,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     .eq("id", userId);
 
   if (error) {
-    logger.error(`Failed to update: ${error.message}`, { phase: "profile" });
+    log.error(`Failed to update: ${error.message}`, { phase: "profile" });
     return NextResponse.json({ error: "Failed to save profile" }, { status: 500 });
   }
 

@@ -39,7 +39,7 @@ export async function getSRData(
     .eq("user_id", userId);
 
   if (error) {
-    console.error("[sr] Failed to read:", error.message);
+    console.log(JSON.stringify({ level: "error", service: "spaced-rep", operation: "read", message: error.message, timestamp: new Date().toISOString() }));
     return [];
   }
   return (data as SRRow[]).map(rowToEntry);

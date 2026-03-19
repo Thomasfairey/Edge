@@ -88,12 +88,7 @@ app.notFound((c) => {
 
 const port = parseInt(process.env.PORT ?? "3001", 10);
 
-console.log(`
-╔══════════════════════════════════════╗
-║        THE EDGE — API Server         ║
-║      v1.0.0 | Port ${port}             ║
-╚══════════════════════════════════════╝
-`);
+console.log(JSON.stringify({ level: "info", message: "Server starting", version: "1.0.0", port, timestamp: new Date().toISOString() }));
 
 serve({ fetch: app.fetch, port });
 

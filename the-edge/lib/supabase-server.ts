@@ -38,9 +38,16 @@ export async function createServerSupabaseClient() {
 
 /**
  * Get the authenticated user's ID, or null if not authenticated.
+ * Returns null (rather than throwing) if Supabase is unreachable,
+ * so callers fall through to the unauthenticated path gracefully.
  */
 export async function getAuthUserId(): Promise<string | null> {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  return user?.id ?? null;
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.id ?? null;
+  } catch {
+    // Supabase unreachable — treat as unauthenticated rather than crashing
+    return null;
+  }
 }

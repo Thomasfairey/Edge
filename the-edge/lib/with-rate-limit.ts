@@ -1,13 +1,15 @@
 /**
- * Higher-order function that wraps a Next.js API route handler with rate limiting
- * and CSRF origin validation for state-changing requests.
+ * Higher-order function that wraps a Next.js API route handler with rate limiting,
+ * CSRF origin validation, and request ID generation.
  * Returns 429 + Retry-After header when limit exceeded.
  * Returns 403 when origin doesn't match for non-GET requests.
+ * Adds X-Request-Id header to every response for observability.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, extractClientIp } from "./rate-limit";
 import { logger } from "@/lib/logger";
+import { randomUUID } from "crypto";
 
 type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
 
@@ -43,24 +45,31 @@ function checkOrigin(req: NextRequest): NextResponse | null {
 }
 
 /**
- * Wrap a route handler with CSRF origin check and rate limiting.
+ * Wrap a route handler with CSRF origin check, rate limiting, and request ID.
  * @param handler - The original route handler
  * @param limit - Max requests per minute (default 10)
  */
 export function withRateLimit(handler: RouteHandler, limit: number = 10): RouteHandler {
   return async (req: NextRequest) => {
+    const requestId = randomUUID();
+    const routeKey = new URL(req.url).pathname;
+    const ip = extractClientIp(req.headers);
+    const reqLogger = logger.withRequestContext(requestId);
+
+    reqLogger.info(`${req.method} ${routeKey}`, { phase: "request", ip });
+
     // CSRF origin check for state-changing requests
     const originResult = checkOrigin(req);
-    if (originResult) return originResult;
+    if (originResult) {
+      originResult.headers.set("X-Request-Id", requestId);
+      return originResult;
+    }
 
-    const ip = extractClientIp(req.headers);
-    const routeKey = new URL(req.url).pathname;
     const key = `${ip}:${routeKey}`;
-
-    const result = checkRateLimit(key, limit);
+    const result = await checkRateLimit(key, limit);
 
     if (!result.success) {
-      logger.warn(`${routeKey} blocked for ${ip} (retry in ${result.retryAfter}s)`, { phase: "rate-limit" });
+      reqLogger.warn(`Rate limited ${ip} (retry in ${result.retryAfter}s)`, { phase: "rate-limit" });
       return NextResponse.json(
         { error: "Too many requests. Please wait before trying again." },
         {
@@ -69,16 +78,36 @@ export function withRateLimit(handler: RouteHandler, limit: number = 10): RouteH
             "Retry-After": String(result.retryAfter),
             "X-RateLimit-Limit": String(limit),
             "X-RateLimit-Remaining": "0",
+            "X-Request-Id": requestId,
           },
         }
       );
     }
 
-    const response = await handler(req);
+    // Inject request ID into request headers so downstream handlers can access it
+    const enrichedHeaders = new Headers(req.headers);
+    enrichedHeaders.set("x-request-id", requestId);
+    const enrichedReq = new NextRequest(req.url, {
+      method: req.method,
+      headers: enrichedHeaders,
+      body: req.body,
+      duplex: "half",
+    });
 
-    // Add rate limit headers to successful responses
+    const start = Date.now();
+    const response = await handler(enrichedReq);
+    const duration = Date.now() - start;
+
+    // Add standard headers to successful responses
+    response.headers.set("X-Request-Id", requestId);
     response.headers.set("X-RateLimit-Limit", String(limit));
     response.headers.set("X-RateLimit-Remaining", String(result.remaining));
+
+    reqLogger.info(`${req.method} ${routeKey} ${response.status} ${duration}ms`, {
+      phase: "response",
+      duration,
+      status: response.status,
+    });
 
     return response;
   };

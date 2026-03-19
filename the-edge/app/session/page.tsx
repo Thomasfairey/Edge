@@ -2,8 +2,8 @@
 
 /**
  * Session page — manages the full daily loop.
- * Day 1:  Learn → Retrieval → Simulate → Debrief → Mission
- * Day 2+: Learn → Retrieval → Simulate → Debrief → Check-in → Mission
+ * Day 1:  Learn -> Retrieval -> Simulate -> Debrief -> Mission
+ * Day 2+: Learn -> Retrieval -> Simulate -> Debrief -> Check-in -> Mission
  *
  * Tiimo-inspired: phase-coloured backgrounds, super-rounded cards, soft pastels,
  * emoji command circles, coloured score dots, confetti completion.
@@ -20,44 +20,38 @@ import {
 } from "@/lib/types";
 import { useVoice } from "@/app/hooks/useVoice";
 
+// Components
+import PhaseIndicator from "./components/PhaseIndicator";
+import LessonPhase from "./components/LessonPhase";
+import RetrievalPhase from "./components/RetrievalPhase";
+import RoleplayPhase from "./components/RoleplayPhase";
+import DebriefPhase from "./components/DebriefPhase";
+import MissionPhase from "./components/MissionPhase";
+import CheckinPhase from "./components/CheckinPhase";
+import SessionToolbar from "./components/SessionToolbar";
+
+// Shared helpers & constants
+import {
+  PHASE_BG,
+  haptic,
+  cleanForSpeech,
+  splitLessonSections,
+  renderMarkdown,
+  LoadingDots,
+} from "./components/types";
+import type { VoiceProps } from "./components/types";
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const SESSION_STORAGE_KEY = "edge-session-state";
-const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours — sessions are same-day
-
-const PHASES: { key: SessionPhase; label: string; color: string }[] = [
-  { key: "lesson", label: "Learn", color: "#B8D4E3" },
-  { key: "roleplay", label: "Sim", color: "#F2C4C4" },
-  { key: "debrief", label: "Brief", color: "#C5B8E8" },
-  { key: "mission", label: "Deploy", color: "#B8E0C8" },
-];
-
-const PHASE_BG: Record<string, string> = {
-  lesson: "#EFF6FA",
-  retrieval: "#EFF6FA",
-  roleplay: "#FDF2F2",
-  debrief: "#F3F0FA",
-  mission: "#F0FAF4",
-};
-
-// PHASE_TINT removed — identical to PHASE_BG; use PHASE_BG instead.
+const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function haptic() {
-  // Use Capacitor haptics (works on iOS + Android), fallback to vibrate API
-  import("@/lib/haptics").then((h) => h.hapticImpact()).catch(() => {
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-      navigator.vibrate(10);
-    }
-  });
-}
-
-/** Normalise scores that may use abbreviated keys (TA/TW/FC/ER/SO) to canonical form. */
 const ABBREV_MAP: Record<string, keyof SessionScores> = {
   TA: "technique_application", TW: "tactical_awareness",
   FC: "frame_control", ER: "emotional_regulation", SO: "strategic_outcome",
@@ -70,59 +64,6 @@ function normaliseScores(scores: Record<string, number> | null): SessionScores |
     out[ABBREV_MAP[k] ?? k] = v;
   }
   return out as unknown as SessionScores;
-}
-
-function characterEmoji(id?: string): string {
-  switch (id) {
-    case "sceptical-investor": return "🎯";
-    case "political-stakeholder": return "🏛";
-    case "resistant-report": return "😏";
-    case "hostile-negotiator": return "⚔️";
-    case "alpha-peer": return "🔬";
-    case "consultancy-gatekeeper": return "👔";
-    default: return "🎭";
-  }
-}
-
-function PersonaLine({ description }: { description: string }) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => setExpanded(!expanded)}
-      className="mt-1 text-left pl-10 w-full"
-    >
-      <p className={`text-[11px] text-tertiary transition-all duration-200 ${expanded ? "" : "truncate"}`}>
-        {description}
-      </p>
-    </button>
-  );
-}
-
-/** Strip markdown formatting for natural TTS narration */
-function cleanForSpeech(text: string): string {
-  return text
-    .replace(/^#+\s+(.+)$/gm, "$1.")    // headers → sentences
-    .replace(/\*\*([^*]+)\*\*/g, "$1")   // remove bold
-    .replace(/\*([^*]+)\*/g, "$1")       // remove italic
-    .replace(/[_~`#]/g, "")             // remove markdown chars
-    .replace(/&[a-z]+;/g, " ")          // remove HTML entities
-    .replace(/\n{2,}/g, ". ")           // double newlines → sentence break
-    .replace(/\n/g, " ")               // single newlines → space
-    .replace(/\s{2,}/g, " ")           // collapse whitespace
-    .trim();
-}
-
-function scoreCircleColor(score: number): string {
-  if (score >= 4) return "var(--score-high)";
-  if (score === 3) return "var(--score-mid)";
-  return "var(--score-low)";
-}
-
-function scoreTextColor(score: number): string {
-  if (score >= 4) return "var(--score-high-text)";
-  if (score === 3) return "var(--score-mid-text)";
-  return "var(--score-low-text)";
 }
 
 async function fetchWithRetry(
@@ -160,774 +101,6 @@ function useOnlineStatus() {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
   return online;
-}
-
-// ---------------------------------------------------------------------------
-// Phase indicator — coloured dots per phase
-// ---------------------------------------------------------------------------
-
-function PhaseIndicator({
-  current,
-  completed,
-}: {
-  current: SessionPhase;
-  completed: Set<SessionPhase>;
-}) {
-  return (
-    <nav aria-label="Session progress" className="flex-shrink-0 z-50 pt-safe" style={{ backgroundColor: "var(--background)" }}>
-      <div className="flex items-center justify-center gap-3 pt-3 pb-3" role="list" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-        {PHASES.map((p, idx) => {
-          const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
-          const isDone = completed.has(p.key);
-          const isPast = idx < PHASES.findIndex(pp => pp.key === current || (current === "retrieval" && pp.key === "lesson"));
-
-          return (
-            <div key={p.key} className="flex items-center gap-3" role="listitem" aria-current={isActive ? "step" : undefined}>
-              <div className="flex flex-col items-center gap-1.5" style={{ minWidth: 48 }}>
-                <div
-                  aria-hidden="true"
-                  className={`rounded-full transition-all ${isActive ? "phase-dot-active" : ""}`}
-                  style={{
-                    width: isActive ? 16 : isDone ? 12 : 10,
-                    height: isActive ? 16 : isDone ? 12 : 10,
-                    backgroundColor: isDone || isActive ? p.color : "transparent",
-                    border: isDone || isActive ? "none" : `2px solid ${p.color}40`,
-                    boxShadow: isActive ? `0 0 10px ${p.color}50` : "none",
-                    transition: "all 400ms var(--ease-out-expo)",
-                  }}
-                />
-                <span
-                  className="text-caption font-medium transition-colors"
-                  style={{
-                    color: isActive ? "var(--text-primary)" : isDone ? "var(--text-secondary)" : "var(--text-tertiary)",
-                    fontSize: 12,
-                    fontWeight: isActive ? 600 : 500,
-                    transition: "color 300ms ease",
-                  }}
-                >
-                  {p.label}
-                </span>
-              </div>
-              {idx < PHASES.length - 1 && (
-                <div
-                  className="h-[2px] w-5 rounded-full -mt-4"
-                  style={{
-                    backgroundColor: isPast || isDone ? `${p.color}80` : "var(--border-subtle)",
-                    transition: "background-color 400ms ease",
-                  }}
-                  aria-hidden="true"
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </nav>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Loading dots
-// ---------------------------------------------------------------------------
-
-function LoadingDots() {
-  return (
-    <div className="flex items-center justify-center gap-2 py-5">
-      <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(90,82,224,0.4)" }} />
-      <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(90,82,224,0.4)" }} />
-      <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(90,82,224,0.4)" }} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Markdown renderer
-// ---------------------------------------------------------------------------
-
-function renderMarkdown(text: string, context: "lesson" | "debrief" | "default" = "default"): React.ReactNode[] {
-  const lines = text.split("\n");
-  const elements: React.ReactNode[] = [];
-  let key = 0;
-  let isFirstParagraph = true;
-  const isLesson = context === "lesson";
-
-  for (const line of lines) {
-    if (line.startsWith("## ")) {
-      isFirstParagraph = true;
-      elements.push(
-        <h2 key={key++} className="mb-2 mt-5 text-caption font-semibold uppercase tracking-wider first:mt-0" style={{ color: "var(--phase-learn-muted)" }}>
-          {line.slice(3)}
-        </h2>
-      );
-    } else if (line.startsWith("### ")) {
-      elements.push(
-        <h3 key={key++} className="mb-2 mt-4 text-caption font-medium" style={{ color: "var(--phase-learn-muted)" }}>
-          {line.slice(4)}
-        </h3>
-      );
-    } else if (line.trim() === "") {
-      elements.push(<div key={key++} className="h-3" />);
-    } else {
-      const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      const hasBold = parts.some(p => p.startsWith("**"));
-
-      // Detect example-like content (quotes, named scenarios, "When X did Y")
-      const isExample = isLesson && !hasBold && (
-        line.startsWith('"') || line.startsWith('\u201C') ||
-        /^When [A-Z]/.test(line) || /^In \d{4}/.test(line)
-      );
-
-      if (isExample) {
-        isFirstParagraph = false;
-        elements.push(
-          <div key={key++} className="lesson-example">{line}</div>
-        );
-      } else if (isFirstParagraph && !hasBold && line.length > 20) {
-        isFirstParagraph = false;
-        const sentenceEnd = line.search(/[.!?]\s|[.!?]$/);
-        if (sentenceEnd > 0) {
-          const firstSentence = line.slice(0, sentenceEnd + 1);
-          const rest = line.slice(sentenceEnd + 1);
-          elements.push(
-            <p key={key++} className={isLesson ? "lesson-definition" : "text-base leading-relaxed text-primary"}>
-              {isLesson ? firstSentence : <strong className="font-semibold">{firstSentence}</strong>}
-              {rest && <span className={isLesson ? "font-normal text-base" : ""}>{rest}</span>}
-            </p>
-          );
-        } else {
-          elements.push(
-            <p key={key++} className={isLesson ? "lesson-definition" : "text-base leading-relaxed text-primary font-medium"}>{line}</p>
-          );
-        }
-      } else {
-        isFirstParagraph = false;
-        if (!hasBold && line.length > 200) {
-          const sentences = line.match(/[^.!?]+[.!?]+\s*/g) || [line];
-          const chunks: string[] = [];
-          let buf = "";
-          for (const s of sentences) {
-            buf += s;
-            if (buf.length > 100) {
-              chunks.push(buf.trim());
-              buf = "";
-            }
-          }
-          if (buf.trim()) chunks.push(buf.trim());
-          for (const chunk of chunks) {
-            elements.push(
-              <p key={key++} className={`${isLesson ? "lesson-body" : "text-base leading-relaxed text-primary"} mb-2`}>{chunk}</p>
-            );
-          }
-        } else {
-          elements.push(
-            <p key={key++} className={isLesson ? "lesson-body" : "text-base leading-relaxed text-primary"}>
-              {parts.map((part, i) =>
-                part.startsWith("**") && part.endsWith("**") ? (
-                  <strong key={i} className="font-semibold">
-                    {part.slice(2, -2)}
-                  </strong>
-                ) : (
-                  part
-                )
-              )}
-            </p>
-          );
-        }
-      }
-    }
-  }
-  return elements;
-}
-
-// ---------------------------------------------------------------------------
-// Lesson section splitter — parses "## The Principle", "## The Play", "## The Counter"
-// Also handles review format: "## The Refresher", "## The Advanced Play"
-// ---------------------------------------------------------------------------
-
-function splitLessonSections(text: string): { title: string; content: string }[] {
-  const raw: { title: string; content: string }[] = [];
-  const pattern = /^## (The (?:Principle|Play|Counter|Refresher|Advanced Play))/gm;
-  const headings: { title: string; index: number }[] = [];
-  let match;
-
-  while ((match = pattern.exec(text)) !== null) {
-    headings.push({ title: match[1], index: match.index });
-  }
-
-  if (headings.length === 0) {
-    return [{ title: "Lesson", content: text }];
-  }
-
-  for (let i = 0; i < headings.length; i++) {
-    const start = headings[i].index + headings[i].title.length + 3;
-    const end = i + 1 < headings.length ? headings[i + 1].index : text.length;
-    raw.push({
-      title: headings[i].title,
-      content: text.slice(start, end).trim(),
-    });
-  }
-
-  const MAX_CARD_CHARS = 600;
-  const sections: { title: string; content: string }[] = [];
-  for (const section of raw) {
-    if (section.content.length <= MAX_CARD_CHARS) {
-      sections.push(section);
-    } else {
-      let paragraphs = section.content.split(/\n\n+/);
-      if (paragraphs.length <= 1) {
-        paragraphs = section.content.split(/\n/);
-      }
-      let current = "";
-      let partNum = 1;
-      for (const para of paragraphs) {
-        if (current && (current.length + para.length + 2) > MAX_CARD_CHARS) {
-          sections.push({ title: partNum === 1 ? section.title : `${section.title} (cont.)`, content: current.trim() });
-          current = para;
-          partNum++;
-        } else {
-          current += (current ? "\n\n" : "") + para;
-        }
-      }
-      if (current.trim()) {
-        sections.push({ title: partNum > 1 ? `${section.title} (cont.)` : section.title, content: current.trim() });
-      }
-    }
-  }
-
-  return sections;
-}
-
-// ---------------------------------------------------------------------------
-// Swipeable lesson cards component (#4 — enhanced navigation)
-// ---------------------------------------------------------------------------
-
-function LessonCards({
-  sections,
-  isStreaming,
-  onCardChange,
-  onSetCardRef,
-  onSpeak,
-  onStopSpeaking,
-  isSpeaking,
-}: {
-  sections: { title: string; content: string }[];
-  isStreaming: boolean;
-  onCardChange?: (current: number, total: number) => void;
-  /** Exposes a callback to programmatically set the current card (for voice auto-advance) */
-  onSetCardRef?: React.MutableRefObject<((card: number) => void) | null>;
-  onSpeak?: (text: string) => void;
-  onStopSpeaking?: () => void;
-  isSpeaking?: boolean;
-}) {
-  const [currentCard, setCurrentCard] = useState(0);
-  const [showSwipeHint, setShowSwipeHint] = useState(true);
-  const [autoPlay, setAutoPlay] = useState(false);
-  const touchStartX = useRef(0);
-  const touchEndX = useRef(0);
-  const autoPlaySpokenCard = useRef(-1);
-
-  // Fade swipe hint after 3s
-  useEffect(() => {
-    const t = setTimeout(() => setShowSwipeHint(false), 3000);
-    return () => clearTimeout(t);
-  }, []);
-
-  // Notify parent of card position
-  useEffect(() => {
-    onCardChange?.(currentCard, sections.length);
-  }, [currentCard, sections.length, onCardChange]);
-
-  // Expose card setter for voice auto-advance
-  useEffect(() => {
-    if (onSetCardRef) {
-      onSetCardRef.current = (card: number) => {
-        if (card >= 0 && card < sections.length) setCurrentCard(card);
-      };
-      return () => { onSetCardRef.current = null; };
-    }
-  }, [onSetCardRef, sections.length]);
-
-  // Auto-play: speak each card, then advance
-  useEffect(() => {
-    if (!autoPlay || !onSpeak || isStreaming) return;
-    if (currentCard > autoPlaySpokenCard.current) {
-      autoPlaySpokenCard.current = currentCard;
-      const section = sections[currentCard];
-      if (section) {
-        onSpeak(`${section.title}. ${section.content}`);
-      }
-    }
-  }, [autoPlay, currentCard, sections, onSpeak, isStreaming]);
-
-  // Auto-advance to next card when speaking finishes during auto-play
-  useEffect(() => {
-    if (!autoPlay) return;
-    if (!isSpeaking && autoPlaySpokenCard.current === currentCard && currentCard < sections.length - 1) {
-      const t = setTimeout(() => setCurrentCard((c) => c + 1), 600);
-      return () => clearTimeout(t);
-    }
-    // Stop auto-play when last card finishes (deferred to avoid setState in effect body)
-    if (!isSpeaking && autoPlaySpokenCard.current === currentCard && currentCard === sections.length - 1) {
-      const t = setTimeout(() => setAutoPlay(false), 0);
-      return () => clearTimeout(t);
-    }
-  }, [isSpeaking, autoPlay, currentCard, sections.length]);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-  };
-  const handleTouchMove = (e: React.TouchEvent) => {
-    touchEndX.current = e.touches[0].clientX;
-  };
-  const handleTouchEnd = () => {
-    const diff = touchStartX.current - touchEndX.current;
-    if (Math.abs(diff) > 50) {
-      if (diff > 0 && currentCard < sections.length - 1) {
-        setCurrentCard((c) => c + 1);
-      } else if (diff < 0 && currentCard > 0) {
-        setCurrentCard((c) => c - 1);
-      }
-    }
-  };
-
-  const handleListenCard = () => {
-    if (isSpeaking) {
-      onStopSpeaking?.();
-      setAutoPlay(false);
-      return;
-    }
-    const section = sections[currentCard];
-    if (section && onSpeak) {
-      onSpeak(`${section.title}. ${section.content}`);
-    }
-  };
-
-  const handleAutoPlayAll = () => {
-    if (autoPlay) {
-      setAutoPlay(false);
-      onStopSpeaking?.();
-      return;
-    }
-    autoPlaySpokenCard.current = -1;
-    setCurrentCard(0);
-    setAutoPlay(true);
-  };
-
-  const section = sections[currentCard];
-  if (!section) return null;
-
-  const hasMore = currentCard < sections.length - 1;
-
-  return (
-    <div className="relative">
-      {/* Next-card peek strip */}
-      {hasMore && (
-        <div
-          className="absolute right-0 top-0 bottom-0 w-3 rounded-r-3xl z-10 pointer-events-none"
-          style={{
-            background: "linear-gradient(to left, rgba(90,82,224,0.08), transparent)",
-          }}
-        />
-      )}
-
-      <div
-        className="select-text overflow-y-auto relative"
-        style={{
-          backgroundColor: "var(--phase-learn-tint)",
-          borderRadius: "var(--radius-xl)",
-          padding: "24px",
-          boxShadow: "var(--shadow-soft)",
-          maxHeight: "calc(100dvh - 220px)",
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {/* Header with title and audio controls */}
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--phase-learn-muted)" }} />
-            <h2 className="text-caption font-semibold uppercase tracking-widest" style={{ color: "var(--phase-learn-muted)" }}>{section.title}</h2>
-          </div>
-
-          {/* Audio controls */}
-          {onSpeak && !isStreaming && (
-            <div className="flex items-center gap-1.5">
-              {/* Listen to current card */}
-              <button
-                onClick={handleListenCard}
-                className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all active:scale-[0.95] ${
-                  isSpeaking && !autoPlay
-                    ? "bg-[var(--accent)] text-white"
-                    : "bg-white/80 text-[#5B8BA8] hover:bg-white"
-                }`}
-                title={isSpeaking ? "Stop" : "Listen to this section"}
-              >
-                {isSpeaking && !autoPlay ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-                    <path fillRule="evenodd" d="M4.5 7.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-                    <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06ZM15.932 7.757a.75.75 0 0 1 1.061 0 6 6 0 0 1 0 8.486.75.75 0 0 1-1.06-1.061 4.5 4.5 0 0 0 0-6.364.75.75 0 0 1 0-1.06Z" />
-                  </svg>
-                )}
-                {isSpeaking && !autoPlay ? "Stop" : "Listen"}
-              </button>
-
-              {/* Auto-play all sections */}
-              <button
-                onClick={handleAutoPlayAll}
-                className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all active:scale-[0.95] ${
-                  autoPlay
-                    ? "bg-[var(--accent)] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
-                    : "bg-white/80 text-[#5B8BA8] hover:bg-white"
-                }`}
-                title={autoPlay ? "Stop auto-play" : "Listen to full lesson"}
-              >
-                {autoPlay ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-                    <path fillRule="evenodd" d="M4.5 7.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-                    <path fillRule="evenodd" d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z" clipRule="evenodd" />
-                  </svg>
-                )}
-                {autoPlay ? "Stop" : "Play all"}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Auto-play indicator */}
-        {autoPlay && (
-          <div className="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-[#EEEDFF] py-2">
-            <div className="flex items-center gap-1 h-4 text-[var(--accent)]">
-              <span className="voice-bar" />
-              <span className="voice-bar" />
-              <span className="voice-bar" />
-            </div>
-            <span className="text-xs font-medium text-[var(--accent)]">
-              Playing lesson — {currentCard + 1} of {sections.length}
-            </span>
-          </div>
-        )}
-
-        <div className="space-y-1" aria-live="polite">
-          {renderMarkdown(section.content, "lesson")}
-          {isStreaming && currentCard === sections.length - 1 && (
-            <span className="inline-block animate-pulse text-[var(--accent)]">|</span>
-          )}
-        </div>
-
-        {/* Swipe hint on first card */}
-        {currentCard === 0 && showSwipeHint && sections.length > 1 && (
-          <div
-            className="mt-4 text-center text-xs text-[var(--accent)] transition-opacity duration-1000"
-            style={{ opacity: showSwipeHint ? 0.8 : 0 }}
-          >
-            Swipe to continue &rarr;
-          </div>
-        )}
-
-        {/* Sticky dot indicators */}
-        <div className="sticky bottom-0 pt-3 pb-1" style={{ background: "linear-gradient(transparent, var(--phase-learn-tint) 40%)" }}>
-          <div className="flex items-center justify-center gap-2">
-            {sections.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setCurrentCard(i)}
-                aria-label={`Go to page ${i + 1} of ${sections.length}`}
-                aria-current={i === currentCard ? "true" : undefined}
-                className="touch-target"
-                style={{ minWidth: 28 }}
-              >
-                <div
-                  className="rounded-full transition-all"
-                  style={{
-                    height: 8,
-                    width: i === currentCard ? 28 : 8,
-                    backgroundColor: i === currentCard ? "var(--accent)" : "var(--phase-learn)",
-                  }}
-                />
-              </button>
-            ))}
-            {!isStreaming && (
-              <span className="ml-2 text-caption" style={{ color: "var(--text-tertiary)" }}>
-                {currentCard + 1} / {sections.length}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Debrief markdown renderer (lavender styling)
-// ---------------------------------------------------------------------------
-
-/** Parse debrief into sections keyed by ## headers, with special card rendering for replay blocks. */
-function parseDebriefSections(text: string): { title: string; content: React.ReactNode[] }[] {
-  const lines = text.split("\n");
-  const sections: { title: string; content: React.ReactNode[] }[] = [];
-  let currentSection: { title: string; content: React.ReactNode[] } = { title: "", content: [] };
-  let key = 0;
-  let inReplayBlock = false;
-
-  function pushLine(line: string) {
-    const lower = line.toLowerCase();
-
-    // Detect replay / "what you said" sections
-    if (lower.includes("what you said") || lower.includes("you said:") || lower.includes("your response:")) {
-      inReplayBlock = true;
-      currentSection.content.push(
-        <div key={key++} className="mt-3 rounded-2xl border-l-4 border-[#F2C4C4] bg-[#FDF2F2] px-4 py-3">
-          <p className="text-xs font-semibold text-[#D4908F] uppercase tracking-wider">Your move</p>
-          <p className="mt-1 text-sm leading-relaxed text-primary/70 italic">
-            {line.replace(/^.*?(?:what you said|you said:|your response:)\s*/i, "").replace(/\*\*/g, "")}
-          </p>
-        </div>
-      );
-      return;
-    }
-
-    if (inReplayBlock && (lower.includes("what you should") || lower.includes("stronger response") || lower.includes("try instead") || lower.includes("better approach") || lower.includes("ideal response"))) {
-      inReplayBlock = false;
-      currentSection.content.push(
-        <div key={key++} className="mt-1 mb-3 rounded-2xl border-l-4 border-[#6BC9A0] bg-[#E8F5ED] px-4 py-3">
-          <p className="text-xs font-semibold text-[#2D6A4F] uppercase tracking-wider">The edge move</p>
-          <p className="mt-1 text-sm leading-relaxed text-primary font-medium">
-            {line.replace(/^.*?(?:what you should|stronger response|try instead|better approach|ideal response)[^:]*:\s*/i, "").replace(/\*\*/g, "")}
-          </p>
-        </div>
-      );
-      return;
-    }
-
-    if (line.trim() === "") {
-      if (inReplayBlock) return;
-      currentSection.content.push(<div key={key++} className="h-2" />);
-    } else if (lower.includes("why this works") || lower.includes("why it works")) {
-      currentSection.content.push(
-        <div key={key++} className="mt-2 mb-2 rounded-2xl bg-[#EEEDFF] px-4 py-3">
-          <p className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wider mb-1">Why this works</p>
-          <p className="text-sm leading-relaxed text-primary">
-            {line.replace(/^.*?(?:why (?:this|it) works)[^:]*:\s*/i, "").replace(/\*\*/g, "")}
-          </p>
-        </div>
-      );
-    } else {
-      const parts = line.split(/(\*\*[^*]+\*\*)/g);
-      currentSection.content.push(
-        <p key={key++} className="text-sm leading-relaxed text-primary">
-          {parts.map((part, i) =>
-            part.startsWith("**") && part.endsWith("**") ? (
-              <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
-            ) : part
-          )}
-        </p>
-      );
-    }
-  }
-
-  for (const line of lines) {
-    if (line.startsWith("## ") || (line.startsWith("**") && line.endsWith("**") && !line.includes("**") && line.length < 80) || (line.startsWith("**") && line.endsWith("**"))) {
-      // Check if this is a dimension header (not inline bold)
-      const isSectionHeader = line.startsWith("## ") || (line.startsWith("**") && line.endsWith("**") && line.length < 80);
-      if (isSectionHeader) {
-        inReplayBlock = false;
-        if (currentSection.title || currentSection.content.length > 0) {
-          sections.push(currentSection);
-        }
-        const header = line.startsWith("## ") ? line.slice(3) : line.slice(2, -2);
-        currentSection = { title: header, content: [] };
-        continue;
-      }
-    }
-    pushLine(line);
-  }
-  if (currentSection.title || currentSection.content.length > 0) {
-    sections.push(currentSection);
-  }
-  return sections;
-}
-
-/** Collapsible debrief section with score badge */
-function DebriefSection({ title, children, scores, defaultOpen }: {
-  title: string;
-  children: React.ReactNode;
-  scores?: SessionScores | null;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen ?? true);
-
-  // Try to match a score dimension from the title
-  const dimMap: Record<string, keyof SessionScores> = {
-    technique: "technique_application",
-    tactical: "tactical_awareness",
-    frame: "frame_control",
-    emotion: "emotional_regulation",
-    regulation: "emotional_regulation",
-    strategic: "strategic_outcome",
-    outcome: "strategic_outcome",
-  };
-  const titleLower = title.toLowerCase();
-  let matchedScore: number | null = null;
-  if (scores) {
-    for (const [keyword, key] of Object.entries(dimMap)) {
-      if (titleLower.includes(keyword)) {
-        matchedScore = scores[key];
-        break;
-      }
-    }
-  }
-
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState<number | undefined>(defaultOpen ? undefined : 0);
-
-  useEffect(() => {
-    if (open) {
-      const el = contentRef.current;
-      if (el) {
-        setHeight(el.scrollHeight);
-        // After transition, set to auto for dynamic content
-        const t = setTimeout(() => setHeight(undefined), 250);
-        return () => clearTimeout(t);
-      }
-    } else {
-      // First set to explicit height, then to 0 on next frame
-      const el = contentRef.current;
-      if (el) {
-        setHeight(el.scrollHeight);
-        requestAnimationFrame(() => setHeight(0));
-      }
-    }
-  }, [open]);
-
-  return (
-    <div className="border-b border-[#F0EDE8]/50 last:border-0">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between py-3 text-left"
-        style={{ minHeight: 48 }}
-      >
-        <div className="flex items-center gap-2.5">
-          <h2 className="text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--phase-debrief-muted)" }}>{title}</h2>
-          {matchedScore !== null && (
-            <span
-              className="badge"
-              style={{
-                backgroundColor: matchedScore >= 4 ? "var(--score-high-bg)" : matchedScore >= 3 ? "var(--score-mid-bg)" : "var(--score-low-bg)",
-                color: matchedScore >= 4 ? "var(--score-high-text)" : matchedScore >= 3 ? "var(--score-mid-text)" : "var(--score-low-text)",
-                padding: "3px 10px",
-                fontSize: 12,
-              }}
-            >
-              {matchedScore}/5
-            </span>
-          )}
-        </div>
-        <div className="touch-target -mr-1">
-          <svg
-            className="h-5 w-5 transition-transform"
-            style={{ color: "var(--text-tertiary)", transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 250ms ease" }}
-            fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-          </svg>
-        </div>
-      </button>
-      <div
-        ref={contentRef}
-        className="overflow-hidden transition-[max-height,opacity] duration-250 ease-out"
-        style={{
-          maxHeight: height === undefined ? "none" : `${height}px`,
-          opacity: open ? 1 : 0,
-          transition: "max-height 250ms ease-out, opacity 200ms ease-out",
-        }}
-      >
-        <div className="pb-4">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// (Confetti component removed — completion uses animate-celebrate card)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Motivational line based on trajectory
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Variable-reward motivational lines — prevents habituation
-// ---------------------------------------------------------------------------
-
-const IMPROVEMENT_LINES = [
-  "The work is compounding.",
-  "Momentum. Don\u2019t let it go.",
-  "That\u2019s a gear shift. You\u2019re moving differently now.",
-  "You wouldn\u2019t have scored this on Day 1.",
-];
-
-const MARGINAL_LINES = [
-  "Marginal gains. Keep stacking.",
-  "Small edge, big compound. This is how it works.",
-  "Incremental. Relentless. That\u2019s the pattern.",
-];
-
-const STEADY_LINES = [
-  "Holding steady. The next breakthrough is close.",
-  "Plateaus precede breakthroughs. Keep pushing.",
-  "Consistency is a weapon. You\u2019re wielding it.",
-];
-
-const DIP_LINES = [
-  "Tougher session \u2014 that\u2019s where growth happens.",
-  "Hard reps build the edge that easy reps can\u2019t.",
-  "A dip today, a spike tomorrow. Stay in it.",
-];
-
-const HARD_DAY_LINES = [
-  "Hard day. The best sessions often follow the worst.",
-  "This is the session you\u2019ll look back on as a turning point.",
-  "Discomfort is the price of growth. You paid it today.",
-];
-
-function pick(arr: string[]): string {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function getMotivationalLine(scores: SessionScores, previousScores: SessionScores | null): string {
-  if (!previousScores) return "First session in the books. The baseline is set.";
-
-  const currentAvg = Object.values(scores).reduce((a, b) => a + b, 0) / 5;
-  const prevAvg = Object.values(previousScores).reduce((a, b) => a + b, 0) / 5;
-  const diff = currentAvg - prevAvg;
-
-  if (diff > 0.5) return pick(IMPROVEMENT_LINES);
-  if (diff > 0) return pick(MARGINAL_LINES);
-  if (diff === 0) return pick(STEADY_LINES);
-  if (diff > -0.5) return pick(DIP_LINES);
-  return pick(HARD_DAY_LINES);
-}
-
-/** Milestone messages shown at notable day counts. */
-function getMilestoneLine(day: number): string | null {
-  if (day === 7) return "One week complete. You\u2019ve built the foundation \u2014 most people quit by Day 3.";
-  if (day === 14) return "Two weeks in. The concepts are starting to compound. You\u2019ll notice it in real conversations.";
-  if (day === 21) return "21 days \u2014 the habit is forming. This is no longer a novelty, it\u2019s a practice.";
-  if (day === 30) return "30 days. You\u2019ve completed a full cycle of The Edge. Very few make it here.";
-  if (day === 50) return "50 sessions deep. The person who started this programme wouldn\u2019t recognise you now.";
-  if (day % 10 === 0 && day > 30) return `Day ${day}. Still here. Still sharper than yesterday.`;
-  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -971,7 +144,7 @@ export default function SessionPage() {
   const [isReviewSession, setIsReviewSession] = useState(false);
   const [previousScores, setPreviousScores] = useState<SessionScores | null>(null);
 
-  // Check-in state (within deploy phase)
+  // Check-in state
   const [checkinNeeded, setCheckinNeeded] = useState(false);
   const [checkinDone, setCheckinDone] = useState(false);
   const [checkinPillSelected, setCheckinPillSelected] = useState<"completed" | "tried" | null>(null);
@@ -989,13 +162,13 @@ export default function SessionPage() {
   // Phase animation
   const [phaseAnimation, setPhaseAnimation] = useState<"enter" | "active" | "exit">("active");
 
-  // Lesson streaming (declared early for voice effects)
+  // Lesson streaming
   const [lessonStreaming, setLessonStreaming] = useState(false);
 
   // Completion
   const [showConfetti, setShowConfetti] = useState(false);
 
-  // Onboarding (profile capture)
+  // Onboarding
   const [onboardingNeeded, setOnboardingNeeded] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"bio" | "style" | "saving">("bio");
   const [onboardingBio, setOnboardingBio] = useState("");
@@ -1013,23 +186,19 @@ export default function SessionPage() {
   // Voice (STT + TTS)
   // ---------------------------------------------------------------------------
 
-  // Voice speak-end handler — drives lesson card auto-advance and phase transitions
   const voiceSpeakEndActionRef = useRef<(() => void) | null>(null);
   const handleSpeakEnd = useCallback(() => {
     if (voiceSpeakEndActionRef.current) {
       const action = voiceSpeakEndActionRef.current;
       voiceSpeakEndActionRef.current = null;
-      // Small delay so user hears the ending before advancing
       setTimeout(action, 300);
     }
   }, []);
 
   const voice = useVoice({
     onTranscript: useCallback((text: string) => {
-      // Route transcribed speech to the active phase
       if (text.trim()) {
         setInputValue(text);
-        // Auto-submit for roleplay, retrieval, and check-in
         voiceAutoSubmitRef.current = text.trim();
       }
     }, []),
@@ -1037,10 +206,25 @@ export default function SessionPage() {
     characterId: character?.id,
   });
 
-  /** Mentor character ID for TTS — uses the dedicated mentor voice */
   const MENTOR_VOICE_ID = "__mentor__";
-
   const voiceAutoSubmitRef = useRef<string | null>(null);
+
+  // Build voice props to pass to child components
+  const voiceProps: VoiceProps = {
+    state: voice.state,
+    voiceEnabled: voice.voiceEnabled,
+    sttSupported: voice.sttSupported,
+    ttsSupported: voice.ttsSupported,
+    toggleVoice: voice.toggleVoice,
+    startListening: voice.startListening,
+    stopListening: voice.stopListening,
+    speak: voice.speak,
+    speakDirect: voice.speakDirect,
+    stopSpeaking: voice.stopSpeaking,
+    interimTranscript: voice.interimTranscript,
+    micError: voice.micError,
+    clearMicError: voice.clearMicError,
+  };
 
   // Process auto-submit after voice transcript arrives
   useEffect(() => {
@@ -1048,7 +232,6 @@ export default function SessionPage() {
       const text = voiceAutoSubmitRef.current;
       voiceAutoSubmitRef.current = null;
       if (onboardingNeeded && onboardingStep === "bio") {
-        // Voice transcript goes to onboarding bio — don't auto-submit, let user review
         setOnboardingBio(text);
         setInputValue("");
       } else if (currentPhase === "roleplay") {
@@ -1089,14 +272,12 @@ export default function SessionPage() {
     if (lessonSpokenRef.current === lessonContent) return;
     lessonSpokenRef.current = lessonContent;
 
-    // Speak through lesson cards sequentially
     const sections = splitLessonSections(lessonContent);
     let currentIdx = 0;
 
     function speakNextCard() {
       if (currentIdx < sections.length) {
         const cardText = sections[currentIdx].title + ". " + sections[currentIdx].content;
-        // Set up advance action for when this card finishes speaking
         if (currentIdx < sections.length - 1) {
           const nextIdx = currentIdx + 1;
           voiceSpeakEndActionRef.current = () => {
@@ -1105,7 +286,6 @@ export default function SessionPage() {
             speakNextCard();
           };
         } else {
-          // Last card — no action needed, user taps to proceed
           voiceSpeakEndActionRef.current = null;
         }
         voice.speak(cardText, MENTOR_VOICE_ID);
@@ -1116,19 +296,18 @@ export default function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonContent, currentPhase, voice.voiceEnabled, isLoading, lessonStreaming]);
 
-  // Auto-speak retrieval question when voice mode is on
+  // Auto-speak retrieval question
   const retrievalSpokenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!voice.voiceEnabled || currentPhase !== "retrieval") return;
     if (!retrievalQuestion || retrievalSpokenRef.current === retrievalQuestion) return;
     retrievalSpokenRef.current = retrievalQuestion;
-    // After speaking the question, start listening for the user's answer
     voiceSpeakEndActionRef.current = () => voice.startListening();
     voice.speak(retrievalQuestion, MENTOR_VOICE_ID);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retrievalQuestion, currentPhase, voice.voiceEnabled]);
 
-  // Auto-speak retrieval response (feedback) when voice mode is on
+  // Auto-speak retrieval response (feedback)
   const retrievalFeedbackSpokenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!voice.voiceEnabled || currentPhase !== "retrieval") return;
@@ -1138,7 +317,7 @@ export default function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retrievalResponse, currentPhase, voice.voiceEnabled]);
 
-  // Auto-speak debrief content when voice mode is on
+  // Auto-speak debrief content
   const debriefSpokenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!voice.voiceEnabled || currentPhase !== "debrief") return;
@@ -1148,7 +327,7 @@ export default function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debriefContent, currentPhase, voice.voiceEnabled, isLoading]);
 
-  // Auto-speak mission content when voice mode is on
+  // Auto-speak mission content
   const missionSpokenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!voice.voiceEnabled || currentPhase !== "mission") return;
@@ -1159,7 +338,7 @@ export default function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mission, rationale, currentPhase, voice.voiceEnabled, isLoading]);
 
-  // Auto-speak check-in response when voice mode is on
+  // Auto-speak check-in response
   const checkinResponseSpokenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!voice.voiceEnabled || currentPhase !== "mission") return;
@@ -1169,7 +348,7 @@ export default function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkinResponse, currentPhase, voice.voiceEnabled]);
 
-  // After TTS finishes speaking, auto-start listening again (roleplay, retrieval, check-in)
+  // Auto-start listening after TTS finishes (conversational phases)
   const prevVoiceState = useRef(voice.state);
   useEffect(() => {
     const isConversationalPhase = currentPhase === "roleplay" || currentPhase === "retrieval";
@@ -1181,7 +360,6 @@ export default function SessionPage() {
       !isStreaming &&
       !isLoading
     ) {
-      // Small delay so user hears the end of speech
       const t = setTimeout(() => voice.startListening(), 400);
       prevVoiceState.current = voice.state;
       return () => clearTimeout(t);
@@ -1189,6 +367,20 @@ export default function SessionPage() {
     prevVoiceState.current = voice.state;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.state, voice.voiceEnabled, currentPhase, isStreaming, isLoading]);
+
+  // Auto-narrate scenario context when entering roleplay
+  const scenarioSpokenRef = useRef(false);
+  useEffect(() => {
+    if (!voice.voiceEnabled || currentPhase !== "roleplay") return;
+    if (!scenarioContext || scenarioSpokenRef.current) return;
+    if (roleplayTranscript.length > 0) return;
+    scenarioSpokenRef.current = true;
+    const intro = character
+      ? `You're about to speak with ${character.name}. ${cleanForSpeech(scenarioContext)}`
+      : cleanForSpeech(scenarioContext);
+    voice.speak(intro, MENTOR_VOICE_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenarioContext, currentPhase, voice.voiceEnabled, roleplayTranscript.length, character]);
 
   // ---------------------------------------------------------------------------
   // Auto-scroll
@@ -1300,7 +492,6 @@ export default function SessionPage() {
       }
     } catch {}
 
-    // Fetch status + profile in parallel
     Promise.all([
       fetch("/api/status").then((r) => r.json()).catch(() => null),
       fetch("/api/profile").then((r) => r.json()).catch(() => null),
@@ -1316,12 +507,11 @@ export default function SessionPage() {
           }
         }
 
-        // Check if user has completed profile setup
         if (profileData && !profileData.profileData) {
           setOnboardingNeeded(true);
           setOnboardingDisplayName(profileData.displayName || "");
           setIsLoading(false);
-          return; // Don't fetch lesson yet — onboarding first
+          return;
         }
 
         fetchLesson();
@@ -1330,7 +520,7 @@ export default function SessionPage() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Onboarding: save profile and proceed to lesson
+  // Onboarding
   // ---------------------------------------------------------------------------
 
   async function completeOnboarding(feedbackStyle: "direct" | "balanced" | "supportive") {
@@ -1382,29 +572,10 @@ export default function SessionPage() {
     setLessonCardPos({ current, total });
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Auto-narration — scenario context (unique to roleplay entry)
-  // ---------------------------------------------------------------------------
-
-  // Roleplay: narrate scenario context when entering
-  const scenarioSpokenRef = useRef(false);
-  useEffect(() => {
-    if (!voice.voiceEnabled || currentPhase !== "roleplay") return;
-    if (!scenarioContext || scenarioSpokenRef.current) return;
-    if (roleplayTranscript.length > 0) return;
-    scenarioSpokenRef.current = true;
-    const intro = character
-      ? `You're about to speak with ${character.name}. ${cleanForSpeech(scenarioContext)}`
-      : cleanForSpeech(scenarioContext);
-    voice.speak(intro, MENTOR_VOICE_ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scenarioContext, currentPhase, voice.voiceEnabled, roleplayTranscript.length, character]);
-
   async function fetchLesson() {
     setIsLoading(true);
     setError(null);
 
-    // Check for pre-generated lesson in localStorage
     try {
       const cached = localStorage.getItem("edge-pregenerated-lesson");
       if (cached) {
@@ -1422,7 +593,6 @@ export default function SessionPage() {
       }
     } catch {}
 
-    // Stream the lesson
     try {
       const res = await fetch("/api/lesson", {
         method: "POST",
@@ -1433,7 +603,6 @@ export default function SessionPage() {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      // Extract concept from header
       const conceptHeader = res.headers.get("X-Concept");
       if (conceptHeader) {
         try {
@@ -1443,11 +612,9 @@ export default function SessionPage() {
         }
       }
 
-      // Check if review session
       const isReview = res.headers.get("X-Is-Review") === "true";
       setIsReviewSession(isReview);
 
-      // Stream the lesson content
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No stream body");
 
@@ -1677,7 +844,7 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 3: Debrief (#1 — increased timeout, fallback, #2 — streaming, #5 — checkin context)
+  // Phase 3: Debrief
   // ---------------------------------------------------------------------------
 
   const [debriefRetryCount, setDebriefRetryCount] = useState(0);
@@ -1697,7 +864,7 @@ export default function SessionPage() {
             commandsUsed,
             checkinContext: checkinUserText || undefined,
           }),
-          signal: AbortSignal.timeout(65000) }, // #1: increased from 30s to 65s
+          signal: AbortSignal.timeout(65000) },
         3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
@@ -1733,7 +900,7 @@ export default function SessionPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 4: Deploy (check-in + mission) — #5 enhanced
+  // Phase 4: Deploy (check-in + mission)
   // ---------------------------------------------------------------------------
 
   function enterDeploy() {
@@ -1750,7 +917,6 @@ export default function SessionPage() {
     submittingRef.current = true;
     setIsLoading(true);
     setInputValue("");
-    // Store user text for debrief context
     if (userOutcome) setCheckinUserText(userOutcome);
     try {
       const res = await fetch("/api/checkin", {
@@ -1765,7 +931,6 @@ export default function SessionPage() {
       setCheckinDone(true);
       setIsLoading(false);
       submittingRef.current = false;
-      // #5: increased display time from 2s to 3.5s
       setTimeout(() => { setCheckinResponse(null); fetchMission(); }, 3500);
     } catch {
       setError("Failed to submit. Try again.");
@@ -1865,14 +1030,6 @@ export default function SessionPage() {
   // Render
   // ---------------------------------------------------------------------------
 
-  const SCORE_DIMS: { key: keyof SessionScores; label: string; fullName: string }[] = [
-    { key: "technique_application", label: "TA", fullName: "Technique" },
-    { key: "tactical_awareness", label: "TW", fullName: "Tactical" },
-    { key: "frame_control", label: "FC", fullName: "Frame" },
-    { key: "emotional_regulation", label: "ER", fullName: "Regulation" },
-    { key: "strategic_outcome", label: "SO", fullName: "Outcome" },
-  ];
-
   const isRoleplay = currentPhase === "roleplay";
   const phaseBg = PHASE_BG[currentPhase] || "#FAF9F6";
   const phaseClass = phaseAnimation === "enter" ? "phase-enter" : phaseAnimation === "active" ? "phase-active" : "phase-exit";
@@ -1961,7 +1118,7 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* ONBOARDING (profile capture — Day 1 only, before lesson)        */}
+          {/* ONBOARDING                                                      */}
           {/* ============================================================== */}
           {onboardingNeeded && (
             <div className="space-y-6 animate-fade-in-up">
@@ -1988,7 +1145,6 @@ export default function SessionPage() {
                   />
 
                   <div className="flex items-center justify-between mt-3">
-                    {/* Voice input button */}
                     {voice.sttSupported && voice.voiceEnabled && (
                       <button
                         onClick={() => {
@@ -2088,822 +1244,101 @@ export default function SessionPage() {
           {/* LEARN                                                           */}
           {/* ============================================================== */}
           {currentPhase === "lesson" && !onboardingNeeded && (
-            <>
-              {isLoading && (
-                <div className="text-center py-8">
-                  <p className="text-body" style={{ color: "var(--text-secondary)" }}>Preparing today&apos;s lesson...</p>
-                  <LoadingDots />
-                </div>
-              )}
-
-              {lessonContent && !isLoading && (
-                <>
-                  {concept && (
-                    <div className="mb-5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="badge" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
-                          {concept.domain}
-                        </span>
-                        {isReviewSession && (
-                          <span className="badge" style={{ backgroundColor: "var(--score-mid-bg)", color: "var(--score-mid-text)" }}>
-                            Review
-                          </span>
-                        )}
-                      </div>
-                      <h2 className="mt-3 text-heading font-semibold" style={{ color: "var(--text-primary)" }}>
-                        {concept.name}
-                        <span className="ml-2 text-caption font-normal italic" style={{ color: "var(--text-secondary)" }}>({concept.source})</span>
-                      </h2>
-                    </div>
-                  )}
-
-                  <LessonCards
-                    sections={splitLessonSections(lessonContent)}
-                    isStreaming={lessonStreaming}
-                    onCardChange={onLessonCardChange}
-                    onSetCardRef={lessonCardAdvanceRef}
-                    onSpeak={voice.speakDirect}
-                    onStopSpeaking={voice.stopSpeaking}
-                    isSpeaking={voice.state === "speaking"}
-                  />
-                </>
-              )}
-            </>
+            <LessonPhase
+              isLoading={isLoading}
+              lessonContent={lessonContent}
+              lessonStreaming={lessonStreaming}
+              concept={concept}
+              isReviewSession={isReviewSession}
+              onboardingNeeded={onboardingNeeded}
+              onLessonCardChange={onLessonCardChange}
+              lessonCardAdvanceRef={lessonCardAdvanceRef}
+              voice={voiceProps}
+            />
           )}
 
           {/* ============================================================== */}
           {/* RETRIEVAL                                                       */}
           {/* ============================================================== */}
           {currentPhase === "retrieval" && (
-            <>
-              {isLoading && !retrievalQuestion && (
-                <div className="text-center">
-                  <p className="mb-2 text-sm text-secondary">One moment...</p>
-                  <LoadingDots />
-                </div>
-              )}
-
-              {retrievalQuestion && (
-                <div className="space-y-5 animate-challenge">
-                  <div className="text-center mb-1">
-                    <span className="badge" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
-                      Quick check
-                    </span>
-                  </div>
-                  <div className="card" style={{ padding: "24px" }}>
-                    <p className="text-center text-lead font-medium leading-relaxed" style={{ color: "var(--text-primary)" }}>
-                      {retrievalQuestion}
-                    </p>
-                  </div>
-
-                  {retrievalResponse && (
-                    <div className="animate-fade-in-up card-tinted text-center" style={{ backgroundColor: "var(--accent-soft)", padding: "24px" }}>
-                      <p className="mb-1 text-body font-semibold" style={{ color: "var(--accent)" }}>Solid recall</p>
-                      <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{retrievalResponse}</p>
-                    </div>
-                  )}
-
-                  {!retrievalResponse && (
-                    <div className="space-y-3">
-                      {/* Voice error banner for retrieval */}
-                      {voice.micError && (
-                        <div className="rounded-xl bg-[#FDF2F2] px-4 py-2.5 text-sm text-[#C4524B] text-center">
-                          {voice.micError}
-                        </div>
-                      )}
-                      {/* Voice listening state for retrieval */}
-                      {voice.voiceEnabled && voice.state === "listening" && (
-                        <div className="flex flex-col items-center gap-3 py-4">
-                          <div className="flex items-center gap-1.5 h-6 text-[var(--accent)]">
-                            <span className="voice-bar" />
-                            <span className="voice-bar" />
-                            <span className="voice-bar" />
-                          </div>
-                          <p className="text-sm text-secondary">{voice.interimTranscript || "Listening..."}</p>
-                          <button
-                            onClick={voice.stopListening}
-                            className="voice-listening flex h-12 w-12 items-center justify-center rounded-full text-white"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                              <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
-                              <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
-                            </svg>
-                          </button>
-                        </div>
-                      )}
-
-                      {(!voice.voiceEnabled || voice.state !== "listening") && (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              placeholder={voice.voiceEnabled ? "Tap mic or type..." : "Your answer..."}
-                              className="input-field flex-1"
-                              style={{ backgroundColor: "var(--phase-learn-tint)" }}
-                              value={inputValue}
-                              onChange={(e) => setInputValue(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
-                              disabled={isLoading}
-                              autoFocus
-                            />
-                            {voice.voiceEnabled && !inputValue.trim() && !isLoading && (
-                              <button
-                                onClick={voice.startListening}
-                                className="touch-target flex-shrink-0 rounded-full"
-                                style={{ backgroundColor: "var(--accent)", color: "white" }}
-                                title="Speak"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                                  <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
-                                  <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
-                                </svg>
-                              </button>
-                            )}
-                          </div>
-                          {voice.micError && (
-                            <p className="text-xs text-red-500 px-1 -mt-1">{voice.micError}</p>
-                          )}
-                          <button
-                            onClick={() => { if (inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
-                            disabled={isLoading || !inputValue.trim()}
-                            className={inputValue.trim() ? "btn-primary" : "btn-primary"}
-                            style={{
-                              backgroundColor: inputValue.trim() ? "var(--accent)" : "var(--border)",
-                              color: inputValue.trim() ? "white" : "var(--text-tertiary)",
-                              boxShadow: inputValue.trim() ? "var(--shadow-accent)" : "none",
-                            }}
-                          >
-                            {isLoading ? "Evaluating..." : "Submit"}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {retrievalResponse && !retrievalReady && (
-                    <button onClick={() => startRoleplay()} className="btn-primary">
-                      Continue to practice &rarr;
-                    </button>
-                  )}
-                </div>
-              )}
-            </>
+            <RetrievalPhase
+              isLoading={isLoading}
+              retrievalQuestion={retrievalQuestion}
+              retrievalResponse={retrievalResponse}
+              retrievalReady={retrievalReady}
+              inputValue={inputValue}
+              setInputValue={setInputValue}
+              submitRetrievalResponse={submitRetrievalResponse}
+              startRoleplay={startRoleplay}
+              voice={voiceProps}
+            />
           )}
 
           {/* ============================================================== */}
           {/* SIMULATE                                                        */}
           {/* ============================================================== */}
           {currentPhase === "roleplay" && (
-            <>
-              {/* Character persona card — shown until first AI message arrives */}
-              {character && roleplayTranscript.length === 0 && (
-                <div className="mb-5 animate-challenge">
-                  <div className="card" style={{ padding: "28px 24px" }}>
-                    <div className="text-center mb-5">
-                      <div
-                        className="inline-flex h-16 w-16 items-center justify-center rounded-full text-3xl mb-3"
-                        style={{ backgroundColor: "var(--phase-simulate-tint)" }}
-                      >
-                        {characterEmoji(character.id)}
-                      </div>
-                      <p className="text-lead font-bold" style={{ color: "var(--text-primary)" }}>{character.name}</p>
-                      <p className="mt-1 text-body leading-snug" style={{ color: "var(--text-secondary)" }}>{character.description}</p>
-                    </div>
-
-                    {/* Key traits */}
-                    <div className="flex gap-2 justify-center flex-wrap mb-5">
-                      {character.tactics.slice(0, 2).map((t, i) => (
-                        <span key={i} className="badge" style={{ backgroundColor: "var(--score-low-bg)", color: "var(--score-low-text)", fontSize: 12, padding: "4px 12px" }}>
-                          {t.length > 30 ? t.slice(0, 30) + "\u2026" : t}
-                        </span>
-                      ))}
-                    </div>
-
-                    {scenarioContext && (
-                      <div style={{ backgroundColor: "var(--phase-simulate-tint)", borderRadius: "var(--radius-md)", padding: "14px 16px" }}>
-                        <p className="text-caption font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--phase-simulate-muted)" }}>Scene</p>
-                        <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{scenarioContext}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="mb-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-2xl">{characterEmoji(character?.id)}</span>
-                    <span className="text-caption font-medium" style={{ color: "var(--text-secondary)" }}>{character?.name ?? "Character"}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {Array.from({ length: 8 }, (_, i) => (
-                      <div
-                        key={i}
-                        className="rounded-full transition-all"
-                        style={{
-                          width: 6, height: 6,
-                          backgroundColor: i < Math.max(1, Math.ceil(turnCount / 2)) ? "var(--phase-simulate)" : "var(--border-subtle)",
-                          transform: i < Math.max(1, Math.ceil(turnCount / 2)) ? "scale(1)" : "scale(0.8)",
-                          transition: "all 300ms ease",
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                {character?.description && roleplayTranscript.length > 0 && (
-                  <PersonaLine description={character.description} />
-                )}
-              </div>
-
-              {resetNotice && (
-                <p className="mb-2 text-center text-xs text-secondary animate-pulse">Same concept. Fresh start.</p>
-              )}
-
-              <div className="space-y-3.5 pb-4" role="log" aria-live="polite">
-                {roleplayTranscript.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end pl-10" : "justify-start pr-10 gap-2.5"} animate-fade-in-up`}>
-                    {msg.role === "assistant" && (
-                      <div
-                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-body mt-1"
-                        style={{ backgroundColor: "var(--phase-simulate-tint)" }}
-                      >
-                        {characterEmoji(character?.id)}
-                      </div>
-                    )}
-                    <div
-                      className="text-body leading-relaxed"
-                      style={{
-                        padding: "14px 18px",
-                        borderRadius: msg.role === "user" ? "var(--radius-xl) var(--radius-xl) 8px var(--radius-xl)" : "var(--radius-xl) var(--radius-xl) var(--radius-xl) 8px",
-                        backgroundColor: msg.role === "user" ? "var(--accent)" : "var(--surface)",
-                        color: msg.role === "user" ? "var(--text-inverted)" : "var(--text-primary)",
-                        boxShadow: msg.role === "user" ? "0 2px 10px rgba(90,82,224,0.18)" : "var(--shadow-soft)",
-                      }}
-                    >
-                      {msg.content}
-                    </div>
-                  </div>
-                ))}
-
-                {isStreaming && streamingText && (
-                  <div className="flex justify-start pr-10 gap-2.5" aria-live="polite">
-                    <div
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-body mt-1"
-                      style={{ backgroundColor: "var(--phase-simulate-tint)" }}
-                    >
-                      {characterEmoji(character?.id)}
-                    </div>
-                    <div
-                      className="max-w-[80%] text-body leading-relaxed"
-                      style={{
-                        padding: "14px 18px",
-                        borderRadius: "var(--radius-xl) var(--radius-xl) var(--radius-xl) 8px",
-                        backgroundColor: "var(--surface)",
-                        boxShadow: "var(--shadow-soft)",
-                      }}
-                    >
-                      {streamingText}
-                      <span className="inline-block animate-pulse" style={{ color: "var(--accent)" }}>|</span>
-                    </div>
-                  </div>
-                )}
-
-                {isLoading && !isStreaming && (
-                  <div className="flex justify-start gap-2.5">
-                    <div
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-body mt-1"
-                      style={{ backgroundColor: "var(--phase-simulate-tint)" }}
-                    >
-                      {characterEmoji(character?.id)}
-                    </div>
-                    <div style={{ padding: "16px 18px", borderRadius: "var(--radius-xl) var(--radius-xl) var(--radius-xl) 8px", backgroundColor: "var(--surface)", boxShadow: "var(--shadow-soft)" }}>
-                      <div className="flex items-center gap-2">
-                        <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(212,144,143,0.5)" }} />
-                        <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(212,144,143,0.5)" }} />
-                        <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(212,144,143,0.5)" }} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {pendingRetry && (
-                  <div className="flex justify-center">
-                    <button
-                      onClick={() => sendRoleplayMessage(pendingRetry)}
-                      className="touch-target rounded-full px-5 py-2.5 text-caption font-semibold"
-                      style={{ backgroundColor: "var(--coach-bg)", color: "var(--coach-muted)" }}
-                    >
-                      Connection lost. Tap to retry &rarr;
-                    </button>
-                  </div>
-                )}
-
-                <div ref={chatEndRef} />
-              </div>
-
-              {Math.ceil(turnCount / 2) >= 8 && (
-                <div className="mb-2 text-center text-caption" style={{ backgroundColor: "rgba(255,255,255,0.7)", borderRadius: "var(--radius-md)", padding: "10px 16px", color: "var(--text-secondary)" }}>
-                  You can continue or tap &#10003; when ready
-                </div>
-              )}
-            </>
+            <RoleplayPhase
+              character={character}
+              roleplayTranscript={roleplayTranscript}
+              scenarioContext={scenarioContext}
+              turnCount={turnCount}
+              isLoading={isLoading}
+              isStreaming={isStreaming}
+              streamingText={streamingText}
+              resetNotice={resetNotice}
+              pendingRetry={pendingRetry}
+              sendRoleplayMessage={sendRoleplayMessage}
+              chatEndRef={chatEndRef}
+            />
           )}
 
           {/* ============================================================== */}
           {/* DEBRIEF                                                         */}
           {/* ============================================================== */}
           {currentPhase === "debrief" && (
-            <>
-              {isLoading && (
-                <div className="text-center">
-                  <p className="mb-2 text-sm text-secondary">Analysing your performance...</p>
-                  <LoadingDots />
-                </div>
-              )}
-
-              {debriefContent && !isLoading && (
-                <>
-                  {/* Score circles with deltas */}
-                  {scores && (
-                    <div className="mb-5 card">
-                      <div className="flex items-center justify-center gap-4">
-                        {SCORE_DIMS.map(({ key, fullName }) => {
-                          const s = scores[key];
-                          const prev = previousScores ? previousScores[key] : null;
-                          const diff = prev !== null ? s - prev : null;
-                          return (
-                            <div key={key} className="flex flex-col items-center gap-2 animate-score-pop" style={{ opacity: 0 }}>
-                              <div
-                                className="flex items-center justify-center rounded-full text-lead font-bold relative"
-                                style={{
-                                  width: 52, height: 52,
-                                  backgroundColor: scoreCircleColor(s),
-                                  color: scoreTextColor(s),
-                                }}
-                              >
-                                {s}
-                                {diff !== null && (
-                                  <span
-                                    className="absolute -top-1.5 -right-2 text-caption font-bold rounded-full px-1.5"
-                                    style={{
-                                      fontSize: 11,
-                                      color: diff > 0 ? "var(--score-high-text)" : diff < 0 ? "var(--score-low-text)" : "var(--text-secondary)",
-                                      backgroundColor: diff > 0 ? "var(--score-high-bg)" : diff < 0 ? "var(--score-low-bg)" : "var(--border)",
-                                    }}
-                                  >
-                                    {diff > 0 ? `+${diff}` : diff === 0 ? "=" : diff}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-caption" style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fullName}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Analysis card — collapsible sections */}
-                  <div className="select-text mb-5 card-tinted" style={{ backgroundColor: "var(--phase-debrief-tint)" }} aria-live="polite">
-                    {(() => {
-                      const sections = parseDebriefSections(debriefContent);
-                      if (sections.length <= 1) {
-                        // Fallback: no sections detected, render flat
-                        return <div className="space-y-0">{sections[0]?.content}</div>;
-                      }
-                      return sections.map((s, i) => (
-                        s.title ? (
-                          <DebriefSection key={i} title={s.title} scores={scores} defaultOpen={i < 2}>
-                            <div className="space-y-1">{s.content}</div>
-                          </DebriefSection>
-                        ) : (
-                          <div key={i} className="space-y-1 pb-3">{s.content}</div>
-                        )
-                      ));
-                    })()}
-                  </div>
-                </>
-              )}
-            </>
+            <DebriefPhase
+              isLoading={isLoading}
+              debriefContent={debriefContent}
+              scores={scores}
+              previousScores={previousScores}
+            />
           )}
 
           {/* ============================================================== */}
-          {/* DEPLOY (check-in + mission) — #5 enhanced styling              */}
+          {/* DEPLOY (check-in + mission)                                    */}
           {/* ============================================================== */}
           {currentPhase === "mission" && (
             <>
-              {/* Check-in card (Day 2+, before mission loads) */}
-              {checkinNeeded && !checkinDone && !isLoading && !mission && (
-                <div className="animate-fade-in-up space-y-5">
-                  <div className="card" style={{ padding: "28px 24px" }}>
-                    <p className="mb-1 text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--phase-deploy-muted)" }}>Mission debrief</p>
-                    <p className="mb-1 text-caption" style={{ color: "var(--text-secondary)" }}>Yesterday you were asked to:</p>
-                    <p className="mb-5 text-body font-medium leading-relaxed" style={{ color: "var(--text-primary)" }}>
-                      &ldquo;{lastMission}&rdquo;
-                    </p>
-                    <p className="mb-4 text-body font-medium" style={{ color: "var(--text-primary)" }}>How did it go?</p>
+              <CheckinPhase
+                checkinNeeded={checkinNeeded}
+                checkinDone={checkinDone}
+                checkinPillSelected={checkinPillSelected}
+                setCheckinPillSelected={setCheckinPillSelected}
+                checkinResponse={checkinResponse}
+                lastMission={lastMission}
+                isLoading={isLoading}
+                mission={mission}
+                inputValue={inputValue}
+                setInputValue={setInputValue}
+                submitCheckin={submitCheckin}
+                voice={voiceProps}
+              />
 
-                    {/* Outcome pills */}
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => { setCheckinPillSelected("completed"); haptic(); }}
-                        className={`flex-1 text-body font-semibold transition-all ${
-                          checkinPillSelected === "completed" ? "animate-celebrate scale-[1.02]" : ""
-                        }`}
-                        style={{
-                          backgroundColor: "var(--phase-deploy)",
-                          color: "var(--score-high-text)",
-                          borderRadius: "var(--radius-md)",
-                          padding: "14px 16px",
-                          boxShadow: checkinPillSelected === "completed" ? "0 0 0 2px var(--score-high-text), 0 4px 12px rgba(107,201,160,0.3)" : "none",
-                        }}
-                      >
-                        &#9889; Nailed it
-                      </button>
-                      <button
-                        onClick={() => setCheckinPillSelected("tried")}
-                        className={`flex-1 text-body font-semibold transition-all ${
-                          checkinPillSelected === "tried" ? "scale-[1.02]" : ""
-                        }`}
-                        style={{
-                          backgroundColor: "var(--score-mid-bg)",
-                          color: "var(--score-mid-text)",
-                          borderRadius: "var(--radius-md)",
-                          padding: "14px 16px",
-                          boxShadow: checkinPillSelected === "tried" ? "0 0 0 2px var(--score-mid-text), 0 4px 12px rgba(245,197,99,0.3)" : "none",
-                        }}
-                      >
-                        &#128075; Tried it
-                      </button>
-                      <button
-                        onClick={() => submitCheckin("skipped")}
-                        className="flex-1 text-body font-medium transition-transform"
-                        style={{
-                          backgroundColor: "var(--border)",
-                          color: "var(--text-secondary)",
-                          borderRadius: "var(--radius-md)",
-                          padding: "14px 16px",
-                        }}
-                      >
-                        Skip
-                      </button>
-                    </div>
-
-                    {/* Expandable input */}
-                    {checkinPillSelected && (
-                      <div className="mt-4 animate-fade-in-up space-y-3">
-                        <p className="text-center text-sm font-medium" style={{
-                          color: checkinPillSelected === "completed" ? "#2D6A4F" : "#8B7024"
-                        }}>
-                          {checkinPillSelected === "completed" ? "Nice work! Quick follow-up:" : "Good effort. Tell me more:"}
-                        </p>
-                        {/* Voice error banner for check-in */}
-                        {voice.micError && (
-                          <div className="rounded-xl bg-[#FDF2F2] px-4 py-2.5 text-sm text-[#C4524B] text-center">
-                            {voice.micError}
-                          </div>
-                        )}
-                        {/* Voice listening state for check-in */}
-                        {voice.voiceEnabled && voice.state === "listening" && (
-                          <div className="flex flex-col items-center gap-3 py-4">
-                            <div className="flex items-center gap-1.5 h-6 text-[var(--accent)]">
-                              <span className="voice-bar" />
-                              <span className="voice-bar" />
-                              <span className="voice-bar" />
-                            </div>
-                            <p className="text-sm text-secondary">{voice.interimTranscript || "Listening..."}</p>
-                            <button
-                              onClick={voice.stopListening}
-                              className="voice-listening flex h-12 w-12 items-center justify-center rounded-full text-white"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                                <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
-                                <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
-                              </svg>
-                            </button>
-                          </div>
-                        )}
-
-                        {(!voice.voiceEnabled || voice.state !== "listening") && (
-                          <>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                placeholder={checkinPillSelected === "completed" ? "What was the exact reaction?" : "What happened when you tried?"}
-                                className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
-                                style={{ backgroundColor: PHASE_BG.mission }}
-                                value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
-                                autoFocus
-                              />
-                              {voice.voiceEnabled && !inputValue.trim() && (
-                                <button
-                                  onClick={voice.startListening}
-                                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white transition-transform active:scale-[0.97]"
-                                  title="Speak"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                                    <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
-                                    <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                            {voice.micError && (
-                              <p className="text-xs text-red-500 px-1 -mt-1">{voice.micError}</p>
-                            )}
-                            <button
-                              onClick={() => { if (inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
-                              disabled={!inputValue.trim()}
-                              className="w-full rounded-2xl bg-[var(--accent)] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
-                            >
-                              Submit
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Check-in response */}
-              {checkinResponse && (
-                <div className="animate-fade-in-up card text-center">
-                  <p className="text-body leading-relaxed italic" style={{ color: "var(--text-secondary)" }}>{checkinResponse}</p>
-                </div>
-              )}
-
-              {/* Loading mission */}
-              {isLoading && !checkinResponse && (
-                <div className="text-center py-8">
-                  <p className="text-body" style={{ color: "var(--text-secondary)" }}>Assigning your mission...</p>
-                  <LoadingDots />
-                </div>
-              )}
-
-              {/* Mission card */}
               {mission && !isLoading && !checkinResponse && (
-                <div className="animate-challenge relative">
-                  <div className="text-center mb-5">
-                    <span className="badge" style={{ backgroundColor: "var(--score-high-bg)", color: "var(--score-high-text)" }}>
-                      Field assignment
-                    </span>
-                  </div>
-
-                  <div className="mb-5 card-tinted" style={{ backgroundColor: "var(--phase-deploy-tint)", padding: "24px" }}>
-                    {(() => {
-                      const sentenceEnd = mission.search(/[.!?]\s|[.!?]$/);
-                      if (sentenceEnd > 0 && sentenceEnd < mission.length - 1) {
-                        const headline = mission.slice(0, sentenceEnd + 1);
-                        const detail = mission.slice(sentenceEnd + 1).trim();
-                        return (
-                          <>
-                            <p className="text-lead font-bold leading-snug" style={{ color: "var(--text-primary)" }}>{headline}</p>
-                            {detail && <p className="mt-2 text-body leading-relaxed" style={{ color: "var(--text-primary)", opacity: 0.8 }}>{detail}</p>}
-                          </>
-                        );
-                      }
-                      return <p className="text-lead font-bold leading-relaxed" style={{ color: "var(--text-primary)" }}>{mission}</p>;
-                    })()}
-                    {rationale && (
-                      <>
-                        <div className="my-4" style={{ borderTop: "1px solid rgba(184,224,200,0.3)" }} />
-                        <p className="text-caption italic" style={{ color: "var(--text-secondary)" }}>{rationale}</p>
-                      </>
-                    )}
-                  </div>
-
-                  {!showConfetti ? (
-                    <button onClick={completeSession} className="btn-primary" style={{ backgroundColor: "var(--score-high)", boxShadow: "0 4px 16px rgba(107,201,160,0.3)" }}>
-                      Session complete &#10003;
-                    </button>
-                  ) : (
-                    <div className="animate-fade-in-up space-y-5 relative">
-                      {/* Confetti removed — uses animate-celebrate card instead */}
-                      {/* Enhanced completion card */}
-                      <div className="card-tinted animate-celebrate" style={{ backgroundColor: "var(--score-high-bg)", padding: "28px 24px" }}>
-                        <p className="mb-1 text-center text-heading font-semibold" style={{ color: "var(--text-primary)" }}>
-                          Session complete
-                        </p>
-                        <p className="mb-3 text-center text-body" style={{ color: "var(--text-secondary)" }}>
-                          Day {dayNumber} &middot; {concept?.name}
-                        </p>
-
-                        {/* Milestone badge (Days 7, 14, 21, 30, 50...) */}
-                        {getMilestoneLine(dayNumber) && (
-                          <div className="mb-4 card-tinted text-center" style={{ backgroundColor: "var(--accent-soft)", padding: "12px 16px", borderRadius: "var(--radius-md)" }}>
-                            <p className="text-caption font-bold uppercase tracking-wider mb-1" style={{ color: "var(--accent)" }}>Milestone</p>
-                            <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{getMilestoneLine(dayNumber)}</p>
-                          </div>
-                        )}
-
-                        {/* Motivational line */}
-                        {scores && (
-                          <p className="mb-5 text-center text-caption font-medium" style={{ color: "var(--phase-deploy-muted)" }}>
-                            {getMotivationalLine(scores, previousScores)}
-                          </p>
-                        )}
-
-                        {/* Key moment */}
-                        {keyMoment && (
-                          <div className="mb-5" style={{ backgroundColor: "rgba(255,255,255,0.6)", borderRadius: "var(--radius-md)", padding: "14px 16px" }}>
-                            <p className="text-caption font-semibold" style={{ color: "var(--text-secondary)" }}>Key takeaway</p>
-                            <p className="mt-1 text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{keyMoment}</p>
-                          </div>
-                        )}
-
-                        {/* Scores with deltas */}
-                        {scores && (
-                          <div className="mb-5">
-                            <div className="flex items-center justify-center gap-3">
-                              {SCORE_DIMS.map(({ key, fullName }) => {
-                                const s = scores[key];
-                                const prev = previousScores ? previousScores[key] : null;
-                                const diff = prev !== null ? s - prev : null;
-                                return (
-                                  <div key={key} className="flex flex-col items-center gap-1.5">
-                                    <div
-                                      className="flex items-center justify-center rounded-full text-body font-bold relative"
-                                      style={{ width: 44, height: 44, backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
-                                    >
-                                      {s}
-                                      {diff !== null && (
-                                        <span
-                                          className="absolute -top-1.5 -right-2 text-caption font-bold rounded-full px-1.5"
-                                          style={{
-                                            fontSize: 11,
-                                            color: diff > 0 ? "var(--score-high-text)" : diff < 0 ? "var(--score-low-text)" : "var(--text-secondary)",
-                                            backgroundColor: diff > 0 ? "var(--score-high-bg)" : diff < 0 ? "var(--score-low-bg)" : "var(--border)",
-                                          }}
-                                        >
-                                          {diff > 0 ? `+${diff}` : diff === 0 ? "=" : diff}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-caption" style={{ color: "var(--text-secondary)", fontSize: 11 }}>{fullName}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Mission recap */}
-                        {mission && (
-                          <div className="mb-4" style={{ borderRadius: "var(--radius-md)", border: "2px dashed var(--phase-deploy)", backgroundColor: "rgba(255,255,255,0.6)", padding: "14px 16px" }}>
-                            <p className="text-caption font-semibold" style={{ color: "var(--phase-deploy-muted)" }}>Your mission today</p>
-                            <p className="mt-1 text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{mission}</p>
-                          </div>
-                        )}
-
-                        {/* Share preview card */}
-                        <div className="mb-3" style={{ borderRadius: "var(--radius-md)", backgroundColor: "white", padding: "16px", boxShadow: "var(--shadow-sm)" }}>
-                          <div className="flex items-center justify-between mb-3">
-                            <div>
-                              <p className="text-body font-bold" style={{ color: "var(--text-primary)" }}>
-                                <span style={{ color: "var(--accent)" }}>the</span> edge
-                              </p>
-                              <p className="text-caption" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>Day {dayNumber}</p>
-                            </div>
-                            {scores && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-lead font-bold" style={{ color: "var(--accent)" }}>
-                                  {(Object.values(scores).reduce((a, b) => a + b, 0) / 5).toFixed(1)}
-                                </span>
-                                <span className="text-caption" style={{ color: "var(--text-tertiary)" }}>/5</span>
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-caption font-medium mb-2" style={{ color: "var(--text-primary)" }}>{concept?.name}</p>
-                          {scores && (
-                            <div className="flex gap-1.5 mb-2">
-                              {SCORE_DIMS.map(({ key }) => {
-                                const s = scores[key];
-                                return (
-                                  <div key={key} className="h-2 flex-1 rounded-full" style={{
-                                    backgroundColor: s >= 4 ? "var(--score-high)" : s >= 3 ? "var(--score-mid)" : "var(--score-low)",
-                                  }} />
-                                );
-                              })}
-                            </div>
-                          )}
-                          {keyMoment && (
-                            <p className="text-caption italic truncate" style={{ color: "var(--text-secondary)" }}>{keyMoment}</p>
-                          )}
-                        </div>
-
-                        {/* Share button */}
-                        <button
-                          onClick={async () => {
-                            const avg = scores ? (Object.values(scores).reduce((a, b) => a + b, 0) / 5).toFixed(1) : null;
-                            const text = `${concept?.name ? `Today I practised ${concept.name}` : "The Edge"}${avg ? ` — scored ${avg}/5` : ""} on Day ${dayNumber}.\n${keyMoment ? `\nKey takeaway: ${keyMoment}\n` : ""}\nThe Edge — daily influence training\n${window.location.origin}`;
-
-                            try {
-                              const canvas = document.createElement("canvas");
-                              canvas.width = 600;
-                              canvas.height = 400;
-                              const ctx = canvas.getContext("2d");
-                              if (ctx) {
-                                ctx.fillStyle = "#FAF9F6";
-                                ctx.beginPath();
-                                if (ctx.roundRect) {
-                                  ctx.roundRect(0, 0, 600, 400, 24);
-                                } else {
-                                  ctx.rect(0, 0, 600, 400);
-                                }
-                                ctx.fill();
-                                ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#5A52E0";
-                                ctx.fillRect(0, 0, 600, 6);
-                                ctx.fillStyle = "#2D2B3D";
-                                ctx.font = "bold 28px sans-serif";
-                                ctx.fillText("the edge", 32, 48);
-                                ctx.fillStyle = "#8E8C99";
-                                ctx.font = "16px sans-serif";
-                                ctx.fillText(`Day ${dayNumber}`, 32, 76);
-                                ctx.fillStyle = "#2D2B3D";
-                                ctx.font = "bold 20px sans-serif";
-                                ctx.fillText(concept?.name || "", 32, 120);
-
-                                if (scores) {
-                                  const dims = ["TA", "TW", "FC", "ER", "SO"];
-                                  const keys: (keyof SessionScores)[] = ["technique_application", "tactical_awareness", "frame_control", "emotional_regulation", "strategic_outcome"];
-                                  keys.forEach((k, i) => {
-                                    const s = scores[k];
-                                    const cx = 64 + i * 72;
-                                    const cy = 175;
-                                    ctx.beginPath();
-                                    ctx.arc(cx, cy, 24, 0, Math.PI * 2);
-                                    ctx.fillStyle = scoreCircleColor(s);
-                                    ctx.fill();
-                                    ctx.fillStyle = scoreTextColor(s);
-                                    ctx.font = "bold 18px sans-serif";
-                                    ctx.textAlign = "center";
-                                    ctx.fillText(String(s), cx, cy + 6);
-                                    ctx.fillStyle = "#8E8C99";
-                                    ctx.font = "11px sans-serif";
-                                    ctx.fillText(dims[i], cx, cy + 40);
-                                  });
-                                  ctx.textAlign = "start";
-                                }
-
-                                if (keyMoment) {
-                                  ctx.fillStyle = "#8E8C99";
-                                  ctx.font = "13px sans-serif";
-                                  ctx.fillText("Key takeaway", 32, 250);
-                                  ctx.fillStyle = "#2D2B3D";
-                                  ctx.font = "14px sans-serif";
-                                  const words = keyMoment.split(" ");
-                                  let line = "";
-                                  let y = 270;
-                                  for (const word of words) {
-                                    const test = line + (line ? " " : "") + word;
-                                    if (ctx.measureText(test).width > 536) {
-                                      ctx.fillText(line, 32, y);
-                                      line = word;
-                                      y += 20;
-                                      if (y > 340) { ctx.fillText(line + "...", 32, y); line = ""; break; }
-                                    } else { line = test; }
-                                  }
-                                  if (line) ctx.fillText(line, 32, y);
-                                }
-
-                                ctx.fillStyle = "#B5B3BD";
-                                ctx.font = "12px sans-serif";
-                                ctx.fillText(window.location.hostname, 32, 384);
-
-                                const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-                                if (blob && navigator.share && navigator.canShare?.({ files: [new File([blob], "edge-session.png", { type: "image/png" })] })) {
-                                  await navigator.share({
-                                    text,
-                                    files: [new File([blob], "edge-session.png", { type: "image/png" })],
-                                  });
-                                  return;
-                                }
-                              }
-                            } catch {}
-
-                            if (navigator.share) {
-                              navigator.share({ text }).catch(() => {});
-                            } else {
-                              navigator.clipboard.writeText(text).catch(() => {});
-                            }
-                          }}
-                          className="btn-secondary mb-2"
-                          style={{ borderColor: "var(--phase-deploy)", color: "var(--phase-deploy-muted)" }}
-                        >
-                          Share summary
-                        </button>
-                      </div>
-
-                      {/* Done button */}
-                      <button onClick={() => router.push("/")} className="btn-primary">
-                        Done
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <MissionPhase
+                  isLoading={isLoading}
+                  mission={mission}
+                  rationale={rationale}
+                  scores={scores}
+                  previousScores={previousScores}
+                  concept={concept}
+                  dayNumber={dayNumber}
+                  keyMoment={keyMoment}
+                  showConfetti={showConfetti}
+                  completeSession={completeSession}
+                  onDone={() => router.push("/")}
+                />
               )}
             </>
           )}
@@ -2946,198 +1381,22 @@ export default function SessionPage() {
       {/* ================================================================== */}
       {/* Fixed bottom bar (roleplay)                                         */}
       {/* ================================================================== */}
-      {isRoleplay && !completedPhases.has("roleplay") && (
-        <div className="flex-shrink-0 bottom-bar bg-white px-4 pt-3 shadow-[var(--shadow-elevated)]" style={{ borderRadius: "var(--radius-xl) var(--radius-xl) 0 0" }}>
-
-          {/* Voice listening state — replaces text input when actively listening */}
-          {voice.voiceEnabled && voice.state === "listening" && (
-            <div className="flex flex-col items-center gap-3 mb-2 py-2">
-              <div className="flex items-center gap-1.5 h-6 text-[var(--accent)]">
-                <span className="voice-bar" />
-                <span className="voice-bar" />
-                <span className="voice-bar" />
-              </div>
-              <p className="text-sm text-secondary">
-                {voice.interimTranscript || "Listening..."}
-              </p>
-              <button
-                onClick={voice.stopListening}
-                className="voice-listening flex h-14 w-14 items-center justify-center rounded-full text-white transition-transform active:scale-[0.93]"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
-                  <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
-                  <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
-                </svg>
-              </button>
-            </div>
-          )}
-
-          {/* Voice processing state — transcribing */}
-          {voice.voiceEnabled && voice.state === "processing" && (
-            <div className="flex flex-col items-center gap-2 mb-2 py-2">
-              <LoadingDots />
-              <p className="text-sm text-secondary">{voice.interimTranscript || "Processing..."}</p>
-            </div>
-          )}
-
-          {/* Voice error feedback */}
-          {voice.micError && (
-            <div className="mb-2 px-3 py-2 rounded-2xl text-center text-xs font-medium" style={{ backgroundColor: "#FFF8E7", color: "#C4A24E" }}>
-              {voice.micError}
-            </div>
-          )}
-
-          {/* Voice speaking state — show indicator while AI talks */}
-          {voice.voiceEnabled && voice.state === "speaking" && (
-            <div className="flex flex-col items-center gap-3 mb-2 py-2">
-              <div className="flex items-center gap-1.5 h-6 text-[#D4908F]">
-                <span className="voice-bar" />
-                <span className="voice-bar" />
-                <span className="voice-bar" />
-              </div>
-              <p className="text-sm text-secondary">{character?.name} is speaking...</p>
-              <button
-                onClick={() => { voice.stopSpeaking(); }}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-[#FDF2F2] text-[#D4908F] transition-transform active:scale-[0.93] voice-speaking"
-                title="Stop speaking"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                  <path fillRule="evenodd" d="M4.5 7.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-          )}
-
-          {/* Normal text input (shown when not listening/speaking/processing in voice mode) */}
-          {(!voice.voiceEnabled || (voice.state !== "listening" && voice.state !== "speaking" && voice.state !== "processing")) && (
-            <div className="flex items-end gap-2 mb-2">
-              <textarea
-                ref={inputRef}
-                placeholder={voice.voiceEnabled ? "Tap mic or type..." : "Type your response..."}
-                rows={1}
-                className="input-field flex-1 resize-none"
-                style={{ backgroundColor: "var(--phase-simulate-tint)", maxHeight: "6rem", borderRadius: "var(--radius-md)" }}
-                value={inputValue}
-                onChange={(e) => {
-                  setInputValue(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px";
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && inputValue.trim() && !isStreaming) {
-                    e.preventDefault();
-                    handleRoleplayInput(inputValue);
-                  }
-                }}
-                disabled={isStreaming || isLoading}
-              />
-
-              {/* Mic button (when voice enabled and no text typed) */}
-              {voice.voiceEnabled && !inputValue.trim() && !isStreaming && !isLoading && (
-                <button
-                  onClick={voice.startListening}
-                  className="touch-target rounded-full"
-                  style={{ backgroundColor: "var(--accent)", color: "white" }}
-                  title="Speak"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                    <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
-                    <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
-                  </svg>
-                </button>
-              )}
-
-              {/* Send button */}
-              {(!voice.voiceEnabled || inputValue.trim() || isStreaming || isLoading) && (
-                <button
-                  onClick={() => { if (inputValue.trim() && !isStreaming) handleRoleplayInput(inputValue); }}
-                  disabled={isStreaming || isLoading || !inputValue.trim()}
-                  className="touch-target rounded-full disabled:opacity-40"
-                  style={{ backgroundColor: "var(--accent)", color: "white" }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                    <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.289Z" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Mic error message */}
-          {voice.micError && (
-            <p className="text-xs text-red-500 text-center px-2 -mt-1 mb-1">{voice.micError}</p>
-          )}
-
-          {/* Command toolbar */}
-          <div className="flex items-center justify-between px-1 pb-2">
-            {/* Left: Assistance tools */}
-            <div className="flex items-center gap-3">
-              {voice.sttSupported && (
-                <div className="flex flex-col items-center gap-1">
-                  <button
-                    onClick={voice.toggleVoice}
-                    className="touch-target rounded-full transition-all"
-                    style={{
-                      backgroundColor: voice.voiceEnabled ? "var(--accent)" : "var(--border)",
-                      color: voice.voiceEnabled ? "white" : "var(--text-secondary)",
-                      boxShadow: voice.voiceEnabled ? "var(--shadow-accent)" : "none",
-                    }}
-                    title={voice.voiceEnabled ? "Voice on" : "Voice off"}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                      {voice.voiceEnabled ? (
-                        <>
-                          <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06Z" />
-                          <path d="M18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
-                          <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 6 6 0 0 1 0 8.486.75.75 0 0 1-1.06-1.061 4.5 4.5 0 0 0 0-6.364.75.75 0 0 1 0-1.06Z" />
-                        </>
-                      ) : (
-                        <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM17.78 9.22a.75.75 0 1 0-1.06 1.06L18.44 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06l1.72-1.72 1.72 1.72a.75.75 0 1 0 1.06-1.06L20.56 12l1.72-1.72a.75.75 0 1 0-1.06-1.06l-1.72 1.72-1.72-1.72Z" />
-                      )}
-                    </svg>
-                  </button>
-                  <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Voice</span>
-                </div>
-              )}
-              <div className="flex flex-col items-center gap-1">
-                <button onClick={handleCoach} className="touch-target rounded-full text-lead" style={{ backgroundColor: "var(--coach-bg)" }} title="Coach">
-                  &#128161;
-                </button>
-                <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Hint</span>
-              </div>
-            </div>
-
-            {/* Center: Session controls */}
-            <div className="flex items-center gap-3">
-              <div className="flex flex-col items-center gap-1">
-                <button onClick={handleReset} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} title="Reset">
-                  &#128260;
-                </button>
-                <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Reset</span>
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                <button onClick={handleSkip} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} title="Skip">
-                  &#9197;
-                </button>
-                <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Skip</span>
-              </div>
-            </div>
-
-            {/* Right: Primary action — Done */}
-            <div className="flex flex-col items-center gap-1">
-              <button
-                onClick={handleDone}
-                className="flex h-[52px] w-[52px] items-center justify-center rounded-full text-lead font-bold"
-                style={{ backgroundColor: "var(--score-high)", color: "white", boxShadow: "0 3px 12px rgba(107,201,160,0.3)" }}
-                title="Done"
-              >
-                &#10003;
-              </button>
-              <span className="text-caption font-medium" style={{ fontSize: 10, color: "var(--score-high-text)" }}>Done</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <SessionToolbar
+        isRoleplay={isRoleplay}
+        completedRoleplay={completedPhases.has("roleplay")}
+        inputValue={inputValue}
+        setInputValue={setInputValue}
+        inputRef={inputRef}
+        isStreaming={isStreaming}
+        isLoading={isLoading}
+        voice={voiceProps}
+        character={character}
+        handleRoleplayInput={handleRoleplayInput}
+        handleCoach={handleCoach}
+        handleReset={handleReset}
+        handleSkip={handleSkip}
+        handleDone={handleDone}
+      />
 
       {/* New message pill */}
       {showNewMessagePill && isRoleplay && (
@@ -3205,7 +1464,7 @@ export default function SessionPage() {
       )}
 
       {/* ================================================================== */}
-      {/* Coach panel — warm cream bottom sheet                               */}
+      {/* Coach panel                                                         */}
       {/* ================================================================== */}
       {(coachAdvice || coachLoading) && (
         <>

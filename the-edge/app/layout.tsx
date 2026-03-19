@@ -48,6 +48,7 @@ export default function RootLayout({
   return (
     <html lang="en" style={{ backgroundColor: "#FAF9F6", colorScheme: "light" }}>
       <head>
+        <meta name="color-scheme" content="light" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link

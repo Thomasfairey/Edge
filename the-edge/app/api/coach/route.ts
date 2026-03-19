@@ -10,15 +10,16 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
+import { generateResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildCoachPrompt } from "@/lib/prompts/coach";
 import { Concept, Message } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateTranscript, validateConcept, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, _userId: string | null) {
+  const log = createRequestLogger(req, _userId);
   const body = await req.json().catch(() => null);
   if (!body || !body.transcript || !body.concept) {
     return NextResponse.json(
@@ -52,7 +53,13 @@ async function handlePost(req: NextRequest, _userId: string | null) {
 
     return NextResponse.json({ advice });
   } catch (error) {
-    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "coach" });
+    if (error instanceof CircuitBreakerOpenError) {
+      return NextResponse.json(
+        { error: "Service temporarily busy", retryAfter: 30 },
+        { status: 503, headers: { "Retry-After": "30" } }
+      );
+    }
+    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "coach" });
     return NextResponse.json(
       { error: "Coach assist failed. Please try again." },
       { status: 500 }

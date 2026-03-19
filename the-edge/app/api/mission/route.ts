@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
+import { generateResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildMissionPrompt } from "@/lib/prompts/mission";
 import { serialiseForPrompt, appendEntry, getLedgerCount } from "@/lib/ledger";
@@ -28,9 +28,10 @@ import {
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateScores, validateText, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, userId: string | null) {
+  const log = createRequestLogger(req, userId);
   const body = await req.json().catch(() => null);
   if (!body || !body.concept || !body.character || !body.scores) {
     return NextResponse.json(
@@ -95,7 +96,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     } else {
       mission = rawMission.trim();
       rationale = "";
-      logger.warn("Could not parse RATIONALE: section from response", { phase: "mission" });
+      log.warn("Could not parse RATIONALE: section from response", { phase: "mission" });
     }
 
     // Assemble the complete ledger entry
@@ -119,20 +120,26 @@ async function handlePost(req: NextRequest, userId: string | null) {
 
     // Write to Supabase
     await appendEntry(ledgerEntry, userId);
-    logger.info(`Day ${day} ledger entry written. Mission assigned.`, { phase: "mission" });
+    log.info(`Day ${day} ledger entry written. Mission assigned.`, { phase: "mission" });
 
     // Update spaced repetition data
     try {
       const scoresRecord: { [key: string]: number } = { ...scores };
       await updateSREntry(concept.id, scoresRecord, userId);
-      logger.info(`SR entry updated for concept: ${concept.id}`, { phase: "mission" });
+      log.info(`SR entry updated for concept: ${concept.id}`, { phase: "mission" });
     } catch (e) {
-      logger.warn(`Failed to update SR entry: ${e instanceof Error ? e.message : "Unknown error"}`, { phase: "mission" });
+      log.warn(`Failed to update SR entry: ${e instanceof Error ? e.message : "Unknown error"}`, { phase: "mission" });
     }
 
     return NextResponse.json({ mission, rationale, ledgerEntry });
   } catch (error) {
-    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "mission" });
+    if (error instanceof CircuitBreakerOpenError) {
+      return NextResponse.json(
+        { error: "Service temporarily busy", retryAfter: 30 },
+        { status: 503, headers: { "Retry-After": "30" } }
+      );
+    }
+    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "mission" });
     return NextResponse.json(
       { error: "Mission generation failed. Please try again." },
       { status: 500 }

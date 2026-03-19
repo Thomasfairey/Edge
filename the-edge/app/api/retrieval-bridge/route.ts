@@ -15,9 +15,10 @@ import { Concept, truncate } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateText, validateConcept, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, userId: string | null) {
+  const log = createRequestLogger(req, userId);
   const body = await req.json().catch(() => null);
   if (!body || !body.concept) {
     return NextResponse.json(
@@ -70,7 +71,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
 
     return NextResponse.json({ response: rawResponse, ready });
   } catch (error) {
-    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "retrieval-bridge" });
+    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "retrieval-bridge" });
     return NextResponse.json(
       { error: "Retrieval evaluation failed. Please try again." },
       { status: 500 }

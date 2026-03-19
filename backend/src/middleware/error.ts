@@ -8,7 +8,14 @@ import { AppError } from "../types/errors.js";
 
 export function errorHandler(err: Error, c: Context) {
   if (err instanceof AppError) {
-    console.error(`[${err.code}] ${err.message}`);
+    const logEntry = {
+      level: "error",
+      code: err.code,
+      message: err.message,
+      stack: process.env.NODE_ENV !== "production" ? err.stack : undefined,
+      timestamp: new Date().toISOString(),
+    };
+    console.error(JSON.stringify(logEntry));
     return c.json(
       {
         success: false,
@@ -19,7 +26,14 @@ export function errorHandler(err: Error, c: Context) {
   }
 
   // Unexpected errors
-  console.error("[INTERNAL_ERROR]", err.message, err.stack);
+  const logEntry = {
+    level: "error",
+    code: "INTERNAL_ERROR",
+    message: err.message,
+    stack: process.env.NODE_ENV !== "production" ? err.stack : undefined,
+    timestamp: new Date().toISOString(),
+  };
+  console.error(JSON.stringify(logEntry));
   return c.json(
     {
       success: false,

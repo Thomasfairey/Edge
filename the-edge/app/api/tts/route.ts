@@ -15,15 +15,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { getVoiceForCharacter, CHARACTER_VOICE_MAP, ELEVENLABS_MODEL } from "@/lib/voice-map";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 const MAX_TTS_LENGTH = 5000; // ElevenLabs has a 5000 char limit per request
 
 async function handler(req: NextRequest, _userId: string | null): Promise<Response> {
+  const log = createRequestLogger(req, _userId);
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "Speech service not configured" },
+      { error: "Speech service not configured", fallback: "text" },
       { status: 500 }
     );
   }
@@ -94,21 +95,21 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      logger.error(`ElevenLabs error ${response.status}: ${errorText}`, { phase: "tts" });
+      log.error(`ElevenLabs error ${response.status}: ${errorText}`, { phase: "tts" });
       return NextResponse.json(
-        { error: response.status === 401 ? "TTS service authentication failed" : "TTS service unavailable" },
+        { error: response.status === 401 ? "TTS service authentication failed" : "TTS service unavailable", fallback: "text" },
         { status: 502 }
       );
     }
 
     if (!response.body) {
       return NextResponse.json(
-        { error: "No audio stream returned" },
+        { error: "No audio stream returned", fallback: "text" },
         { status: 502 }
       );
     }
 
-    logger.info(`voice=${voice.voiceName} | character=${characterId ?? "default"} | chars=${cleaned.length}`, { phase: "tts" });
+    log.info(`voice=${voice.voiceName} | character=${characterId ?? "default"} | chars=${cleaned.length}`, { phase: "tts" });
 
     // Stream the audio directly to the client
     return new Response(response.body, {
@@ -122,7 +123,7 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
     });
   } catch {
     return NextResponse.json(
-      { error: "Speech synthesis unavailable" },
+      { error: "Speech synthesis unavailable", fallback: "text" },
       { status: 502 }
     );
   }

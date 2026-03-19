@@ -11,7 +11,7 @@ import type { SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { NextRequest } from "next/server";
-import { logger } from "@/lib/logger";
+import { createRequestLogger } from "@/lib/logger";
 
 /**
  * Calculate streak using UTC dates to avoid timezone-induced miscounts.
@@ -49,6 +49,7 @@ function calculateStreak(entries: { date: string }[]): number {
 }
 
 async function handleGet(_req: NextRequest, userId: string | null) {
+  const log = createRequestLogger(_req, userId);
   try {
     const [entries, lastEntry, dayNumber, srSummary] = await Promise.all([
       getLedger(userId),
@@ -81,7 +82,7 @@ async function handleGet(_req: NextRequest, userId: string | null) {
       allScores,
     });
   } catch (error) {
-    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "status" });
+    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "status" });
     return NextResponse.json(
       { error: "Failed to load status. Please try again." },
       { status: 500 }

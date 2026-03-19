@@ -17,17 +17,14 @@ export async function requestLogger(c: Context<AppEnv>, next: Next) {
   let user: { id: string } | undefined;
   try { user = c.get("user"); } catch { /* not authenticated */ }
 
-  const log = {
+  const logEntry = {
+    level: status >= 400 ? "error" : "info",
     method,
     path,
     status,
     duration_ms: duration,
     user_id: user?.id ?? "anonymous",
+    timestamp: new Date().toISOString(),
   };
-
-  if (status >= 400) {
-    console.error("[request]", JSON.stringify(log));
-  } else {
-    console.log("[request]", JSON.stringify(log));
-  }
+  console.log(JSON.stringify(logEntry));
 }

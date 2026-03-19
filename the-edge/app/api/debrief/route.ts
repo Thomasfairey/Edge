@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateResponseViaStream, PHASE_CONFIG } from "@/lib/anthropic";
+import { generateResponseViaStream, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildDebriefPrompt } from "@/lib/prompts/debrief";
 import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
@@ -27,7 +27,7 @@ import {
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateTranscript, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { logger, createRequestLogger } from "@/lib/logger";
 
 export const maxDuration = 60;
 
@@ -127,6 +127,7 @@ function parseLedgerFields(text: string): {
 }
 
 async function handlePost(req: NextRequest, userId: string | null) {
+  const log = createRequestLogger(req, userId);
   const body = await req.json().catch(() => null);
   if (!body || !body.transcript || !body.concept || !body.character) {
     return NextResponse.json(
@@ -182,11 +183,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
     const scores = parseScores(debriefContent);
     const { behavioralWeaknessSummary, keyMoment } = parseLedgerFields(debriefContent);
 
-    logger.info(
+    log.info(
       `Scores: TA=${scores.technique_application} TW=${scores.tactical_awareness} FC=${scores.frame_control} ER=${scores.emotional_regulation} SO=${scores.strategic_outcome}`,
       { phase: "debrief" }
     );
-    logger.info(`Commands used: ${safeCommandsUsed.join(", ") || "none"}`, { phase: "debrief" });
+    log.info(`Commands used: ${safeCommandsUsed.join(", ") || "none"}`, { phase: "debrief" });
 
     return NextResponse.json({
       debriefContent,
@@ -195,7 +196,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
       keyMoment,
     });
   } catch (error) {
-    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "debrief" });
+    if (error instanceof CircuitBreakerOpenError) {
+      return NextResponse.json(
+        { error: "Service temporarily busy", retryAfter: 30 },
+        { status: 503, headers: { "Retry-After": "30" } }
+      );
+    }
+    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "debrief" });
 
     // Fallback: compute scores from transcript data
     const fallbackScores = computeFallbackScores(transcript, safeCommandsUsed);

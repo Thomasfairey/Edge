@@ -70,7 +70,7 @@ export async function getLedger(
     .order("day", { ascending: true });
 
   if (error) {
-    console.error("[ledger] Failed to read:", error.message);
+    console.log(JSON.stringify({ level: "error", service: "ledger", operation: "read", message: error.message, timestamp: new Date().toISOString() }));
     return [];
   }
   return (data as LedgerRow[]).map(rowToEntry);
@@ -103,7 +103,7 @@ export async function appendEntry(
   });
 
   if (error) {
-    console.error("[ledger] Failed to write:", error.message);
+    console.log(JSON.stringify({ level: "error", service: "ledger", operation: "write", message: error.message, timestamp: new Date().toISOString() }));
     throw new Error(`Ledger write failed: ${error.message}`);
   }
 }
@@ -144,7 +144,7 @@ export async function updateLastMissionOutcome(
     .eq("user_id", userId);
 
   if (error) {
-    console.error("[ledger] Failed to update mission_outcome:", error.message);
+    console.log(JSON.stringify({ level: "error", service: "ledger", operation: "update_mission_outcome", message: error.message, timestamp: new Date().toISOString() }));
   }
 }
 
