@@ -838,6 +838,12 @@ export default function SessionPage() {
       voiceAutoSubmitRef.current = null;
       if (currentPhase === "roleplay") {
         handleRoleplayInput(text);
+      } else if (currentPhase === "retrieval" && !retrievalResponse) {
+        submitRetrievalResponse(text);
+        setInputValue("");
+      } else if (currentPhase === "mission" && checkinPillSelected && !checkinDone) {
+        submitCheckin(checkinPillSelected, text);
+        setInputValue("");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2105,7 +2111,7 @@ export default function SessionPage() {
                                 style={{ backgroundColor: PHASE_TINT.mission }}
                                 value={inputValue}
                                 onChange={(e) => setInputValue(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) submitCheckin(checkinPillSelected, inputValue.trim()); }}
+                                onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
                                 autoFocus
                               />
                               {voice.voiceEnabled && voice.sttSupported && !inputValue.trim() && (
@@ -2122,7 +2128,7 @@ export default function SessionPage() {
                               )}
                             </div>
                             <button
-                              onClick={() => { if (inputValue.trim()) submitCheckin(checkinPillSelected, inputValue.trim()); }}
+                              onClick={() => { if (inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
                               disabled={!inputValue.trim()}
                               className="w-full rounded-2xl bg-[#5A52E0] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
                             >
@@ -2310,7 +2316,11 @@ export default function SessionPage() {
                               if (ctx) {
                                 ctx.fillStyle = "#FAF9F6";
                                 ctx.beginPath();
-                                ctx.roundRect(0, 0, 600, 400, 24);
+                                if (ctx.roundRect) {
+                                  ctx.roundRect(0, 0, 600, 400, 24);
+                                } else {
+                                  ctx.rect(0, 0, 600, 400);
+                                }
                                 ctx.fill();
                                 ctx.fillStyle = "#5A52E0";
                                 ctx.fillRect(0, 0, 600, 6);

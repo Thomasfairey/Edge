@@ -25,6 +25,7 @@ import {
   SessionScores,
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { validateScores, validateText, ValidationError } from "@/lib/validate";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -33,6 +34,21 @@ async function handlePost(req: NextRequest) {
       { error: "Missing required fields: concept, character, scores" },
       { status: 400 }
     );
+  }
+
+  try {
+    body.scores = validateScores(body.scores);
+    if (body.behavioralWeaknessSummary) {
+      validateText(body.behavioralWeaknessSummary, "behavioralWeaknessSummary");
+    }
+    if (body.keyMoment) {
+      validateText(body.keyMoment, "keyMoment");
+    }
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
   }
 
   const {
@@ -56,7 +72,7 @@ async function handlePost(req: NextRequest) {
   // Generate the mission
   const serialisedLedger = await serialiseForPrompt();
   const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
-  const systemPrompt = `${buildPersistentContext()}\n\n${missionPrompt}`;
+  const systemPrompt = `${await buildPersistentContext()}\n\n${missionPrompt}`;
 
   const rawMission = await generateResponse(
     systemPrompt,

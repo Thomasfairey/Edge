@@ -1,7 +1,8 @@
 /**
- * Opt-in API key protection scaffold.
- * If EDGE_API_KEY env var is not set, all requests pass (zero breaking change).
- * Reads X-API-Key header or ?key= query param.
+ * API key protection.
+ * When EDGE_API_KEY is set, all requests must include it via
+ * the Authorization header (Bearer token) or X-API-Key header.
+ * Query-param auth is intentionally excluded to avoid key leakage in logs.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -15,16 +16,17 @@ type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
 export function checkAuth(req: NextRequest): NextResponse | null {
   const requiredKey = process.env.EDGE_API_KEY;
 
-  // If no key is configured, all requests pass
+  // If no key is configured, all requests pass (dev mode)
   if (!requiredKey) return null;
 
+  // Accept Authorization: Bearer <key> or X-API-Key header (not query params)
+  const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const headerKey = req.headers.get("x-api-key");
-  const urlKey = new URL(req.url).searchParams.get("key");
-  const providedKey = headerKey || urlKey;
+  const providedKey = bearerToken || headerKey;
 
   if (!providedKey || providedKey !== requiredKey) {
     return NextResponse.json(
-      { error: "Unauthorized. Provide a valid API key." },
+      { error: "Unauthorized" },
       { status: 401 }
     );
   }

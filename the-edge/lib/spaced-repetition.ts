@@ -75,12 +75,12 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
     let interval = row.interval;
 
     if (avg >= 4) {
-      easeFactor = Math.min(easeFactor * 1.3, 5);
-      interval = Math.round(interval * easeFactor);
+      easeFactor = Math.min(easeFactor + 0.15, 3.0);
+      interval = Math.min(Math.round(interval * easeFactor), 180);
     } else if (avg >= 3) {
-      interval = Math.round(interval * easeFactor);
+      interval = Math.min(Math.round(interval * easeFactor), 180);
     } else {
-      easeFactor = Math.max(easeFactor * 0.8, 1.3);
+      easeFactor = Math.max(easeFactor - 0.3, 1.3);
       interval = 1;
     }
 

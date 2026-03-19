@@ -22,6 +22,7 @@ import {
 } from "@/lib/prompts/roleplay";
 import { CharacterArchetype, Concept, Message } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { validateTranscript, validateText, ValidationError } from "@/lib/validate";
 
 async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -30,6 +31,18 @@ async function handlePost(req: NextRequest) {
       { error: "Missing required fields: concept, character" },
       { status: 400 }
     );
+  }
+
+  try {
+    if (body.transcript) body.transcript = validateTranscript(body.transcript);
+    if (body.userMessage !== null && body.userMessage !== undefined) {
+      validateText(body.userMessage, "userMessage");
+    }
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
   }
 
   const { concept, character, transcript, userMessage, scenarioContext } =

@@ -343,8 +343,12 @@ export async function selectConcept(completedIds: string[]): Promise<{ concept: 
 }
 
 function selectNewConcept(completedIds: string[]): Concept {
+  // completedIds may contain either concept IDs (e.g. "mirroring") or
+  // formatted ledger names (e.g. "Mirroring (Voss)"). Match against both.
   const completedSet = new Set(completedIds);
-  const available = CONCEPTS.filter((c) => !completedSet.has(c.id));
+  const available = CONCEPTS.filter(
+    (c) => !completedSet.has(c.id) && !completedSet.has(`${c.name} (${c.source})`)
+  );
 
   // All concepts exhausted — reset the pool
   if (available.length === 0) {
@@ -354,8 +358,10 @@ function selectNewConcept(completedIds: string[]): Concept {
   // Determine the domain of the most recently completed concept
   let lastDomain: ConceptDomain | null = null;
   if (completedIds.length > 0) {
-    const lastId = completedIds[completedIds.length - 1];
-    const lastConcept = CONCEPTS.find((c) => c.id === lastId);
+    const lastEntry = completedIds[completedIds.length - 1];
+    const lastConcept = CONCEPTS.find(
+      (c) => c.id === lastEntry || `${c.name} (${c.source})` === lastEntry
+    );
     if (lastConcept) {
       lastDomain = lastConcept.domain;
     }
