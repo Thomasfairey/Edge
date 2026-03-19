@@ -117,15 +117,15 @@ function cleanForSpeech(text: string): string {
 }
 
 function scoreCircleColor(score: number): string {
-  if (score >= 4) return "#6BC9A0";
-  if (score === 3) return "#F5C563";
-  return "#E88B8B";
+  if (score >= 4) return "var(--score-high)";
+  if (score === 3) return "var(--score-mid)";
+  return "var(--score-low)";
 }
 
 function scoreTextColor(score: number): string {
-  if (score >= 4) return "#1A5C3A";
-  if (score === 3) return "#6B4F00";
-  return "#611414";
+  if (score >= 4) return "var(--score-high-text)";
+  if (score === 3) return "var(--score-mid-text)";
+  return "var(--score-low-text)";
 }
 
 async function fetchWithRetry(
@@ -177,35 +177,49 @@ function PhaseIndicator({
   completed: Set<SessionPhase>;
 }) {
   return (
-    <nav aria-label="Session progress" className="flex-shrink-0 z-50 bg-[var(--background)] pt-3 pb-2 border-b border-[#F0EDE8]">
-      <div className="flex items-center justify-center gap-5" role="list">
-        {PHASES.map((p) => {
+    <nav aria-label="Session progress" className="flex-shrink-0 z-50 pt-safe" style={{ backgroundColor: "var(--background)" }}>
+      <div className="flex items-center justify-center gap-3 pt-3 pb-3" role="list" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        {PHASES.map((p, idx) => {
           const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
           const isDone = completed.has(p.key);
+          const isPast = idx < PHASES.findIndex(pp => pp.key === current || (current === "retrieval" && pp.key === "lesson"));
 
           return (
-            <div key={p.key} className="flex flex-col items-center gap-1.5" style={{ minWidth: 44 }} role="listitem" aria-current={isActive ? "step" : undefined}>
-              <div
-                aria-hidden="true"
-                className={`rounded-full ${isActive ? "phase-dot-active" : ""}`}
-                style={{
-                  width: isActive ? 14 : 10,
-                  height: isActive ? 14 : 10,
-                  backgroundColor: isDone || isActive ? p.color : "transparent",
-                  border: isDone || isActive ? "none" : `2px solid ${p.color}4D`,
-                  transition: "all 400ms cubic-bezier(0.22, 1, 0.36, 1)",
-                  boxShadow: isActive ? `0 0 8px ${p.color}60` : "none",
-                }}
-              />
-              <span
-                className={`text-xs font-medium transition-colors duration-300 ${
-                  isActive ? "text-primary" : "text-tertiary"
-                }`}
-              >
-                {p.label}
-              </span>
-              {isDone && (
-                <div className="h-0.5 w-3 rounded-full -mt-0.5" style={{ backgroundColor: p.color }} aria-hidden="true" />
+            <div key={p.key} className="flex items-center gap-3" role="listitem" aria-current={isActive ? "step" : undefined}>
+              <div className="flex flex-col items-center gap-1.5" style={{ minWidth: 48 }}>
+                <div
+                  aria-hidden="true"
+                  className={`rounded-full transition-all ${isActive ? "phase-dot-active" : ""}`}
+                  style={{
+                    width: isActive ? 16 : isDone ? 12 : 10,
+                    height: isActive ? 16 : isDone ? 12 : 10,
+                    backgroundColor: isDone || isActive ? p.color : "transparent",
+                    border: isDone || isActive ? "none" : `2px solid ${p.color}40`,
+                    boxShadow: isActive ? `0 0 10px ${p.color}50` : "none",
+                    transition: "all 400ms var(--ease-out-expo)",
+                  }}
+                />
+                <span
+                  className="text-caption font-medium transition-colors"
+                  style={{
+                    color: isActive ? "var(--text-primary)" : isDone ? "var(--text-secondary)" : "var(--text-tertiary)",
+                    fontSize: 12,
+                    fontWeight: isActive ? 600 : 500,
+                    transition: "color 300ms ease",
+                  }}
+                >
+                  {p.label}
+                </span>
+              </div>
+              {idx < PHASES.length - 1 && (
+                <div
+                  className="h-[2px] w-5 rounded-full -mt-4"
+                  style={{
+                    backgroundColor: isPast || isDone ? `${p.color}80` : "var(--border-subtle)",
+                    transition: "background-color 400ms ease",
+                  }}
+                  aria-hidden="true"
+                />
               )}
             </div>
           );
@@ -221,10 +235,10 @@ function PhaseIndicator({
 
 function LoadingDots() {
   return (
-    <div className="flex items-center justify-center gap-1.5 py-4">
-      <span className="loading-dot h-2 w-2 rounded-full bg-[#5A52E0]/50" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-[#5A52E0]/50" />
-      <span className="loading-dot h-2 w-2 rounded-full bg-[#5A52E0]/50" />
+    <div className="flex items-center justify-center gap-2 py-5">
+      <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(90,82,224,0.4)" }} />
+      <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(90,82,224,0.4)" }} />
+      <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(90,82,224,0.4)" }} />
     </div>
   );
 }
@@ -244,13 +258,13 @@ function renderMarkdown(text: string, context: "lesson" | "debrief" | "default" 
     if (line.startsWith("## ")) {
       isFirstParagraph = true;
       elements.push(
-        <h2 key={key++} className="mb-2 mt-5 text-sm font-semibold text-[#5B8BA8] uppercase tracking-wider first:mt-0">
+        <h2 key={key++} className="mb-2 mt-5 text-caption font-semibold uppercase tracking-wider first:mt-0" style={{ color: "var(--phase-learn-muted)" }}>
           {line.slice(3)}
         </h2>
       );
     } else if (line.startsWith("### ")) {
       elements.push(
-        <h3 key={key++} className="mb-2 mt-4 text-sm font-medium text-[#5B8BA8]">
+        <h3 key={key++} className="mb-2 mt-4 text-caption font-medium" style={{ color: "var(--phase-learn-muted)" }}>
           {line.slice(4)}
         </h3>
       );
@@ -521,17 +535,23 @@ function LessonCards({
       )}
 
       <div
-        className="select-text rounded-3xl p-6 shadow-[var(--shadow-soft)] overflow-y-auto relative"
-        style={{ backgroundColor: "#EFF6FA", maxHeight: "calc(100dvh - 220px)" }}
+        className="select-text overflow-y-auto relative"
+        style={{
+          backgroundColor: "var(--phase-learn-tint)",
+          borderRadius: "var(--radius-xl)",
+          padding: "24px",
+          boxShadow: "var(--shadow-soft)",
+          maxHeight: "calc(100dvh - 220px)",
+        }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         {/* Header with title and audio controls */}
         <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 w-1.5 rounded-full bg-[#5B8BA8]" />
-            <h2 className="text-xs font-semibold text-[#5B8BA8] uppercase tracking-widest">{section.title}</h2>
+          <div className="flex items-center gap-2.5">
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--phase-learn-muted)" }} />
+            <h2 className="text-caption font-semibold uppercase tracking-widest" style={{ color: "var(--phase-learn-muted)" }}>{section.title}</h2>
           </div>
 
           {/* Audio controls */}
@@ -615,8 +635,8 @@ function LessonCards({
           </div>
         )}
 
-        {/* Sticky dot indicators with gradient fade */}
-        <div className="sticky bottom-0 pt-3 pb-1" style={{ background: "linear-gradient(transparent, #EFF6FA 40%)" }}>
+        {/* Sticky dot indicators */}
+        <div className="sticky bottom-0 pt-3 pb-1" style={{ background: "linear-gradient(transparent, var(--phase-learn-tint) 40%)" }}>
           <div className="flex items-center justify-center gap-2">
             {sections.map((_, i) => (
               <button
@@ -624,16 +644,21 @@ function LessonCards({
                 onClick={() => setCurrentCard(i)}
                 aria-label={`Go to page ${i + 1} of ${sections.length}`}
                 aria-current={i === currentCard ? "true" : undefined}
-                className="flex items-center justify-center"
-                style={{ minHeight: 44, minWidth: 28 }}
+                className="touch-target"
+                style={{ minWidth: 28 }}
               >
-                <div className={`h-2.5 rounded-full transition-all ${
-                  i === currentCard ? "w-7 bg-[#5A52E0]" : "w-2.5 bg-[#B8D4E3]"
-                }`} />
+                <div
+                  className="rounded-full transition-all"
+                  style={{
+                    height: 8,
+                    width: i === currentCard ? 28 : 8,
+                    backgroundColor: i === currentCard ? "var(--accent)" : "var(--phase-learn)",
+                  }}
+                />
               </button>
             ))}
             {!isStreaming && (
-              <span className="ml-2 text-xs text-secondary">
+              <span className="ml-2 text-caption" style={{ color: "var(--text-tertiary)" }}>
                 {currentCard + 1} / {sections.length}
               </span>
             )}
@@ -794,24 +819,26 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
         className="w-full flex items-center justify-between py-3 text-left"
         style={{ minHeight: 48 }}
       >
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-[#5B4B88] uppercase tracking-wider">{title}</h2>
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--phase-debrief-muted)" }}>{title}</h2>
           {matchedScore !== null && (
             <span
-              className="text-xs font-bold rounded-full px-2 py-0.5"
+              className="badge"
               style={{
-                backgroundColor: matchedScore >= 4 ? "#D4F5E4" : matchedScore >= 3 ? "#FEF3CD" : "#FDE2E2",
-                color: matchedScore >= 4 ? "#1A5C3A" : matchedScore >= 3 ? "#6B4F00" : "#611414",
+                backgroundColor: matchedScore >= 4 ? "var(--score-high-bg)" : matchedScore >= 3 ? "var(--score-mid-bg)" : "var(--score-low-bg)",
+                color: matchedScore >= 4 ? "var(--score-high-text)" : matchedScore >= 3 ? "var(--score-mid-text)" : "var(--score-low-text)",
+                padding: "3px 10px",
+                fontSize: 12,
               }}
             >
               {matchedScore}/5
             </span>
           )}
         </div>
-        <div className="flex h-11 w-11 items-center justify-center -mr-2">
+        <div className="touch-target -mr-1">
           <svg
-            className="h-5 w-5 text-secondary transition-transform duration-250"
-            style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+            className="h-5 w-5 transition-transform"
+            style={{ color: "var(--text-tertiary)", transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 250ms ease" }}
             fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
@@ -1760,7 +1787,8 @@ export default function SessionPage() {
       <div className="flex-shrink-0 relative">
         <button
           onClick={() => setShowExitModal(true)}
-          className="absolute left-1 top-1/2 -translate-y-1/2 z-50 flex h-12 w-12 items-center justify-center rounded-full text-secondary"
+          className="absolute left-1 top-1/2 -translate-y-1/2 z-50 touch-target rounded-full"
+          style={{ color: "var(--text-secondary)" }}
           aria-label="Leave session"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -1795,20 +1823,20 @@ export default function SessionPage() {
 
       {/* Offline banner */}
       {!online && (
-        <div className="flex-shrink-0 flex h-7 items-center justify-center text-xs font-medium text-[#C4A24E]" style={{ backgroundColor: "#FFF8E7" }}>
+        <div className="flex-shrink-0 flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--coach-bg)", color: "var(--coach-muted)" }}>
           Offline &mdash; reconnecting...
         </div>
       )}
 
       {restored && (
-        <div className="flex-shrink-0 flex h-7 items-center justify-center bg-[#EEEDFF] text-xs font-medium text-[#5A52E0]">
+        <div className="flex-shrink-0 flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
           Session restored
         </div>
       )}
 
-      {/* Review session badge (#6) */}
+      {/* Review session badge */}
       {isReviewSession && currentPhase === "lesson" && (
-        <div className="flex-shrink-0 flex h-7 items-center justify-center bg-[#EEEDFF] text-xs font-medium text-[#5A52E0]">
+        <div className="flex-shrink-0 flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
           Review session
         </div>
       )}
@@ -1818,14 +1846,14 @@ export default function SessionPage() {
         <div className={`mx-auto max-w-lg py-5 sm:py-8 ${phaseClass}`}>
 
           {error && (
-            <div className="mb-5 rounded-3xl bg-white p-5 text-center shadow-[var(--shadow-soft)]">
-              <p className="text-sm text-[#E88B8B]">{error}</p>
-              <div className="mt-3 flex items-center justify-center gap-4">
-                <button onClick={retry} className="min-h-[44px] text-xs font-medium text-[#5A52E0] underline active:scale-[0.97]">
+            <div className="mb-5 card text-center">
+              <p className="text-body" style={{ color: "var(--score-low)" }}>{error}</p>
+              <div className="mt-4 flex items-center justify-center gap-5">
+                <button onClick={retry} className="touch-target text-caption font-semibold underline" style={{ color: "var(--accent)" }}>
                   Retry
                 </button>
                 {canSkipDebrief && currentPhase === "debrief" && (
-                  <button onClick={skipDebriefToMission} className="min-h-[44px] text-xs font-medium text-secondary underline active:scale-[0.97]">
+                  <button onClick={skipDebriefToMission} className="touch-target text-caption font-medium underline" style={{ color: "var(--text-secondary)" }}>
                     Skip to mission
                   </button>
                 )}
@@ -1839,8 +1867,8 @@ export default function SessionPage() {
           {currentPhase === "lesson" && (
             <>
               {isLoading && (
-                <div className="text-center">
-                  <p className="mb-2 text-sm text-secondary">Preparing today&apos;s lesson...</p>
+                <div className="text-center py-8">
+                  <p className="text-body" style={{ color: "var(--text-secondary)" }}>Preparing today&apos;s lesson...</p>
                   <LoadingDots />
                 </div>
               )}
@@ -1848,20 +1876,20 @@ export default function SessionPage() {
               {lessonContent && !isLoading && (
                 <>
                   {concept && (
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-medium text-[#5A52E0]">
+                    <div className="mb-5">
+                      <div className="flex items-center gap-2.5">
+                        <span className="badge" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
                           {concept.domain}
                         </span>
                         {isReviewSession && (
-                          <span className="inline-block rounded-full bg-[#F5E6B8] px-3 py-1 text-xs font-medium text-[#8B7024]">
+                          <span className="badge" style={{ backgroundColor: "var(--score-mid-bg)", color: "var(--score-mid-text)" }}>
                             Review
                           </span>
                         )}
                       </div>
-                      <h2 className="mt-3 text-xl font-semibold text-primary">
+                      <h2 className="mt-3 text-heading font-semibold" style={{ color: "var(--text-primary)" }}>
                         {concept.name}
-                        <span className="ml-2 text-sm font-normal italic text-secondary">({concept.source})</span>
+                        <span className="ml-2 text-caption font-normal italic" style={{ color: "var(--text-secondary)" }}>({concept.source})</span>
                       </h2>
                     </div>
                   )}
@@ -1896,20 +1924,20 @@ export default function SessionPage() {
               {retrievalQuestion && (
                 <div className="space-y-5 animate-challenge">
                   <div className="text-center mb-1">
-                    <span className="inline-block rounded-full bg-[#EEEDFF] px-3 py-1 text-xs font-semibold text-[#5A52E0] uppercase tracking-wider">
+                    <span className="badge" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
                       Quick check
                     </span>
                   </div>
-                  <div className="rounded-3xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
-                    <p className="text-center text-lg font-medium leading-relaxed text-primary">
+                  <div className="card" style={{ padding: "24px" }}>
+                    <p className="text-center text-lead font-medium leading-relaxed" style={{ color: "var(--text-primary)" }}>
                       {retrievalQuestion}
                     </p>
                   </div>
 
                   {retrievalResponse && (
-                    <div className="animate-fade-in-up rounded-3xl p-6 text-center shadow-[0_4px_20px_rgba(0,0,0,0.06)]" style={{ backgroundColor: "#EEEDFF" }}>
-                      <p className="mb-1 text-sm font-semibold text-[#5A52E0]">Solid recall</p>
-                      <p className="text-sm leading-relaxed text-primary">{retrievalResponse}</p>
+                    <div className="animate-fade-in-up card-tinted text-center" style={{ backgroundColor: "var(--accent-soft)", padding: "24px" }}>
+                      <p className="mb-1 text-body font-semibold" style={{ color: "var(--accent)" }}>Solid recall</p>
+                      <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{retrievalResponse}</p>
                     </div>
                   )}
 
@@ -1942,8 +1970,8 @@ export default function SessionPage() {
                             <input
                               type="text"
                               placeholder={voice.voiceEnabled ? "Tap mic or type..." : "Your answer..."}
-                              className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#5A52E0]/20"
-                              style={{ backgroundColor: PHASE_TINT.lesson }}
+                              className="input-field flex-1"
+                              style={{ backgroundColor: "var(--phase-learn-tint)" }}
                               value={inputValue}
                               onChange={(e) => setInputValue(e.target.value)}
                               onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
@@ -1953,7 +1981,8 @@ export default function SessionPage() {
                             {voice.voiceEnabled && voice.sttSupported && !inputValue.trim() && !isLoading && (
                               <button
                                 onClick={voice.startListening}
-                                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#5A52E0] text-white transition-transform active:scale-[0.97]"
+                                className="touch-target flex-shrink-0 rounded-full"
+                                style={{ backgroundColor: "var(--accent)", color: "white" }}
                                 title="Speak"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -1966,11 +1995,12 @@ export default function SessionPage() {
                           <button
                             onClick={() => { if (inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
                             disabled={isLoading || !inputValue.trim()}
-                            className={`w-full rounded-2xl py-3.5 text-sm font-semibold transition-all ${
-                              inputValue.trim()
-                                ? "bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
-                                : "bg-[#E0DED8] text-[#8E8C99]"
-                            }`}
+                            className={inputValue.trim() ? "btn-primary" : "btn-primary"}
+                            style={{
+                              backgroundColor: inputValue.trim() ? "var(--accent)" : "var(--border)",
+                              color: inputValue.trim() ? "white" : "var(--text-tertiary)",
+                              boxShadow: inputValue.trim() ? "var(--shadow-accent)" : "none",
+                            }}
                           >
                             {isLoading ? "Evaluating..." : "Submit"}
                           </button>
@@ -1980,10 +2010,7 @@ export default function SessionPage() {
                   )}
 
                   {retrievalResponse && !retrievalReady && (
-                    <button
-                      onClick={() => startRoleplay()}
-                      className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
-                    >
+                    <button onClick={() => startRoleplay()} className="btn-primary">
                       Continue to practice &rarr;
                     </button>
                   )}
@@ -2000,29 +2027,31 @@ export default function SessionPage() {
               {/* Character persona card — shown until first AI message arrives */}
               {character && roleplayTranscript.length === 0 && (
                 <div className="mb-5 animate-challenge">
-                  {/* Character intro card */}
-                  <div className="rounded-3xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
-                    <div className="text-center mb-4">
-                      <div className="inline-flex h-16 w-16 items-center justify-center rounded-full text-3xl mb-3" style={{ backgroundColor: "#FDF2F2" }}>
+                  <div className="card" style={{ padding: "28px 24px" }}>
+                    <div className="text-center mb-5">
+                      <div
+                        className="inline-flex h-16 w-16 items-center justify-center rounded-full text-3xl mb-3"
+                        style={{ backgroundColor: "var(--phase-simulate-tint)" }}
+                      >
                         {characterEmoji(character.id)}
                       </div>
-                      <p className="text-lg font-bold text-primary">{character.name}</p>
-                      <p className="mt-1 text-sm leading-snug text-secondary">{character.description}</p>
+                      <p className="text-lead font-bold" style={{ color: "var(--text-primary)" }}>{character.name}</p>
+                      <p className="mt-1 text-body leading-snug" style={{ color: "var(--text-secondary)" }}>{character.description}</p>
                     </div>
 
                     {/* Key traits */}
-                    <div className="flex gap-2 justify-center flex-wrap mb-4">
+                    <div className="flex gap-2 justify-center flex-wrap mb-5">
                       {character.tactics.slice(0, 2).map((t, i) => (
-                        <span key={i} className="rounded-full px-2.5 py-1 text-[11px] font-medium" style={{ backgroundColor: "#FDE2E2", color: "#611414" }}>
+                        <span key={i} className="badge" style={{ backgroundColor: "var(--score-low-bg)", color: "var(--score-low-text)", fontSize: 12, padding: "4px 12px" }}>
                           {t.length > 30 ? t.slice(0, 30) + "\u2026" : t}
                         </span>
                       ))}
                     </div>
 
                     {scenarioContext && (
-                      <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: "#FDF2F2" }}>
-                        <p className="text-xs font-semibold text-[#D4908F] uppercase tracking-wider mb-1.5">Scene</p>
-                        <p className="text-sm leading-relaxed text-primary">{scenarioContext}</p>
+                      <div style={{ backgroundColor: "var(--phase-simulate-tint)", borderRadius: "var(--radius-md)", padding: "14px 16px" }}>
+                        <p className="text-caption font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--phase-simulate-muted)" }}>Scene</p>
+                        <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{scenarioContext}</p>
                       </div>
                     )}
                   </div>
@@ -2031,18 +2060,20 @@ export default function SessionPage() {
 
               <div className="mb-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <span className="text-2xl">{characterEmoji(character?.id)}</span>
-                    <span className="text-xs font-medium text-secondary">{character?.name ?? "Character"}</span>
+                    <span className="text-caption font-medium" style={{ color: "var(--text-secondary)" }}>{character?.name ?? "Character"}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     {Array.from({ length: 8 }, (_, i) => (
                       <div
                         key={i}
-                        className="h-1.5 w-1.5 rounded-full transition-all duration-300"
+                        className="rounded-full transition-all"
                         style={{
-                          backgroundColor: i < Math.max(1, Math.ceil(turnCount / 2)) ? "#F2C4C4" : "#F0EDE8",
+                          width: 6, height: 6,
+                          backgroundColor: i < Math.max(1, Math.ceil(turnCount / 2)) ? "var(--phase-simulate)" : "var(--border-subtle)",
                           transform: i < Math.max(1, Math.ceil(turnCount / 2)) ? "scale(1)" : "scale(0.8)",
+                          transition: "all 300ms ease",
                         }}
                       />
                     ))}
@@ -2057,20 +2088,26 @@ export default function SessionPage() {
                 <p className="mb-2 text-center text-xs text-secondary animate-pulse">Same concept. Fresh start.</p>
               )}
 
-              <div className="space-y-3 pb-4">
+              <div className="space-y-3.5 pb-4">
                 {roleplayTranscript.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end pl-8" : "justify-start pr-8 gap-2"} animate-fade-in-up`}>
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end pl-10" : "justify-start pr-10 gap-2.5"} animate-fade-in-up`}>
                     {msg.role === "assistant" && (
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
+                      <div
+                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-body mt-1"
+                        style={{ backgroundColor: "var(--phase-simulate-tint)" }}
+                      >
                         {characterEmoji(character?.id)}
                       </div>
                     )}
                     <div
-                      className={`p-4 text-base leading-relaxed ${
-                        msg.role === "user"
-                          ? "rounded-3xl rounded-br-lg bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.15)]"
-                          : "rounded-3xl rounded-tl-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]"
-                      }`}
+                      className="text-body leading-relaxed"
+                      style={{
+                        padding: "14px 18px",
+                        borderRadius: msg.role === "user" ? "var(--radius-xl) var(--radius-xl) 8px var(--radius-xl)" : "var(--radius-xl) var(--radius-xl) var(--radius-xl) 8px",
+                        backgroundColor: msg.role === "user" ? "var(--accent)" : "var(--surface)",
+                        color: msg.role === "user" ? "var(--text-inverted)" : "var(--text-primary)",
+                        boxShadow: msg.role === "user" ? "0 2px 10px rgba(90,82,224,0.18)" : "var(--shadow-soft)",
+                      }}
                     >
                       {msg.content}
                     </div>
@@ -2078,27 +2115,41 @@ export default function SessionPage() {
                 ))}
 
                 {isStreaming && streamingText && (
-                  <div className="flex justify-start gap-2">
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
+                  <div className="flex justify-start pr-10 gap-2.5">
+                    <div
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-body mt-1"
+                      style={{ backgroundColor: "var(--phase-simulate-tint)" }}
+                    >
                       {characterEmoji(character?.id)}
                     </div>
-                    <div className="max-w-[80%] rounded-3xl rounded-tl-lg bg-white p-4 text-base leading-relaxed shadow-[var(--shadow-soft)]">
+                    <div
+                      className="max-w-[80%] text-body leading-relaxed"
+                      style={{
+                        padding: "14px 18px",
+                        borderRadius: "var(--radius-xl) var(--radius-xl) var(--radius-xl) 8px",
+                        backgroundColor: "var(--surface)",
+                        boxShadow: "var(--shadow-soft)",
+                      }}
+                    >
                       {streamingText}
-                      <span className="inline-block animate-pulse text-[#5A52E0]">|</span>
+                      <span className="inline-block animate-pulse" style={{ color: "var(--accent)" }}>|</span>
                     </div>
                   </div>
                 )}
 
                 {isLoading && !isStreaming && (
-                  <div className="flex justify-start gap-2">
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm mt-1" style={{ backgroundColor: "#FDF2F2" }}>
+                  <div className="flex justify-start gap-2.5">
+                    <div
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-body mt-1"
+                      style={{ backgroundColor: "var(--phase-simulate-tint)" }}
+                    >
                       {characterEmoji(character?.id)}
                     </div>
-                    <div className="rounded-3xl rounded-tl-lg bg-white p-4 shadow-[var(--shadow-soft)]">
-                      <div className="flex items-center gap-1.5">
-                        <span className="loading-dot h-2 w-2 rounded-full bg-[#D4908F]/50" />
-                        <span className="loading-dot h-2 w-2 rounded-full bg-[#D4908F]/50" />
-                        <span className="loading-dot h-2 w-2 rounded-full bg-[#D4908F]/50" />
+                    <div style={{ padding: "16px 18px", borderRadius: "var(--radius-xl) var(--radius-xl) var(--radius-xl) 8px", backgroundColor: "var(--surface)", boxShadow: "var(--shadow-soft)" }}>
+                      <div className="flex items-center gap-2">
+                        <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(212,144,143,0.5)" }} />
+                        <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(212,144,143,0.5)" }} />
+                        <span className="loading-dot h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "rgba(212,144,143,0.5)" }} />
                       </div>
                     </div>
                   </div>
@@ -2108,8 +2159,8 @@ export default function SessionPage() {
                   <div className="flex justify-center">
                     <button
                       onClick={() => sendRoleplayMessage(pendingRetry)}
-                      className="min-h-[44px] rounded-full px-4 py-2 text-xs font-medium active:scale-[0.97]"
-                      style={{ backgroundColor: "#FFF8E7", color: "#C4A24E" }}
+                      className="touch-target rounded-full px-5 py-2.5 text-caption font-semibold"
+                      style={{ backgroundColor: "var(--coach-bg)", color: "var(--coach-muted)" }}
                     >
                       Connection lost. Tap to retry &rarr;
                     </button>
@@ -2120,7 +2171,7 @@ export default function SessionPage() {
               </div>
 
               {Math.ceil(turnCount / 2) >= 8 && (
-                <div className="mb-2 rounded-2xl bg-white/70 px-4 py-2 text-center text-sm text-secondary">
+                <div className="mb-2 text-center text-caption" style={{ backgroundColor: "rgba(255,255,255,0.7)", borderRadius: "var(--radius-md)", padding: "10px 16px", color: "var(--text-secondary)" }}>
                   You can continue or tap &#10003; when ready
                 </div>
               )}
@@ -2143,32 +2194,37 @@ export default function SessionPage() {
                 <>
                   {/* Score circles with deltas */}
                   {scores && (
-                    <div className="mb-5 rounded-3xl bg-white p-5 shadow-[var(--shadow-soft)]">
+                    <div className="mb-5 card">
                       <div className="flex items-center justify-center gap-4">
                         {SCORE_DIMS.map(({ key, fullName }) => {
                           const s = scores[key];
                           const prev = previousScores ? previousScores[key] : null;
                           const diff = prev !== null ? s - prev : null;
                           return (
-                            <div key={key} className="flex flex-col items-center gap-1.5 animate-score-pop" style={{ opacity: 0 }}>
+                            <div key={key} className="flex flex-col items-center gap-2 animate-score-pop" style={{ opacity: 0 }}>
                               <div
-                                className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold relative"
-                                style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
+                                className="flex items-center justify-center rounded-full text-lead font-bold relative"
+                                style={{
+                                  width: 52, height: 52,
+                                  backgroundColor: scoreCircleColor(s),
+                                  color: scoreTextColor(s),
+                                }}
                               >
                                 {s}
                                 {diff !== null && (
                                   <span
-                                    className="absolute -top-1.5 -right-2 text-[10px] font-bold rounded-full px-1"
+                                    className="absolute -top-1.5 -right-2 text-caption font-bold rounded-full px-1.5"
                                     style={{
-                                      color: diff > 0 ? "#1A5C3A" : diff < 0 ? "#611414" : "#6B6578",
-                                      backgroundColor: diff > 0 ? "#D4F5E4" : diff < 0 ? "#FDE2E2" : "#F0EDE8",
+                                      fontSize: 11,
+                                      color: diff > 0 ? "var(--score-high-text)" : diff < 0 ? "var(--score-low-text)" : "var(--text-secondary)",
+                                      backgroundColor: diff > 0 ? "var(--score-high-bg)" : diff < 0 ? "var(--score-low-bg)" : "var(--border)",
                                     }}
                                   >
                                     {diff > 0 ? `+${diff}` : diff === 0 ? "=" : diff}
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-secondary">{fullName}</span>
+                              <span className="text-caption" style={{ color: "var(--text-secondary)", fontSize: 12 }}>{fullName}</span>
                             </div>
                           );
                         })}
@@ -2177,7 +2233,7 @@ export default function SessionPage() {
                   )}
 
                   {/* Analysis card — collapsible sections */}
-                  <div className="select-text mb-5 rounded-3xl p-5 shadow-[var(--shadow-soft)]" style={{ backgroundColor: PHASE_TINT.debrief }}>
+                  <div className="select-text mb-5 card-tinted" style={{ backgroundColor: "var(--phase-debrief-tint)" }}>
                     {(() => {
                       const sections = parseDebriefSections(debriefContent);
                       if (sections.length <= 1) {
@@ -2205,41 +2261,58 @@ export default function SessionPage() {
           {/* ============================================================== */}
           {currentPhase === "mission" && (
             <>
-              {/* Check-in card (Day 2+, before mission loads) — #5 more prominent */}
+              {/* Check-in card (Day 2+, before mission loads) */}
               {checkinNeeded && !checkinDone && !isLoading && !mission && (
                 <div className="animate-fade-in-up space-y-5">
-                  <div className="rounded-3xl bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
-                    <p className="mb-1 text-xs font-medium text-[#5A9A7A] uppercase tracking-wider">Mission debrief</p>
-                    <p className="mb-1 text-sm text-secondary">Yesterday you were asked to:</p>
-                    <p className="mb-5 text-base font-medium leading-relaxed text-primary">
+                  <div className="card" style={{ padding: "28px 24px" }}>
+                    <p className="mb-1 text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--phase-deploy-muted)" }}>Mission debrief</p>
+                    <p className="mb-1 text-caption" style={{ color: "var(--text-secondary)" }}>Yesterday you were asked to:</p>
+                    <p className="mb-5 text-body font-medium leading-relaxed" style={{ color: "var(--text-primary)" }}>
                       &ldquo;{lastMission}&rdquo;
                     </p>
-                    <p className="mb-4 text-sm font-medium text-primary">How did it go?</p>
+                    <p className="mb-4 text-body font-medium" style={{ color: "var(--text-primary)" }}>How did it go?</p>
 
                     {/* Outcome pills */}
                     <div className="flex gap-3">
                       <button
                         onClick={() => { setCheckinPillSelected("completed"); haptic(20); }}
-                        className={`flex-1 rounded-2xl px-4 py-3.5 text-sm font-semibold transition-all ${
-                          checkinPillSelected === "completed" ? "ring-2 ring-[#2D6A4F] shadow-[0_4px_12px_rgba(107,201,160,0.3)] animate-celebrate scale-[1.02]" : ""
+                        className={`flex-1 text-body font-semibold transition-all ${
+                          checkinPillSelected === "completed" ? "animate-celebrate scale-[1.02]" : ""
                         }`}
-                        style={{ backgroundColor: "#B8E0C8", color: "#2D6A4F" }}
+                        style={{
+                          backgroundColor: "var(--phase-deploy)",
+                          color: "var(--score-high-text)",
+                          borderRadius: "var(--radius-md)",
+                          padding: "14px 16px",
+                          boxShadow: checkinPillSelected === "completed" ? "0 0 0 2px var(--score-high-text), 0 4px 12px rgba(107,201,160,0.3)" : "none",
+                        }}
                       >
                         &#9889; Nailed it
                       </button>
                       <button
                         onClick={() => setCheckinPillSelected("tried")}
-                        className={`flex-1 rounded-2xl px-4 py-3.5 text-sm font-semibold transition-all ${
-                          checkinPillSelected === "tried" ? "ring-2 ring-[#8B7024] shadow-[0_4px_12px_rgba(245,197,99,0.3)] scale-[1.02]" : ""
+                        className={`flex-1 text-body font-semibold transition-all ${
+                          checkinPillSelected === "tried" ? "scale-[1.02]" : ""
                         }`}
-                        style={{ backgroundColor: "#F5E6B8", color: "#8B7024" }}
+                        style={{
+                          backgroundColor: "var(--score-mid-bg)",
+                          color: "var(--score-mid-text)",
+                          borderRadius: "var(--radius-md)",
+                          padding: "14px 16px",
+                          boxShadow: checkinPillSelected === "tried" ? "0 0 0 2px var(--score-mid-text), 0 4px 12px rgba(245,197,99,0.3)" : "none",
+                        }}
                       >
                         &#128075; Tried it
                       </button>
                       <button
                         onClick={() => submitCheckin("skipped")}
-                        className="flex-1 rounded-2xl px-4 py-3.5 text-sm font-medium transition-transform"
-                        style={{ backgroundColor: "#F0EDE8", color: "#8E8C99" }}
+                        className="flex-1 text-body font-medium transition-transform"
+                        style={{
+                          backgroundColor: "var(--border)",
+                          color: "var(--text-secondary)",
+                          borderRadius: "var(--radius-md)",
+                          padding: "14px 16px",
+                        }}
                       >
                         Skip
                       </button>
@@ -2315,17 +2388,17 @@ export default function SessionPage() {
                 </div>
               )}
 
-              {/* Check-in response (brief display before mission) */}
+              {/* Check-in response */}
               {checkinResponse && (
-                <div className="animate-fade-in-up rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-soft)]">
-                  <p className="text-sm leading-relaxed text-secondary italic">{checkinResponse}</p>
+                <div className="animate-fade-in-up card text-center">
+                  <p className="text-body leading-relaxed italic" style={{ color: "var(--text-secondary)" }}>{checkinResponse}</p>
                 </div>
               )}
 
               {/* Loading mission */}
               {isLoading && !checkinResponse && (
-                <div className="text-center">
-                  <p className="mb-2 text-sm text-secondary">Assigning your mission...</p>
+                <div className="text-center py-8">
+                  <p className="text-body" style={{ color: "var(--text-secondary)" }}>Assigning your mission...</p>
                   <LoadingDots />
                 </div>
               )}
@@ -2333,68 +2406,63 @@ export default function SessionPage() {
               {/* Mission card */}
               {mission && !isLoading && !checkinResponse && (
                 <div className="animate-challenge relative">
-                  <div className="text-center mb-4">
-                    <span className="inline-block rounded-full bg-[#E8F5ED] px-3 py-1 text-xs font-semibold text-[#2D6A4F] uppercase tracking-wider">
+                  <div className="text-center mb-5">
+                    <span className="badge" style={{ backgroundColor: "var(--score-high-bg)", color: "var(--score-high-text)" }}>
                       Field assignment
                     </span>
                   </div>
 
-                  <div className="mb-5 rounded-3xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.06)]" style={{ backgroundColor: PHASE_TINT.mission }}>
+                  <div className="mb-5 card-tinted" style={{ backgroundColor: "var(--phase-deploy-tint)", padding: "24px" }}>
                     {(() => {
-                      // Extract first sentence as scannable headline
                       const sentenceEnd = mission.search(/[.!?]\s|[.!?]$/);
                       if (sentenceEnd > 0 && sentenceEnd < mission.length - 1) {
                         const headline = mission.slice(0, sentenceEnd + 1);
                         const detail = mission.slice(sentenceEnd + 1).trim();
                         return (
                           <>
-                            <p className="text-lg font-bold leading-snug text-primary">{headline}</p>
-                            {detail && <p className="mt-2 text-base leading-relaxed text-primary/80">{detail}</p>}
+                            <p className="text-lead font-bold leading-snug" style={{ color: "var(--text-primary)" }}>{headline}</p>
+                            {detail && <p className="mt-2 text-body leading-relaxed" style={{ color: "var(--text-primary)", opacity: 0.8 }}>{detail}</p>}
                           </>
                         );
                       }
-                      return <p className="text-lg font-bold leading-relaxed text-primary">{mission}</p>;
+                      return <p className="text-lead font-bold leading-relaxed" style={{ color: "var(--text-primary)" }}>{mission}</p>;
                     })()}
                     {rationale && (
                       <>
-                        <div className="my-4 border-t" style={{ borderColor: "rgba(184,224,200,0.3)" }} />
-                        <p className="text-sm text-secondary italic">{rationale}</p>
+                        <div className="my-4" style={{ borderTop: "1px solid rgba(184,224,200,0.3)" }} />
+                        <p className="text-caption italic" style={{ color: "var(--text-secondary)" }}>{rationale}</p>
                       </>
                     )}
                   </div>
 
                   {!showConfetti ? (
-                    <button
-                      onClick={completeSession}
-                      className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-all shadow-[0_4px_16px_rgba(107,201,160,0.3)]"
-                      style={{ backgroundColor: "#6BC9A0" }}
-                    >
+                    <button onClick={completeSession} className="btn-primary" style={{ backgroundColor: "var(--score-high)", boxShadow: "0 4px 16px rgba(107,201,160,0.3)" }}>
                       Session complete &#10003;
                     </button>
                   ) : (
                     <div className="animate-fade-in-up space-y-5 relative">
                       <Confetti />
                       {/* Enhanced completion card */}
-                      <div className="rounded-3xl p-6 shadow-[var(--shadow-soft)] animate-celebrate" style={{ backgroundColor: "#E8F5ED" }}>
-                        <p className="mb-1 text-center text-xl font-semibold text-primary">
+                      <div className="card-tinted animate-celebrate" style={{ backgroundColor: "var(--score-high-bg)", padding: "28px 24px" }}>
+                        <p className="mb-1 text-center text-heading font-semibold" style={{ color: "var(--text-primary)" }}>
                           Session complete
                         </p>
-                        <p className="mb-2 text-center text-sm text-secondary">
+                        <p className="mb-3 text-center text-body" style={{ color: "var(--text-secondary)" }}>
                           Day {dayNumber} &middot; {concept?.name}
                         </p>
 
-                        {/* Motivational line (#9) */}
+                        {/* Motivational line */}
                         {scores && (
-                          <p className="mb-5 text-center text-xs font-medium text-[#5A9A7A]">
+                          <p className="mb-5 text-center text-caption font-medium" style={{ color: "var(--phase-deploy-muted)" }}>
                             {getMotivationalLine(scores, previousScores)}
                           </p>
                         )}
 
-                        {/* Key moment quote from debrief (#9) */}
+                        {/* Key moment */}
                         {keyMoment && (
-                          <div className="mb-5 rounded-2xl bg-white/60 px-4 py-3">
-                            <p className="text-sm font-medium text-secondary">Key takeaway</p>
-                            <p className="mt-1 text-sm leading-relaxed text-primary">{keyMoment}</p>
+                          <div className="mb-5" style={{ backgroundColor: "rgba(255,255,255,0.6)", borderRadius: "var(--radius-md)", padding: "14px 16px" }}>
+                            <p className="text-caption font-semibold" style={{ color: "var(--text-secondary)" }}>Key takeaway</p>
+                            <p className="mt-1 text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{keyMoment}</p>
                           </div>
                         )}
 
@@ -2407,25 +2475,26 @@ export default function SessionPage() {
                                 const prev = previousScores ? previousScores[key] : null;
                                 const diff = prev !== null ? s - prev : null;
                                 return (
-                                  <div key={key} className="flex flex-col items-center gap-1">
+                                  <div key={key} className="flex flex-col items-center gap-1.5">
                                     <div
-                                      className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold relative"
-                                      style={{ backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
+                                      className="flex items-center justify-center rounded-full text-body font-bold relative"
+                                      style={{ width: 44, height: 44, backgroundColor: scoreCircleColor(s), color: scoreTextColor(s) }}
                                     >
                                       {s}
                                       {diff !== null && (
                                         <span
-                                          className="absolute -top-1.5 -right-2 text-[10px] font-bold rounded-full px-1"
+                                          className="absolute -top-1.5 -right-2 text-caption font-bold rounded-full px-1.5"
                                           style={{
-                                            color: diff > 0 ? "#1A5C3A" : diff < 0 ? "#611414" : "#6B6578",
-                                            backgroundColor: diff > 0 ? "#D4F5E4" : diff < 0 ? "#FDE2E2" : "#F0EDE8",
+                                            fontSize: 11,
+                                            color: diff > 0 ? "var(--score-high-text)" : diff < 0 ? "var(--score-low-text)" : "var(--text-secondary)",
+                                            backgroundColor: diff > 0 ? "var(--score-high-bg)" : diff < 0 ? "var(--score-low-bg)" : "var(--border)",
                                           }}
                                         >
                                           {diff > 0 ? `+${diff}` : diff === 0 ? "=" : diff}
                                         </span>
                                       )}
                                     </div>
-                                    <span className="text-[10px] text-secondary">{fullName}</span>
+                                    <span className="text-caption" style={{ color: "var(--text-secondary)", fontSize: 11 }}>{fullName}</span>
                                   </div>
                                 );
                               })}
@@ -2433,47 +2502,47 @@ export default function SessionPage() {
                           </div>
                         )}
 
-                        {/* Mission styled as dashed-border card (#9) */}
+                        {/* Mission recap */}
                         {mission && (
-                          <div className="mb-4 rounded-2xl border-2 border-dashed border-[#B8E0C8] bg-white/60 px-4 py-3">
-                            <p className="text-sm font-medium text-[#5A9A7A]">Your mission today</p>
-                            <p className="mt-1 text-sm leading-relaxed text-primary">{mission}</p>
+                          <div className="mb-4" style={{ borderRadius: "var(--radius-md)", border: "2px dashed var(--phase-deploy)", backgroundColor: "rgba(255,255,255,0.6)", padding: "14px 16px" }}>
+                            <p className="text-caption font-semibold" style={{ color: "var(--phase-deploy-muted)" }}>Your mission today</p>
+                            <p className="mt-1 text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{mission}</p>
                           </div>
                         )}
 
                         {/* Share preview card */}
-                        <div className="mb-3 rounded-2xl bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                        <div className="mb-3" style={{ borderRadius: "var(--radius-md)", backgroundColor: "white", padding: "16px", boxShadow: "var(--shadow-sm)" }}>
                           <div className="flex items-center justify-between mb-3">
                             <div>
-                              <p className="text-sm font-bold text-primary">
-                                <span className="text-[#5A52E0]">the</span> edge
+                              <p className="text-body font-bold" style={{ color: "var(--text-primary)" }}>
+                                <span style={{ color: "var(--accent)" }}>the</span> edge
                               </p>
-                              <p className="text-[10px] text-tertiary">Day {dayNumber}</p>
+                              <p className="text-caption" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>Day {dayNumber}</p>
                             </div>
                             {scores && (
                               <div className="flex items-center gap-1">
-                                <span className="text-lg font-bold text-[#5A52E0]">
+                                <span className="text-lead font-bold" style={{ color: "var(--accent)" }}>
                                   {(Object.values(scores).reduce((a, b) => a + b, 0) / 5).toFixed(1)}
                                 </span>
-                                <span className="text-[10px] text-tertiary">/5</span>
+                                <span className="text-caption" style={{ color: "var(--text-tertiary)" }}>/5</span>
                               </div>
                             )}
                           </div>
-                          <p className="text-xs font-medium text-primary mb-2">{concept?.name}</p>
+                          <p className="text-caption font-medium mb-2" style={{ color: "var(--text-primary)" }}>{concept?.name}</p>
                           {scores && (
                             <div className="flex gap-1.5 mb-2">
                               {SCORE_DIMS.map(({ key }) => {
                                 const s = scores[key];
                                 return (
-                                  <div key={key} className="h-1.5 flex-1 rounded-full" style={{
-                                    backgroundColor: s >= 4 ? "#6BC9A0" : s >= 3 ? "#F5C563" : "#E88B8B",
+                                  <div key={key} className="h-2 flex-1 rounded-full" style={{
+                                    backgroundColor: s >= 4 ? "var(--score-high)" : s >= 3 ? "var(--score-mid)" : "var(--score-low)",
                                   }} />
                                 );
                               })}
                             </div>
                           )}
                           {keyMoment && (
-                            <p className="text-[10px] text-secondary italic truncate">{keyMoment}</p>
+                            <p className="text-caption italic truncate" style={{ color: "var(--text-secondary)" }}>{keyMoment}</p>
                           )}
                         </div>
 
@@ -2572,18 +2641,15 @@ export default function SessionPage() {
                               navigator.clipboard.writeText(text).catch(() => {});
                             }
                           }}
-                          className="mb-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-[#B8E0C8] py-2.5 text-sm font-medium text-[#5A9A7A] transition-transform active:scale-[0.97]"
+                          className="btn-secondary mb-2"
+                          style={{ borderColor: "var(--phase-deploy)", color: "var(--phase-deploy-muted)" }}
                         >
                           Share summary
                         </button>
                       </div>
 
                       {/* Done button */}
-                      <button
-                        onClick={() => router.push("/")}
-                        className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
-                        style={{ backgroundColor: "#5A52E0" }}
-                      >
+                      <button onClick={() => router.push("/")} className="btn-primary">
                         Done
                       </button>
                     </div>
@@ -2600,17 +2666,14 @@ export default function SessionPage() {
       {/* Sticky CTA (learn phase)                                            */}
       {/* ================================================================== */}
       {currentPhase === "lesson" && lessonContent && !isLoading && (
-        <div className="flex-shrink-0 border-t border-[#F0EDE8] px-4 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.lesson }}>
+        <div className="flex-shrink-0 px-5 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.lesson, borderTop: "1px solid var(--border-subtle)" }}>
           <div className="mx-auto max-w-lg">
             {lessonCardPos.current < lessonCardPos.total - 1 ? (
-              <p className="py-3 text-center text-sm text-secondary">
+              <p className="py-3 text-center text-body" style={{ color: "var(--text-secondary)" }}>
                 {lessonCardPos.current + 1} of {lessonCardPos.total} &mdash; swipe to continue
               </p>
             ) : (
-              <button
-                onClick={() => startRetrieval()}
-                className="w-full rounded-2xl bg-[#5A52E0] py-4 text-base font-semibold text-white transition-transform active:scale-[0.97] animate-fade-in-up"
-              >
+              <button onClick={() => startRetrieval()} className="btn-primary animate-fade-in-up">
                 Ready to practise &rarr;
               </button>
             )}
@@ -2622,13 +2685,9 @@ export default function SessionPage() {
       {/* Sticky continue button (debrief)                                    */}
       {/* ================================================================== */}
       {currentPhase === "debrief" && debriefContent && !isLoading && (
-        <div className="flex-shrink-0 border-t border-[#F0EDE8] px-4 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.debrief }}>
+        <div className="flex-shrink-0 px-5 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.debrief, borderTop: "1px solid var(--border-subtle)" }}>
           <div className="mx-auto max-w-lg">
-            <button
-              onClick={enterDeploy}
-              className="w-full rounded-2xl py-4 text-base font-semibold text-white transition-transform active:scale-[0.97]"
-              style={{ backgroundColor: "#7B6FD4" }}
-            >
+            <button onClick={enterDeploy} className="btn-primary" style={{ backgroundColor: "var(--phase-debrief-muted)" }}>
               Your mission &rarr;
             </button>
           </div>
@@ -2639,7 +2698,7 @@ export default function SessionPage() {
       {/* Fixed bottom bar (roleplay)                                         */}
       {/* ================================================================== */}
       {isRoleplay && !completedPhases.has("roleplay") && (
-        <div className="flex-shrink-0 bottom-bar rounded-t-3xl bg-white px-3 pt-3 shadow-[var(--shadow-elevated)]">
+        <div className="flex-shrink-0 bottom-bar bg-white px-4 pt-3 shadow-[var(--shadow-elevated)]" style={{ borderRadius: "var(--radius-xl) var(--radius-xl) 0 0" }}>
 
           {/* Voice listening state — replaces text input when actively listening */}
           {voice.voiceEnabled && voice.state === "listening" && (
@@ -2707,8 +2766,8 @@ export default function SessionPage() {
                 ref={inputRef}
                 placeholder={voice.voiceEnabled ? "Tap mic or type..." : "Type your response..."}
                 rows={1}
-                className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none resize-none focus:ring-2 focus:ring-[#5A52E0]/20"
-                style={{ backgroundColor: PHASE_TINT.roleplay, maxHeight: "6rem" }}
+                className="input-field flex-1 resize-none"
+                style={{ backgroundColor: "var(--phase-simulate-tint)", maxHeight: "6rem", borderRadius: "var(--radius-md)" }}
                 value={inputValue}
                 onChange={(e) => {
                   setInputValue(e.target.value);
@@ -2728,7 +2787,8 @@ export default function SessionPage() {
               {voice.voiceEnabled && voice.sttSupported && !inputValue.trim() && !isStreaming && !isLoading && (
                 <button
                   onClick={voice.startListening}
-                  className="flex h-11 w-11 items-center justify-center rounded-full bg-[#5A52E0] text-white transition-transform active:scale-[0.97]"
+                  className="touch-target rounded-full"
+                  style={{ backgroundColor: "var(--accent)", color: "white" }}
                   title="Speak"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -2738,12 +2798,13 @@ export default function SessionPage() {
                 </button>
               )}
 
-              {/* Send button (when text is typed, or voice disabled) */}
+              {/* Send button */}
               {(!voice.voiceEnabled || inputValue.trim() || isStreaming || isLoading) && (
                 <button
                   onClick={() => { if (inputValue.trim() && !isStreaming) handleRoleplayInput(inputValue); }}
                   disabled={isStreaming || isLoading || !inputValue.trim()}
-                  className="flex h-11 w-11 items-center justify-center rounded-full bg-[#5A52E0] text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                  className="touch-target rounded-full disabled:opacity-40"
+                  style={{ backgroundColor: "var(--accent)", color: "white" }}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                     <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.289Z" />
@@ -2753,19 +2814,20 @@ export default function SessionPage() {
             </div>
           )}
 
-          {/* Command toolbar — grouped: assist | controls | primary action */}
+          {/* Command toolbar */}
           <div className="flex items-center justify-between px-1 pb-2">
             {/* Left: Assistance tools */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {voice.sttSupported && (
-                <div className="flex flex-col items-center gap-0.5">
+                <div className="flex flex-col items-center gap-1">
                   <button
                     onClick={voice.toggleVoice}
-                    className={`flex h-11 w-11 items-center justify-center rounded-full text-lg transition-all ${
-                      voice.voiceEnabled
-                        ? "bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
-                        : "bg-[#F0EDE8] text-secondary"
-                    }`}
+                    className="touch-target rounded-full transition-all"
+                    style={{
+                      backgroundColor: voice.voiceEnabled ? "var(--accent)" : "var(--border)",
+                      color: voice.voiceEnabled ? "white" : "var(--text-secondary)",
+                      boxShadow: voice.voiceEnabled ? "var(--shadow-accent)" : "none",
+                    }}
                     title={voice.voiceEnabled ? "Voice on" : "Voice off"}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -2780,39 +2842,44 @@ export default function SessionPage() {
                       )}
                     </svg>
                   </button>
-                  <span className="text-[9px] text-tertiary">Voice</span>
+                  <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Voice</span>
                 </div>
               )}
-              <div className="flex flex-col items-center gap-0.5">
-                <button onClick={handleCoach} className="flex h-11 w-11 items-center justify-center rounded-full text-lg" style={{ backgroundColor: "#FFF8E7" }} title="Coach">
+              <div className="flex flex-col items-center gap-1">
+                <button onClick={handleCoach} className="touch-target rounded-full text-lead" style={{ backgroundColor: "var(--coach-bg)" }} title="Coach">
                   &#128161;
                 </button>
-                <span className="text-[9px] text-tertiary">Hint</span>
+                <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Hint</span>
               </div>
             </div>
 
             {/* Center: Session controls */}
-            <div className="flex items-center gap-2">
-              <div className="flex flex-col items-center gap-0.5">
-                <button onClick={handleReset} className="flex h-10 w-10 items-center justify-center rounded-full text-sm" style={{ backgroundColor: "#F0EDE8" }} title="Reset">
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-center gap-1">
+                <button onClick={handleReset} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} title="Reset">
                   &#128260;
                 </button>
-                <span className="text-[9px] text-tertiary">Reset</span>
+                <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Reset</span>
               </div>
-              <div className="flex flex-col items-center gap-0.5">
-                <button onClick={handleSkip} className="flex h-10 w-10 items-center justify-center rounded-full text-sm" style={{ backgroundColor: "#F0EDE8" }} title="Skip">
+              <div className="flex flex-col items-center gap-1">
+                <button onClick={handleSkip} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} title="Skip">
                   &#9197;
                 </button>
-                <span className="text-[9px] text-tertiary">Skip</span>
+                <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Skip</span>
               </div>
             </div>
 
-            {/* Right: Primary action */}
-            <div className="flex flex-col items-center gap-0.5">
-              <button onClick={handleDone} className="flex h-12 w-12 items-center justify-center rounded-full text-base font-bold text-white shadow-[0_2px_8px_rgba(107,201,160,0.3)]" style={{ backgroundColor: "#6BC9A0" }} title="Done">
+            {/* Right: Primary action — Done */}
+            <div className="flex flex-col items-center gap-1">
+              <button
+                onClick={handleDone}
+                className="flex h-[52px] w-[52px] items-center justify-center rounded-full text-lead font-bold"
+                style={{ backgroundColor: "var(--score-high)", color: "white", boxShadow: "0 3px 12px rgba(107,201,160,0.3)" }}
+                title="Done"
+              >
                 &#10003;
               </button>
-              <span className="text-[9px] text-[#2D6A4F] font-medium">Done</span>
+              <span className="text-caption font-medium" style={{ fontSize: 10, color: "var(--score-high-text)" }}>Done</span>
             </div>
           </div>
         </div>
@@ -2822,9 +2889,10 @@ export default function SessionPage() {
       {showNewMessagePill && isRoleplay && (
         <button
           onClick={() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); setShowNewMessagePill(false); }}
-          className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full bg-[#5A52E0] px-3 py-1 text-xs font-medium text-white shadow-[var(--shadow-soft)] active:scale-[0.97]"
+          className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full px-4 py-2 text-caption font-semibold"
+          style={{ backgroundColor: "var(--accent)", color: "white", boxShadow: "var(--shadow-accent)" }}
         >
-          &darr; New
+          &darr; New message
         </button>
       )}
 
@@ -2856,23 +2924,24 @@ export default function SessionPage() {
       {/* ================================================================== */}
       {showExitModal && (
         <>
-          <div className="fixed inset-0 z-[60] bg-black/20" onClick={() => setShowExitModal(false)} />
-          <div className="fixed inset-x-4 top-1/2 z-[70] mx-auto max-w-sm -translate-y-1/2 rounded-3xl bg-white p-6 shadow-[var(--shadow-elevated)]">
-            <p className="mb-1 text-base font-semibold text-primary">Leave session?</p>
-            <p className="mb-5 text-sm text-secondary">Your progress will be saved. You can resume within 30 minutes.</p>
+          <div className="fixed inset-0 z-[60] backdrop-blur-overlay" style={{ backgroundColor: "rgba(0,0,0,0.2)" }} onClick={() => setShowExitModal(false)} />
+          <div className="fixed inset-x-5 top-1/2 z-[70] mx-auto max-w-sm -translate-y-1/2 card" style={{ padding: "28px 24px", boxShadow: "var(--shadow-elevated)" }}>
+            <p className="text-lead font-semibold" style={{ color: "var(--text-primary)" }}>Leave session?</p>
+            <p className="mt-2 mb-6 text-body" style={{ color: "var(--text-secondary)" }}>Your progress will be saved. You can resume within 30 minutes.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => {
                   saveSession();
                   router.push("/");
                 }}
-                className="flex-1 rounded-2xl bg-[#E88B8B] py-3.5 text-sm font-semibold text-[#611414] transition-transform active:scale-[0.97]"
+                className="btn-primary flex-1"
+                style={{ backgroundColor: "var(--score-low)", color: "var(--score-low-text)", boxShadow: "none" }}
               >
                 Leave
               </button>
               <button
                 onClick={() => setShowExitModal(false)}
-                className="flex-1 rounded-2xl border border-[#F0EDE8] bg-white py-3.5 text-sm font-semibold text-primary transition-transform active:scale-[0.97]"
+                className="btn-secondary flex-1"
               >
                 Stay
               </button>
@@ -2887,25 +2956,31 @@ export default function SessionPage() {
       {(coachAdvice || coachLoading) && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/10 sm:hidden"
+            className="fixed inset-0 z-40 backdrop-blur-overlay sm:hidden"
+            style={{ backgroundColor: "rgba(0,0,0,0.1)" }}
             onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
           />
           <div
-            className="fixed inset-x-0 bottom-0 top-1/2 z-50 overflow-y-auto rounded-t-3xl p-5 shadow-[var(--shadow-elevated)] sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none sm:border-l sm:border-[#F0EDE8]"
-            style={{ backgroundColor: "#FFF8E7" }}
+            className="fixed inset-x-0 bottom-0 top-[40%] z-50 overflow-y-auto p-6 sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:top-0 sm:w-80 sm:max-w-[90vw] sm:rounded-none"
+            style={{
+              backgroundColor: "var(--coach-bg)",
+              borderRadius: "var(--radius-xl) var(--radius-xl) 0 0",
+              boxShadow: "var(--shadow-elevated)",
+            }}
           >
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#E0DED8] sm:hidden" />
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-sm font-medium" style={{ color: "#C4A24E" }}>Mentor</span>
+            <div className="mx-auto mb-5 h-1 w-10 rounded-full sm:hidden" style={{ backgroundColor: "var(--border)" }} />
+            <div className="mb-5 flex items-center justify-between">
+              <span className="text-body font-semibold" style={{ color: "var(--coach-muted)" }}>Mentor</span>
               <button
                 onClick={() => { setCoachAdvice(null); setCoachLoading(false); }}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lg text-secondary hover:text-primary active:scale-[0.97]"
+                className="touch-target text-lead"
+                style={{ color: "var(--text-secondary)" }}
               >
                 &times;
               </button>
             </div>
             {coachLoading ? <LoadingDots /> : (
-              <div className="text-base leading-relaxed text-primary">{renderMarkdown(coachAdvice!)}</div>
+              <div className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{renderMarkdown(coachAdvice!)}</div>
             )}
           </div>
         </>
