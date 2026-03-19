@@ -36,6 +36,8 @@ interface UseVoiceReturn {
   stopListening: () => void;
   /** Speak text aloud via ElevenLabs TTS. Optional voiceOverride uses a different characterId for this call. */
   speak: (text: string, voiceOverride?: string) => void;
+  /** Speak text regardless of voiceEnabled — for lesson audio mode */
+  speakDirect: (text: string, voiceOverride?: string) => void;
   /** Stop any current speech */
   stopSpeaking: () => void;
   interimTranscript: string;
@@ -260,9 +262,8 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
   // -------------------------------------------------------------------------
 
-  const speak = useCallback(
+  const speakInternal = useCallback(
     (text: string, voiceOverride?: string) => {
-      if (!ttsEnabled || !voiceEnabled) return;
       if (!text || text.trim().length === 0) return;
 
       // Cancel any in-flight fetch (but don't touch the audio element yet —
@@ -322,7 +323,24 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           setState("idle");
         });
     },
-    [ttsEnabled, voiceEnabled]
+    []
+  );
+
+  const speak = useCallback(
+    (text: string, voiceOverride?: string) => {
+      if (!ttsEnabled || !voiceEnabled) return;
+      speakInternal(text, voiceOverride);
+    },
+    [ttsEnabled, voiceEnabled, speakInternal]
+  );
+
+  /** Speak regardless of voiceEnabled — for lesson audio mode */
+  const speakDirect = useCallback(
+    (text: string, voiceOverride?: string) => {
+      if (!ttsEnabled) return;
+      speakInternal(text, voiceOverride);
+    },
+    [ttsEnabled, speakInternal]
   );
 
   const stopSpeaking = useCallback(() => {
@@ -350,6 +368,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     startListening,
     stopListening,
     speak,
+    speakDirect,
     stopSpeaking,
     interimTranscript,
     error,
