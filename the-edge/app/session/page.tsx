@@ -1978,7 +1978,7 @@ export default function SessionPage() {
                               disabled={isLoading}
                               autoFocus
                             />
-                            {voice.voiceEnabled && voice.sttSupported && !inputValue.trim() && !isLoading && (
+                            {voice.voiceEnabled && !inputValue.trim() && !isLoading && (
                               <button
                                 onClick={voice.startListening}
                                 className="touch-target flex-shrink-0 rounded-full"
@@ -1992,6 +1992,9 @@ export default function SessionPage() {
                               </button>
                             )}
                           </div>
+                          {voice.micError && (
+                            <p className="text-xs text-red-500 px-1 -mt-1">{voice.micError}</p>
+                          )}
                           <button
                             onClick={() => { if (inputValue.trim()) { submitRetrievalResponse(inputValue.trim()); setInputValue(""); } }}
                             disabled={isLoading || !inputValue.trim()}
@@ -2360,7 +2363,7 @@ export default function SessionPage() {
                                 onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
                                 autoFocus
                               />
-                              {voice.voiceEnabled && voice.sttSupported && !inputValue.trim() && (
+                              {voice.voiceEnabled && !inputValue.trim() && (
                                 <button
                                   onClick={voice.startListening}
                                   className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#5A52E0] text-white transition-transform active:scale-[0.97]"
@@ -2373,6 +2376,9 @@ export default function SessionPage() {
                                 </button>
                               )}
                             </div>
+                            {voice.micError && (
+                              <p className="text-xs text-red-500 px-1 -mt-1">{voice.micError}</p>
+                            )}
                             <button
                               onClick={() => { if (inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
                               disabled={!inputValue.trim()}
@@ -2732,9 +2738,9 @@ export default function SessionPage() {
           )}
 
           {/* Voice error feedback */}
-          {voice.error && (
+          {voice.micError && (
             <div className="mb-2 px-3 py-2 rounded-2xl text-center text-xs font-medium" style={{ backgroundColor: "#FFF8E7", color: "#C4A24E" }}>
-              {voice.error}
+              {voice.micError}
             </div>
           )}
 
@@ -2784,7 +2790,7 @@ export default function SessionPage() {
               />
 
               {/* Mic button (when voice enabled and no text typed) */}
-              {voice.voiceEnabled && voice.sttSupported && !inputValue.trim() && !isStreaming && !isLoading && (
+              {voice.voiceEnabled && !inputValue.trim() && !isStreaming && !isLoading && (
                 <button
                   onClick={voice.startListening}
                   className="touch-target rounded-full"
@@ -2812,6 +2818,11 @@ export default function SessionPage() {
                 </button>
               )}
             </div>
+          )}
+
+          {/* Mic error message */}
+          {voice.micError && (
+            <p className="text-xs text-red-500 text-center px-2 -mt-1 mb-1">{voice.micError}</p>
           )}
 
           {/* Command toolbar */}

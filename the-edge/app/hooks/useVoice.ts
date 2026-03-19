@@ -28,6 +28,7 @@ interface UseVoiceOptions {
 
 interface UseVoiceReturn {
   state: VoiceState;
+  /** Whether any form of speech recognition is supported */
   sttSupported: boolean;
   ttsSupported: boolean;
   voiceEnabled: boolean;
@@ -41,8 +42,10 @@ interface UseVoiceReturn {
   /** Stop any current speech */
   stopSpeaking: () => void;
   interimTranscript: string;
-  /** Error message for user display */
-  error: string | null;
+  /** User-facing error message when mic fails (null = no error) */
+  micError: string | null;
+  /** Clear the mic error */
+  clearMicError: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +53,60 @@ interface UseVoiceReturn {
 // ---------------------------------------------------------------------------
 
 const VOICE_PREF_KEY = "edge-voice-enabled";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function detectNativeSpeechRecognition(): boolean {
+  if (typeof window === "undefined") return false;
+  return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
+}
+
+function detectMicAccess(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return !!navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function";
+}
+
+/** Encode Float32Array PCM samples to a WAV Blob at 16-bit 16kHz mono */
+function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
+  const targetRate = 16000;
+  const ratio = sampleRate / targetRate;
+  const newLength = Math.floor(samples.length / ratio);
+  const downsampled = new Float32Array(newLength);
+  for (let i = 0; i < newLength; i++) {
+    downsampled[i] = samples[Math.floor(i * ratio)];
+  }
+
+  const buffer = new ArrayBuffer(44 + downsampled.length * 2);
+  const view = new DataView(buffer);
+
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + downsampled.length * 2, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, targetRate, true);
+  view.setUint32(28, targetRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, downsampled.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < downsampled.length; i++) {
+    const s = Math.max(-1, Math.min(1, downsampled[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -61,7 +118,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const [state, setState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  // Hydration-safe feature detection (avoids SSR mismatch)
+  const [sttSupported, setSttSupported] = useState(false);
+  const [nativeSTT, setNativeSTT] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -74,14 +135,27 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   onSpeakEndRef.current = onSpeakEnd;
   characterIdRef.current = characterId;
 
-  // Feature detection — MediaRecorder is widely supported including iOS PWA
-  const sttSupported =
-    typeof window !== "undefined" &&
-    typeof navigator !== "undefined" &&
-    !!navigator.mediaDevices?.getUserMedia &&
-    typeof MediaRecorder !== "undefined";
+  // Web Audio API refs for mic recording fallback (iOS Safari)
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const recordingChunksRef = useRef<Float32Array[]>([]);
+  const isRecordingRef = useRef(false);
+
+  // Native speech recognition ref
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const recognitionRef = useRef<any>(null);
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   const ttsSupported = true;
+
+  // Run feature detection on client only (after hydration) — prevents SSR mismatch
+  useEffect(() => {
+    const native = detectNativeSpeechRecognition();
+    const mic = detectMicAccess();
+    setNativeSTT(native);
+    setSttSupported(native || mic);
+  }, []);
 
   // Restore preference from localStorage (default: enabled)
   useEffect(() => {
@@ -89,6 +163,32 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       const saved = localStorage.getItem(VOICE_PREF_KEY);
       if (saved === "false") setVoiceEnabled(false);
     } catch {}
+  }, []);
+
+  const clearMicError = useCallback(() => setMicError(null), []);
+
+  // Auto-clear mic errors after 8 seconds
+  useEffect(() => {
+    if (!micError) return;
+    const t = setTimeout(() => setMicError(null), 8000);
+    return () => clearTimeout(t);
+  }, [micError]);
+
+  // Cleanup helper for mic recording (iOS Safari fallback)
+  const cleanupRecording = useCallback(() => {
+    isRecordingRef.current = false;
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
   }, []);
 
   // Audio unlock is handled by the AudioUnlock component in root layout.
@@ -107,27 +207,100 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         mediaRecorderRef.current?.stop();
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+        recognitionRef.current?.stop();
+        cleanupRecording();
         abortRef.current?.abort();
         stopSharedAudio();
         setState("idle");
         setInterimTranscript("");
-        setError(null);
+        setMicError(null);
       }
       return next;
     });
-  }, []);
+  }, [cleanupRecording]);
+
+  // -------------------------------------------------------------------------
+  // Speech Recognition (STT) — native Web Speech API
+  // -------------------------------------------------------------------------
+
+  const startNativeListening = useCallback(() => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setMicError("Speech recognition not supported on this browser.");
+      return;
+    }
+
+    const recognition = new SR();
+    recognition.lang = lang;
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setState("listening");
+      setInterimTranscript("");
+      setMicError(null);
+    };
+
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      let finalText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      if (interim) setInterimTranscript(interim);
+      if (finalText) {
+        setInterimTranscript("");
+        setState("idle");
+        onTranscriptRef.current?.(finalText.trim());
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === "not-allowed") {
+        setMicError("Microphone access denied. Check your browser settings.");
+      } else if (event.error !== "no-speech" && event.error !== "aborted") {
+        console.warn("[useVoice] recognition error:", event.error);
+        setMicError(`Speech recognition error: ${event.error}`);
+      }
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      setState("idle");
+
+    };
+
+    recognition.onend = () => {
+      setState((prev) => (prev === "listening" ? "idle" : prev));
+      setInterimTranscript("");
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch (err) {
+      console.warn("[useVoice] recognition.start() failed:", err);
+      setMicError("Could not start speech recognition. Try again.");
+      setState("idle");
+    }
+  }, [lang]);
 
   // -------------------------------------------------------------------------
   // Speech Recognition (STT) — MediaRecorder + server-side ElevenLabs Scribe
   // -------------------------------------------------------------------------
 
-  const startListening = useCallback(async () => {
-    if (!sttSupported) {
-      setError("Voice input not supported on this device");
+  const startMediaRecorderListening = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicError("Voice input not supported on this device");
       return;
     }
 
-    setError(null);
+    setMicError(null);
 
     // Stop any current audio playback
     abortRef.current?.abort();
@@ -189,6 +362,13 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
             signal: AbortSignal.timeout(15000),
           });
 
+          if (res.status === 429) {
+            setMicError("Too many requests. Wait a moment and try again.");
+            setState("idle");
+            setInterimTranscript("");
+            return;
+          }
+
           if (!res.ok) {
             throw new Error(`STT API error: ${res.status}`);
           }
@@ -201,14 +381,12 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
             onTranscriptRef.current?.(text);
           } else {
             setInterimTranscript("");
-            setError("Couldn\u2019t hear that \u2014 try again");
-            setTimeout(() => setError(null), 3000);
+            setMicError("Couldn\u2019t hear that \u2014 try again");
           }
         } catch (err) {
           console.warn("[useVoice] transcription error:", err);
           setInterimTranscript("");
-          setError("Transcription failed \u2014 try again");
-          setTimeout(() => setError(null), 3000);
+          setMicError("Transcription failed \u2014 try again");
         }
 
         setState("idle");
@@ -220,8 +398,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         streamRef.current = null;
         setState("idle");
         setInterimTranscript("");
-        setError("Recording failed");
-        setTimeout(() => setError(null), 3000);
+        setMicError("Recording failed");
       };
 
       recorder.start(250); // Collect chunks every 250ms
@@ -234,29 +411,234 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       // Provide helpful error messages
       if (err instanceof DOMException) {
         if (err.name === "NotAllowedError") {
-          setError("Microphone access denied \u2014 check your browser settings");
+          setMicError("Microphone access denied \u2014 check your browser settings");
         } else if (err.name === "NotFoundError") {
-          setError("No microphone found");
+          setMicError("No microphone found");
         } else {
-          setError("Microphone not available");
+          setMicError("Microphone not available");
         }
       } else {
-        setError("Could not access microphone");
+        setMicError("Could not access microphone");
       }
-      setTimeout(() => setError(null), 5000);
     }
-  }, [sttSupported]);
+  }, []);
 
-  const stopListening = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop(); // This triggers onstop -> transcription
-    } else {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+  // -------------------------------------------------------------------------
+  // Speech Recognition (STT) — getUserMedia + Web Audio API fallback
+  // Records raw PCM via ScriptProcessorNode, encodes to WAV, sends to /api/stt
+  // Works on iOS Safari 11+ (no MediaRecorder dependency)
+  // -------------------------------------------------------------------------
+
+  const startFallbackListening = useCallback(async () => {
+    // Check if getUserMedia is actually available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMicError("Microphone not available on this browser. Try opening in Safari.");
+      return;
+    }
+
+    // *** CRITICAL iOS Safari fix ***
+    // AudioContext MUST be created and resumed SYNCHRONOUSLY in the user
+    // gesture (button click) call stack — BEFORE any `await`. If we await
+    // getUserMedia first, the user gesture expires and iOS Safari refuses
+    // to start the AudioContext (it stays "suspended" forever).
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    if (!AC) {
+      setMicError("Audio not supported on this browser.");
+      return;
+    }
+
+    // Create AudioContext synchronously in the click handler
+    const audioContext = new AC();
+    audioContextRef.current = audioContext;
+
+    // Resume synchronously — still within user gesture call stack
+    // (the first await hasn't happened yet)
+    const resumePromise = audioContext.resume();
+
+    try {
+      // Now we can await — user gesture already unlocked the AudioContext
+      await resumePromise;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      mediaStreamRef.current = stream;
+
+      // Verify AudioContext is running
+      if (audioContext.state !== "running") {
+        setMicError("Could not start audio. Tap the mic button again.");
+        stream.getTracks().forEach((t) => t.stop());
+        audioContext.close().catch(() => {});
+        audioContextRef.current = null;
+        return;
+      }
+
+      const source = audioContext.createMediaStreamSource(stream);
+
+      // ScriptProcessorNode: deprecated but universally supported (including iOS Safari).
+      // Buffer size 4096 gives ~93ms chunks at 44.1kHz.
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+      recordingChunksRef.current = [];
+      isRecordingRef.current = true;
+
+      processor.onaudioprocess = (e) => {
+        if (!isRecordingRef.current) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        recordingChunksRef.current.push(new Float32Array(inputData));
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      setState("listening");
+      setInterimTranscript("");
+      setMicError(null);
+    } catch (err: unknown) {
+      // Clean up AudioContext on any failure
+      audioContext.close().catch(() => {});
+      audioContextRef.current = null;
+
+      const error = err as Error & { name?: string };
+      console.warn("[useVoice] mic access error:", error);
+
+      if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+        setMicError("Microphone access denied. Go to Settings \u2192 Safari \u2192 Microphone to allow.");
+      } else if (error.name === "NotFoundError") {
+        setMicError("No microphone found on this device.");
+      } else if (error.name === "NotSupportedError" || error.name === "TypeError") {
+        setMicError("Microphone not supported in this mode. Open in Safari instead of the home screen app.");
+      } else {
+        setMicError("Could not access microphone. Please try again.");
+      }
       setState("idle");
       setInterimTranscript("");
     }
   }, []);
+
+  const stopFallbackListening = useCallback(async () => {
+    if (!isRecordingRef.current) return;
+
+    const sampleRate = audioContextRef.current?.sampleRate ?? 44100;
+    isRecordingRef.current = false;
+
+    const chunks = recordingChunksRef.current;
+    recordingChunksRef.current = [];
+    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+
+    cleanupRecording();
+
+    if (totalLength < sampleRate * 0.3) {
+      // Less than 0.3 seconds — too short, probably accidental tap
+      setState("idle");
+      setInterimTranscript("");
+      return;
+    }
+
+    const allSamples = new Float32Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      allSamples.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    setState("processing");
+    setInterimTranscript("Transcribing...");
+
+    try {
+      const wavBlob = encodeWAV(allSamples, sampleRate);
+      const formData = new FormData();
+      formData.append("audio", wavBlob, "recording.wav");
+
+      const res = await fetch("/api/stt", {
+        method: "POST",
+        body: formData,
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (res.status === 429) {
+        setMicError("Too many requests. Wait a moment and try again.");
+        setState("idle");
+        setInterimTranscript("");
+        return;
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Unknown error" }));
+        console.warn("[useVoice] STT API error:", res.status, errData);
+        setMicError("Transcription failed. Please try again.");
+        setState("idle");
+        setInterimTranscript("");
+        return;
+      }
+
+      const data = await res.json();
+      const text = (data.text ?? "").trim();
+
+      setInterimTranscript("");
+
+      if (text) {
+        onTranscriptRef.current?.(text);
+      } else {
+        setState("idle");
+        // No error — just didn't detect speech
+      }
+    } catch (err) {
+      console.warn("[useVoice] fallback STT error:", err);
+      setMicError("Connection error. Check your internet and try again.");
+      setState("idle");
+      setInterimTranscript("");
+    }
+  }, [cleanupRecording]);
+
+  // -------------------------------------------------------------------------
+  // Unified start/stop listening
+  // -------------------------------------------------------------------------
+
+  const startListening = useCallback(() => {
+    // Clear any previous error
+    setMicError(null);
+
+    // Stop any current audio playback
+    abortRef.current?.abort();
+    stopSharedAudio();
+
+    if (nativeSTT) {
+      startNativeListening();
+    } else if (typeof MediaRecorder !== "undefined" && detectMicAccess()) {
+      startMediaRecorderListening();
+    } else if (detectMicAccess()) {
+      // iOS Safari fallback — no MediaRecorder, use Web Audio API
+      startFallbackListening();
+    } else {
+      setMicError("Microphone not available on this browser.");
+    }
+  }, [nativeSTT, startNativeListening, startMediaRecorderListening, startFallbackListening]);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setState("idle");
+      setInterimTranscript("");
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop(); // This triggers onstop -> transcription
+    } else if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setState("idle");
+      setInterimTranscript("");
+    }
+    if (isRecordingRef.current) {
+      stopFallbackListening();
+    }
+  }, [stopFallbackListening]);
 
   // -------------------------------------------------------------------------
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
@@ -354,10 +736,13 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     return () => {
       mediaRecorderRef.current?.stop();
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      recognitionRef.current?.stop();
+      isRecordingRef.current = false;
+      cleanupRecording();
       abortRef.current?.abort();
       stopSharedAudio();
     };
-  }, []);
+  }, [cleanupRecording]);
 
   return {
     state,
@@ -371,6 +756,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     speakDirect,
     stopSpeaking,
     interimTranscript,
-    error,
+    micError,
+    clearMicError,
   };
 }

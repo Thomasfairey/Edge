@@ -4,6 +4,8 @@
  * POST /api/stt
  * Body: multipart form with `audio` file
  * Returns: { text: string }
+ *
+ * Used as a fallback for browsers without native Web Speech API (e.g. iOS Safari).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -45,9 +47,12 @@ async function handler(req: NextRequest): Promise<Response> {
   }
 
   try {
+    // Preserve the original filename/extension from the client (e.g. recording.wav, recording.mp4)
+    const originalName = audioBlob instanceof File ? audioBlob.name : "recording.webm";
+
     // Use ElevenLabs Speech-to-Text (Scribe)
     const form = new FormData();
-    form.append("file", audioBlob, "recording.webm");
+    form.append("file", audioBlob, originalName);
     form.append("model_id", "scribe_v1");
     form.append("language_code", "eng");
 
@@ -91,4 +96,5 @@ async function handler(req: NextRequest): Promise<Response> {
   }
 }
 
+// Rate limit: 15 requests per minute
 export const POST = withRateLimit(handler, 15);
