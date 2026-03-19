@@ -226,12 +226,20 @@ const DOMAIN_CHARACTER_MAP: Record<ConceptDomain, string[]> = {
  */
 export function selectCharacter(concept: Concept): CharacterArchetype {
   const appropriateIds = DOMAIN_CHARACTER_MAP[concept.domain];
+
+  // Guard against empty or missing domain mapping
+  if (!appropriateIds || appropriateIds.length === 0) {
+    console.warn(`[characters] No character mapping for domain: ${concept.domain}, using random`);
+    return CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+  }
+
   const selectedId =
     appropriateIds[Math.floor(Math.random() * appropriateIds.length)];
   const character = CHARACTERS.find((c) => c.id === selectedId);
 
   // Fallback should never fire, but safety first
   if (!character) {
+    console.warn(`[characters] Character ID not found: ${selectedId}, using random`);
     return CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
   }
 

@@ -16,6 +16,14 @@ export interface SessionScores {
   strategic_outcome: number; // 1-5
 }
 
+export const SCORE_KEYS: (keyof SessionScores)[] = [
+  "technique_application",
+  "tactical_awareness",
+  "frame_control",
+  "emotional_regulation",
+  "strategic_outcome",
+];
+
 // ---------------------------------------------------------------------------
 // Nuance Ledger (PRD Section 4.4, Appendix B)
 // ---------------------------------------------------------------------------
@@ -97,4 +105,59 @@ export interface SessionState {
   debriefContent: string | null;
   scores: SessionScores | null;
   mission: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Validation helpers — runtime type guards for API input
+// ---------------------------------------------------------------------------
+
+/** Max length for user-provided text fields to prevent abuse */
+export const MAX_INPUT_LENGTH = 10_000;
+export const MAX_TRANSCRIPT_LENGTH = 100;
+
+/** Clamp a score to the valid 1-5 range */
+export function clampScore(value: unknown): number {
+  const n = typeof value === "number" ? value : parseInt(String(value), 10);
+  if (isNaN(n)) return 3;
+  return Math.max(1, Math.min(5, Math.round(n)));
+}
+
+/** Validate and sanitize a SessionScores object */
+export function validateScores(raw: unknown): SessionScores | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const hasAllKeys = SCORE_KEYS.every((k) => k in obj);
+  if (!hasAllKeys) return null;
+  return {
+    technique_application: clampScore(obj.technique_application),
+    tactical_awareness: clampScore(obj.tactical_awareness),
+    frame_control: clampScore(obj.frame_control),
+    emotional_regulation: clampScore(obj.emotional_regulation),
+    strategic_outcome: clampScore(obj.strategic_outcome),
+  };
+}
+
+/** Validate a Message object */
+export function isValidMessage(msg: unknown): msg is Message {
+  if (!msg || typeof msg !== "object") return false;
+  const m = msg as Record<string, unknown>;
+  return (
+    (m.role === "user" || m.role === "assistant") &&
+    typeof m.content === "string" &&
+    m.content.length <= MAX_INPUT_LENGTH
+  );
+}
+
+/** Validate a transcript array */
+export function validateTranscript(raw: unknown): Message[] | null {
+  if (!Array.isArray(raw)) return null;
+  if (raw.length > MAX_TRANSCRIPT_LENGTH) return null;
+  if (!raw.every(isValidMessage)) return null;
+  return raw as Message[];
+}
+
+/** Truncate a string to a max length */
+export function truncate(value: unknown, maxLen: number = MAX_INPUT_LENGTH): string {
+  if (typeof value !== "string") return "";
+  return value.slice(0, maxLen);
 }

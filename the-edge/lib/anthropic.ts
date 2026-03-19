@@ -3,7 +3,7 @@
  *
  * Provides both streaming and non-streaming generation functions with:
  * - Single retry on 429 (rate limit) with 2s delay
- * - 15-second timeout with graceful error message
+ * - Configurable timeout with graceful error message
  * - Console logging of phase, model, and approximate token count
  *
  * PRD Section 4.1 — split architecture:
@@ -17,13 +17,13 @@ import Anthropic from "@anthropic-ai/sdk";
 // ---------------------------------------------------------------------------
 
 if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error(
-    "ANTHROPIC_API_KEY is not set. Add it to .env.local before starting the server."
+  console.error(
+    "[anthropic] ANTHROPIC_API_KEY is not set. Add it to .env.local before starting the server."
   );
 }
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_API_KEY ?? "",
 });
 
 export default anthropic;
@@ -51,6 +51,19 @@ export const PHASE_CONFIG = {
 } as const;
 
 export type PhaseConfig = (typeof PHASE_CONFIG)[keyof typeof PHASE_CONFIG];
+
+// ---------------------------------------------------------------------------
+// Precomputed phase name lookup (O(1) instead of O(n) on every request)
+// ---------------------------------------------------------------------------
+
+const PHASE_NAME_MAP = new Map<string, string>();
+for (const [name, config] of Object.entries(PHASE_CONFIG)) {
+  PHASE_NAME_MAP.set(`${config.model}:${config.max_tokens}`, name);
+}
+
+function getPhaseLabel(config: PhaseConfig): string {
+  return PHASE_NAME_MAP.get(`${config.model}:${config.max_tokens}`) ?? "unknown";
+}
 
 // ---------------------------------------------------------------------------
 // Message type for helpers
@@ -159,10 +172,7 @@ export function streamResponse(
   config: PhaseConfig
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const phaseName =
-    Object.entries(PHASE_CONFIG).find(
-      ([, c]) => c.model === config.model && c.max_tokens === config.max_tokens
-    )?.[0] ?? "unknown";
+  const phaseName = getPhaseLabel(config);
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -221,10 +231,7 @@ export async function generateResponseViaStream(
   messages: ChatMessage[],
   config: PhaseConfig
 ): Promise<string> {
-  const phaseName =
-    Object.entries(PHASE_CONFIG).find(
-      ([, c]) => c.model === config.model && c.max_tokens === config.max_tokens
-    )?.[0] ?? "unknown";
+  const phaseName = getPhaseLabel(config);
 
   try {
     const stream = await withTimeout(
@@ -234,7 +241,7 @@ export async function generateResponseViaStream(
       90000 // 90s timeout for streaming buffer
     );
 
-    let fullText = "";
+    const chunks: string[] = [];
     let tokenCount = 0;
 
     for await (const event of stream) {
@@ -242,10 +249,12 @@ export async function generateResponseViaStream(
         event.type === "content_block_delta" &&
         event.delta.type === "text_delta"
       ) {
-        fullText += event.delta.text;
+        chunks.push(event.delta.text);
         tokenCount += Math.ceil(event.delta.text.length / 4);
       }
     }
+
+    const fullText = chunks.join("");
 
     console.log(
       `[anthropic] ${phaseName} (streamed) | model=${config.model} | ~${tokenCount} tokens`
@@ -273,10 +282,7 @@ export async function generateResponse(
   messages: ChatMessage[],
   config: PhaseConfig
 ): Promise<string> {
-  const phaseName =
-    Object.entries(PHASE_CONFIG).find(
-      ([, c]) => c.model === config.model && c.max_tokens === config.max_tokens
-    )?.[0] ?? "unknown";
+  const phaseName = getPhaseLabel(config);
 
   try {
     const response = (await withTimeout(
@@ -284,8 +290,9 @@ export async function generateResponse(
       60000
     )) as Anthropic.Message;
 
-    const text =
-      response.content[0].type === "text" ? response.content[0].text : "";
+    // Safely extract text from response
+    const textBlock = response.content.find((block) => block.type === "text");
+    const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
 
     const tokenCount = response.usage?.output_tokens ?? Math.ceil(text.length / 4);
     console.log(

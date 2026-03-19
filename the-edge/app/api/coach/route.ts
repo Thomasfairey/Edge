@@ -34,20 +34,26 @@ async function handlePost(req: NextRequest) {
     throw e;
   }
 
-  const { transcript, concept } = body as {
-    transcript: Message[];
-    concept: Concept;
-  };
+  const transcript = body.transcript as Message[];
+  const concept = body.concept as Concept;
 
-  const systemPrompt = buildCoachPrompt(transcript, concept);
+  try {
+    const systemPrompt = buildCoachPrompt(transcript as Message[], concept);
 
-  const advice = await generateResponse(
-    systemPrompt,
-    [{ role: "user", content: "What are my best moves right now?" }],
-    PHASE_CONFIG.coach
-  );
+    const advice = await generateResponse(
+      systemPrompt,
+      [{ role: "user", content: "What are my best moves right now?" }],
+      PHASE_CONFIG.coach
+    );
 
-  return NextResponse.json({ advice });
+    return NextResponse.json({ advice });
+  } catch (error) {
+    console.error("[coach] Error:", error);
+    return NextResponse.json(
+      { error: "Coach assist failed. Please try again." },
+      { status: 500 }
+    );
+  }
 }
 
 export const POST = withRateLimit(handlePost, 10);

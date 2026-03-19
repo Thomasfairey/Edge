@@ -38,6 +38,14 @@ function rowToEntry(row: SRRow): SREntry {
   };
 }
 
+/** Calculate next review date as ISO string */
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().split("T")[0];
+}
+
 export async function getSRData(): Promise<SREntry[]> {
   const { data, error } = await supabase
     .from("spaced_repetition")
@@ -59,6 +67,7 @@ export async function getSRData(): Promise<SREntry[]> {
  */
 export async function updateSREntry(conceptId: string, scores: { [key: string]: number }): Promise<void> {
   const values = Object.values(scores);
+  if (values.length === 0) return;
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   const today = new Date().toISOString().split("T")[0];
 
@@ -84,8 +93,8 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
       interval = 1;
     }
 
-    const next = new Date(today);
-    next.setDate(next.getDate() + interval);
+    // Ensure interval is at least 1 and reasonable
+    interval = Math.max(1, Math.min(interval, 365));
 
     const { error } = await supabase
       .from("spaced_repetition")
@@ -95,7 +104,7 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
         last_score_avg: Math.round(avg * 10) / 10,
         ease_factor: Math.round(easeFactor * 100) / 100,
         interval,
-        next_review: next.toISOString().split("T")[0],
+        next_review: addDays(today, interval),
         updated_at: new Date().toISOString(),
       })
       .eq("concept_id", conceptId);
@@ -103,8 +112,6 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
     if (error) console.error("[sr] Failed to update:", error.message);
   } else {
     const initialInterval = avg >= 4 ? 7 : avg >= 3 ? 3 : 1;
-    const next = new Date(today);
-    next.setDate(next.getDate() + initialInterval);
 
     const { error } = await supabase
       .from("spaced_repetition")
@@ -113,7 +120,7 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
         last_practiced: today,
         ease_factor: 2.5,
         interval: initialInterval,
-        next_review: next.toISOString().split("T")[0],
+        next_review: addDays(today, initialInterval),
         practice_count: 1,
         last_score_avg: Math.round(avg * 10) / 10,
       });

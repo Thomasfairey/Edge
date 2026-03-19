@@ -9,6 +9,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
 
+const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB — ElevenLabs limit
+
 async function handler(req: NextRequest): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
@@ -34,9 +36,12 @@ async function handler(req: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "Empty audio file" }, { status: 400 });
   }
 
-  // Limit audio size to 10MB to prevent abuse
-  if (audioBlob.size > 10 * 1024 * 1024) {
-    return NextResponse.json({ error: "Audio file too large (max 10MB)" }, { status: 400 });
+  // Limit audio size to prevent abuse (stricter than ElevenLabs 25MB limit)
+  if (audioBlob.size > MAX_AUDIO_SIZE) {
+    return NextResponse.json(
+      { error: `Audio file too large. Maximum size is ${MAX_AUDIO_SIZE / 1024 / 1024}MB.` },
+      { status: 400 }
+    );
   }
 
   try {

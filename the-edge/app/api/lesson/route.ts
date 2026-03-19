@@ -32,56 +32,64 @@ async function handlePost(req: NextRequest) {
 
   const shouldStream = body.stream !== false;
 
-  // Resolve the concept: lookup by ID if provided, otherwise auto-select
-  let concept;
-  let isReview = false;
+  try {
+    // Resolve the concept: lookup by ID if provided, otherwise auto-select
+    let concept;
+    let isReview = false;
 
-  if (body.conceptId) {
-    const found = CONCEPTS.find((c) => c.id === body.conceptId);
-    if (!found) {
-      return NextResponse.json(
-        { error: `Concept not found: ${body.conceptId}` },
-        { status: 400 }
-      );
+    if (body.conceptId) {
+      const found = CONCEPTS.find((c) => c.id === body.conceptId);
+      if (!found) {
+        return NextResponse.json(
+          { error: `Concept not found: ${body.conceptId}` },
+          { status: 400 }
+        );
+      }
+      concept = found;
+    } else {
+      const completedIds = await getCompletedConcepts();
+      const result = await selectConcept(completedIds);
+      concept = result.concept;
+      isReview = result.isReview;
     }
-    concept = found;
-  } else {
-    const completedIds = await getCompletedConcepts();
-    const result = await selectConcept(completedIds);
-    concept = result.concept;
-    isReview = result.isReview;
-  }
 
-  const lessonPrompt = buildLessonPrompt(concept, isReview);
-  const systemPrompt = `${await buildPersistentContext()}\n\n${lessonPrompt}`;
+    const lessonPrompt = buildLessonPrompt(concept, isReview);
+    const systemPrompt = `${await buildPersistentContext()}\n\n${lessonPrompt}`;
 
-  const userMessage = {
-    role: "user" as const,
-    content: isReview
-      ? `Deliver the review lesson for: ${concept.name} (${concept.source})`
-      : `Deliver the micro-lesson for: ${concept.name} (${concept.source})`,
-  };
+    const userMessage = {
+      role: "user" as const,
+      content: isReview
+        ? `Deliver the review lesson for: ${concept.name} (${concept.source})`
+        : `Deliver the micro-lesson for: ${concept.name} (${concept.source})`,
+    };
 
-  if (shouldStream) {
-    const stream = streamResponse(systemPrompt, [userMessage], PHASE_CONFIG.lesson);
+    if (shouldStream) {
+      const stream = streamResponse(systemPrompt, [userMessage], PHASE_CONFIG.lesson);
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
-        "Cache-Control": "no-cache",
-        "X-Concept": encodeURIComponent(JSON.stringify(concept)),
-        "X-Is-Review": isReview ? "true" : "false",
-      },
-    });
-  } else {
-    const lessonContent = await generateResponse(
-      systemPrompt,
-      [userMessage],
-      PHASE_CONFIG.lesson
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Transfer-Encoding": "chunked",
+          "Cache-Control": "no-cache",
+          "X-Concept": encodeURIComponent(JSON.stringify(concept)),
+          "X-Is-Review": isReview ? "true" : "false",
+        },
+      });
+    } else {
+      const lessonContent = await generateResponse(
+        systemPrompt,
+        [userMessage],
+        PHASE_CONFIG.lesson
+      );
+
+      return NextResponse.json({ concept, lessonContent, isReview });
+    }
+  } catch (error) {
+    console.error("[lesson] Error:", error);
+    return NextResponse.json(
+      { error: "Lesson generation failed. Please try again." },
+      { status: 500 }
     );
-
-    return NextResponse.json({ concept, lessonContent, isReview });
   }
 }
 

@@ -153,11 +153,11 @@ async function fetchWithRetry(
 function useOnlineStatus() {
   const [online, setOnline] = useState(true);
   useEffect(() => {
-    setOnline(navigator.onLine);
     const on = () => setOnline(true);
     const off = () => setOnline(false);
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
+    queueMicrotask(() => setOnline(navigator.onLine));
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
   return online;
@@ -695,35 +695,8 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
 }
 
 // ---------------------------------------------------------------------------
-// Confetti component
+// (Confetti component removed — completion uses animate-celebrate card)
 // ---------------------------------------------------------------------------
-
-function Confetti() {
-  const colors = ["#B8D4E3", "#F2C4C4", "#C5B8E8", "#B8E0C8"];
-  const dots = Array.from({ length: 10 }, (_, i) => ({
-    id: i,
-    color: colors[i % colors.length],
-    left: `${10 + Math.random() * 80}%`,
-    delay: `${Math.random() * 0.4}s`,
-  }));
-
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {dots.map((dot) => (
-        <div
-          key={dot.id}
-          className="confetti-dot"
-          style={{
-            backgroundColor: dot.color,
-            left: dot.left,
-            bottom: "40%",
-            animationDelay: dot.delay,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Motivational line based on trajectory
@@ -1011,7 +984,6 @@ export default function SessionPage() {
         fetchLesson();
       })
       .catch(() => { fetchLesson(); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------

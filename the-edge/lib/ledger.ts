@@ -9,7 +9,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { LedgerEntry, SessionScores } from "@/lib/types";
+import { LedgerEntry } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Row ↔ LedgerEntry mapping

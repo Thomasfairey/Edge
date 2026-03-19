@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkRateLimit } from "./rate-limit";
+import { checkRateLimit, extractClientIp } from "./rate-limit";
 
 type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
 
@@ -16,15 +16,14 @@ type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
  */
 export function withRateLimit(handler: RouteHandler, limit: number = 10): RouteHandler {
   return async (req: NextRequest) => {
-    // Use IP or forwarded-for as the rate limit key
-    const forwarded = req.headers.get("x-forwarded-for");
-    const ip = forwarded?.split(",")[0]?.trim() ?? "unknown";
+    const ip = extractClientIp(req.headers);
     const routeKey = new URL(req.url).pathname;
     const key = `${ip}:${routeKey}`;
 
     const result = checkRateLimit(key, limit);
 
     if (!result.success) {
+      console.warn(`[rate-limit] ${routeKey} blocked for ${ip} (retry in ${result.retryAfter}s)`);
       return NextResponse.json(
         { error: "Too many requests. Please wait before trying again." },
         {
