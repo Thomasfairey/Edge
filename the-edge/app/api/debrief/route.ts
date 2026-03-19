@@ -25,8 +25,9 @@ import {
   clampScore,
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { validateTranscript, ValidationError } from "@/lib/validate";
+import { validateTranscript, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 export const maxDuration = 60;
 
@@ -75,7 +76,7 @@ function computeFallbackScores(
 function parseScores(text: string): SessionScores {
   const scoresMatch = text.match(/---SCORES---\s*([\s\S]*?)(?:---LEDGER---|$)/);
   if (!scoresMatch) {
-    console.warn("[debrief] Could not find ---SCORES--- block, using defaults");
+    logger.warn("Could not find ---SCORES--- block, using defaults", { phase: "debrief" });
     return { ...DEFAULT_SCORES };
   }
 
@@ -105,7 +106,7 @@ function parseLedgerFields(text: string): {
 } {
   const ledgerMatch = text.match(/---LEDGER---\s*([\s\S]*?)(?:```|$)/);
   if (!ledgerMatch) {
-    console.warn("[debrief] Could not find ---LEDGER--- block, using fallbacks");
+    logger.warn("Could not find ---LEDGER--- block, using fallbacks", { phase: "debrief" });
     return {
       behavioralWeaknessSummary: "Unable to extract behavioural summary from debrief.",
       keyMoment: "Unable to extract key moment from debrief.",
@@ -135,8 +136,12 @@ async function handlePost(req: NextRequest, userId: string | null) {
   }
 
   let transcript: Message[];
+  let concept: Concept;
+  let character: CharacterArchetype;
   try {
     transcript = validateTranscript(body.transcript);
+    concept = validateConcept(body.concept);
+    character = validateCharacter(body.character);
   } catch (e) {
     if (e instanceof ValidationError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -144,16 +149,10 @@ async function handlePost(req: NextRequest, userId: string | null) {
     throw e;
   }
 
-  const { concept, character, commandsUsed, checkinContext } = body as {
-    concept: Concept;
-    character: CharacterArchetype;
-    commandsUsed: string[];
-    checkinContext?: string;
-  };
-
-  const safeCommandsUsed = Array.isArray(commandsUsed)
-    ? commandsUsed.filter((c) => typeof c === "string").slice(0, 20)
+  const safeCommandsUsed = Array.isArray(body.commandsUsed)
+    ? (body.commandsUsed as unknown[]).filter((c): c is string => typeof c === "string").slice(0, 20)
     : [];
+  const checkinContext = typeof body.checkinContext === "string" ? body.checkinContext : undefined;
 
   try {
     const [ledgerCount, serialisedLedger] = await Promise.all([
@@ -183,10 +182,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
     const scores = parseScores(debriefContent);
     const { behavioralWeaknessSummary, keyMoment } = parseLedgerFields(debriefContent);
 
-    console.log(
-      `[debrief] Scores: TA=${scores.technique_application} TW=${scores.tactical_awareness} FC=${scores.frame_control} ER=${scores.emotional_regulation} SO=${scores.strategic_outcome}`
+    logger.info(
+      `Scores: TA=${scores.technique_application} TW=${scores.tactical_awareness} FC=${scores.frame_control} ER=${scores.emotional_regulation} SO=${scores.strategic_outcome}`,
+      { phase: "debrief" }
     );
-    console.log(`[debrief] Commands used: ${safeCommandsUsed.join(", ") || "none"}`);
+    logger.info(`Commands used: ${safeCommandsUsed.join(", ") || "none"}`, { phase: "debrief" });
 
     return NextResponse.json({
       debriefContent,
@@ -195,7 +195,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
       keyMoment,
     });
   } catch (error) {
-    console.error("[debrief] Error:", error);
+    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "debrief" });
 
     // Fallback: compute scores from transcript data
     const fallbackScores = computeFallbackScores(transcript, safeCommandsUsed);

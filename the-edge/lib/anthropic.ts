@@ -4,6 +4,8 @@
  * Provides both streaming and non-streaming generation functions with:
  * - Single retry on 429 (rate limit) with 2s delay
  * - Configurable timeout with graceful error message
+ * - Client disconnect detection (AbortController) for streaming
+ * - Circuit breaker (3 consecutive failures → 30s open state)
  * - Console logging of phase, model, and approximate token count
  *
  * PRD Section 4.1 — split architecture:
@@ -11,15 +13,14 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Client singleton (lazy init — avoids crashing at import/build time)
 // ---------------------------------------------------------------------------
 
 if (!process.env.ANTHROPIC_API_KEY) {
-  console.error(
-    "[anthropic] ANTHROPIC_API_KEY is not set. Add it to .env.local before starting the server."
-  );
+  logger.error("ANTHROPIC_API_KEY is not set. Add it to .env.local before starting the server.", { phase: "anthropic" });
 }
 
 const anthropic = new Anthropic({
@@ -75,27 +76,94 @@ interface ChatMessage {
 }
 
 // ---------------------------------------------------------------------------
-// Internal: retry-aware API call
+// Circuit breaker — protects against cascading failures to the Anthropic API
+// ---------------------------------------------------------------------------
+
+let cbConsecutiveFailures = 0;
+let cbOpenedAt = 0; // timestamp when circuit opened (0 = closed)
+const CB_FAILURE_THRESHOLD = 3;
+const CB_OPEN_DURATION_MS = 30_000;
+
+class CircuitBreakerOpenError extends Error {
+  constructor() {
+    super(
+      "Anthropic API circuit breaker is open — too many consecutive failures. Retry in 30s."
+    );
+    this.name = "CircuitBreakerOpenError";
+  }
+}
+
+/**
+ * Check circuit breaker state before making an API call.
+ * Throws CircuitBreakerOpenError if the circuit is open.
+ * Returns true if this is a half-open probe request.
+ */
+function cbBeforeRequest(): boolean {
+  if (cbOpenedAt === 0) {
+    // Circuit is closed — allow request
+    return false;
+  }
+
+  const elapsed = Date.now() - cbOpenedAt;
+  if (elapsed >= CB_OPEN_DURATION_MS) {
+    // Half-open: allow one probe request through
+    logger.info("Circuit breaker half-open — allowing probe request", { phase: "anthropic" });
+    return true;
+  }
+
+  // Still open — reject immediately
+  throw new CircuitBreakerOpenError();
+}
+
+/** Record a successful API response. Resets the circuit breaker. */
+function cbOnSuccess(): void {
+  if (cbConsecutiveFailures > 0 || cbOpenedAt > 0) {
+    logger.info("Circuit breaker reset — API call succeeded", { phase: "anthropic" });
+  }
+  cbConsecutiveFailures = 0;
+  cbOpenedAt = 0;
+}
+
+/** Record a failed API response. Opens the circuit after threshold. */
+function cbOnFailure(): void {
+  cbConsecutiveFailures++;
+  if (cbConsecutiveFailures >= CB_FAILURE_THRESHOLD) {
+    cbOpenedAt = Date.now();
+    logger.warn(
+      `Circuit breaker OPEN after ${cbConsecutiveFailures} consecutive failures — blocking requests for ${CB_OPEN_DURATION_MS / 1000}s`,
+      { phase: "anthropic" }
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal: retry-aware API call (with circuit breaker + abort support)
 // ---------------------------------------------------------------------------
 
 async function callWithRetry(
   systemPrompt: string,
   messages: ChatMessage[],
   config: PhaseConfig,
-  stream: false
+  stream: false,
+  signal?: AbortSignal
 ): Promise<Anthropic.Message>;
 async function callWithRetry(
   systemPrompt: string,
   messages: ChatMessage[],
   config: PhaseConfig,
-  stream: true
+  stream: true,
+  signal?: AbortSignal
 ): Promise<AsyncIterable<Anthropic.MessageStreamEvent>>;
 async function callWithRetry(
   systemPrompt: string,
   messages: ChatMessage[],
   config: PhaseConfig,
-  stream: boolean
+  stream: boolean,
+  signal?: AbortSignal
 ): Promise<Anthropic.Message | AsyncIterable<Anthropic.MessageStreamEvent>> {
+  // Circuit breaker check
+  cbBeforeRequest();
+
   const params = {
     model: config.model,
     max_tokens: config.max_tokens,
@@ -110,23 +178,37 @@ async function callWithRetry(
     Anthropic.Message | AsyncIterable<Anthropic.MessageStreamEvent>
   > => {
     try {
-      if (stream) {
-        const streamResponse = anthropic.messages.stream(params);
-        return streamResponse;
-      } else {
-        const response = await anthropic.messages.create(params);
-        return response;
+      // Check abort before making the call
+      if (signal?.aborted) {
+        throw new Error("Request aborted — client disconnected");
       }
+
+      let result: Anthropic.Message | AsyncIterable<Anthropic.MessageStreamEvent>;
+      if (stream) {
+        result = anthropic.messages.stream(params, { signal });
+      } else {
+        result = await anthropic.messages.create(params, { signal });
+      }
+
+      cbOnSuccess();
+      return result;
     } catch (error: unknown) {
+      // Don't count aborts as failures for the circuit breaker
+      if (signal?.aborted) {
+        throw error;
+      }
+
       const isRateLimit =
         error instanceof Anthropic.RateLimitError ||
         (error instanceof Error && error.message.includes("429"));
 
       if (isRateLimit && !isRetry) {
-        console.warn("[anthropic] Rate limited — retrying in 2s...");
+        logger.warn("Rate limited — retrying in 2s...", { phase: "anthropic" });
         await new Promise((resolve) => setTimeout(resolve, 2000));
         return attempt(true);
       }
+
+      cbOnFailure();
       throw error;
     }
   };
@@ -163,30 +245,43 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 /**
  * Stream an Anthropic response as a ReadableStream of text chunks.
- * Handles rate-limit retry (once, 2s delay) and 30s timeout.
+ * Handles rate-limit retry (once, 2s delay) and configurable timeout.
+ * Aborts the Anthropic API call when the client disconnects (cancel).
  * Errors are yielded as text in the stream rather than thrown.
+ *
+ * @param timeoutMs - Timeout for the API call. Must be LESS than the
+ *   route's maxDuration to avoid Vercel killing the function first.
+ *   Defaults to 25_000 (25s).
  */
 export function streamResponse(
   systemPrompt: string,
   messages: ChatMessage[],
-  config: PhaseConfig
+  config: PhaseConfig,
+  timeoutMs: number = 25_000
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const phaseName = getPhaseLabel(config);
+  const abortController = new AbortController();
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         const stream = await withTimeout(
-          callWithRetry(systemPrompt, messages, config, true) as Promise<
+          callWithRetry(systemPrompt, messages, config, true, abortController.signal) as Promise<
             AsyncIterable<Anthropic.MessageStreamEvent>
           >,
-          30000
+          timeoutMs
         );
 
         let tokenCount = 0;
 
         for await (const event of stream) {
+          // Check if client disconnected mid-stream
+          if (abortController.signal.aborted) {
+            logger.info(`${phaseName} stream aborted — client disconnected`, { phase: "anthropic" });
+            break;
+          }
+
           if (
             event.type === "content_block_delta" &&
             event.delta.type === "text_delta"
@@ -197,15 +292,20 @@ export function streamResponse(
           }
         }
 
-        console.log(
-          `[anthropic] ${phaseName} | model=${config.model} | ~${tokenCount} tokens`
-        );
+        logger.info(`${phaseName} | model=${config.model} | ~${tokenCount} tokens`, { phase: "anthropic", model: config.model, tokens: tokenCount });
 
         controller.close();
       } catch (error: unknown) {
+        // If aborted by client disconnect, just close cleanly
+        if (abortController.signal.aborted) {
+          logger.info(`${phaseName} stream cancelled — client disconnected`, { phase: "anthropic" });
+          controller.close();
+          return;
+        }
+
         const rawMessage =
           error instanceof Error ? error.message : "Unknown error";
-        console.error(`[anthropic] ${phaseName} stream error: ${rawMessage}`);
+        logger.error(`${phaseName} stream error: ${rawMessage}`, { phase: "anthropic" });
         controller.enqueue(
           encoder.encode(
             `\n\n[System: Response generation failed. Please try again.]`
@@ -213,6 +313,12 @@ export function streamResponse(
         );
         controller.close();
       }
+    },
+
+    cancel() {
+      // Client disconnected — abort the in-flight Anthropic API call
+      logger.info(`${phaseName} ReadableStream cancelled — aborting Anthropic call`, { phase: "anthropic" });
+      abortController.abort();
     },
   });
 }
@@ -225,11 +331,15 @@ export function streamResponse(
  * Stream an Anthropic response internally, buffer all chunks, return the
  * complete text as a string. Same signature as generateResponse but uses
  * streaming under the hood to avoid idle connection timeouts on Vercel.
+ *
+ * @param timeoutMs - Timeout for the API call. Must be LESS than the
+ *   route's maxDuration. Defaults to 55_000 (55s).
  */
 export async function generateResponseViaStream(
   systemPrompt: string,
   messages: ChatMessage[],
-  config: PhaseConfig
+  config: PhaseConfig,
+  timeoutMs: number = 55_000
 ): Promise<string> {
   const phaseName = getPhaseLabel(config);
 
@@ -238,7 +348,7 @@ export async function generateResponseViaStream(
       callWithRetry(systemPrompt, messages, config, true) as Promise<
         AsyncIterable<Anthropic.MessageStreamEvent>
       >,
-      90000 // 90s timeout for streaming buffer
+      timeoutMs
     );
 
     const chunks: string[] = [];
@@ -256,15 +366,13 @@ export async function generateResponseViaStream(
 
     const fullText = chunks.join("");
 
-    console.log(
-      `[anthropic] ${phaseName} (streamed) | model=${config.model} | ~${tokenCount} tokens`
-    );
+    logger.info(`${phaseName} (streamed) | model=${config.model} | ~${tokenCount} tokens`, { phase: "anthropic", model: config.model, tokens: tokenCount });
 
     return fullText;
   } catch (error: unknown) {
     const rawMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[anthropic] ${phaseName} stream-buffer error: ${rawMessage}`);
-    return `[System: Response generation failed. Please try again.]`;
+    logger.error(`${phaseName} stream-buffer error: ${rawMessage}`, { phase: "anthropic" });
+    throw error;
   }
 }
 
@@ -275,19 +383,23 @@ export async function generateResponseViaStream(
 /**
  * Generate a complete Anthropic response and return the full text.
  * Used for phases where streaming isn't needed (checkin, debrief scoring, mission).
- * Handles rate-limit retry (once, 2s delay) and 60s timeout.
+ * Handles rate-limit retry (once, 2s delay) and configurable timeout.
+ *
+ * @param timeoutMs - Timeout for the API call. Must be LESS than the
+ *   route's maxDuration. Defaults to 25_000 (25s).
  */
 export async function generateResponse(
   systemPrompt: string,
   messages: ChatMessage[],
-  config: PhaseConfig
+  config: PhaseConfig,
+  timeoutMs: number = 25_000
 ): Promise<string> {
   const phaseName = getPhaseLabel(config);
 
   try {
     const response = (await withTimeout(
       callWithRetry(systemPrompt, messages, config, false),
-      60000
+      timeoutMs
     )) as Anthropic.Message;
 
     // Safely extract text from response
@@ -295,14 +407,12 @@ export async function generateResponse(
     const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
 
     const tokenCount = response.usage?.output_tokens ?? Math.ceil(text.length / 4);
-    console.log(
-      `[anthropic] ${phaseName} | model=${config.model} | ${tokenCount} tokens`
-    );
+    logger.info(`${phaseName} | model=${config.model} | ${tokenCount} tokens`, { phase: "anthropic", model: config.model, tokens: tokenCount });
 
     return text;
   } catch (error: unknown) {
     const rawMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[anthropic] ${phaseName} generation error: ${rawMessage}`);
-    return `[System: Response generation failed. Please try again.]`;
+    logger.error(`${phaseName} generation error: ${rawMessage}`, { phase: "anthropic" });
+    throw error;
   }
 }

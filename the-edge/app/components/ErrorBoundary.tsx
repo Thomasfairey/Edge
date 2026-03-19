@@ -44,7 +44,7 @@ export default class ErrorBoundary extends Component<Props, State> {
                 this.setState({ hasError: false, error: null });
                 window.location.reload();
               }}
-              className="rounded-2xl bg-[#5A52E0] px-6 py-3 text-sm font-semibold text-white"
+              className="rounded-2xl bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white"
             >
               Reload
             </button>

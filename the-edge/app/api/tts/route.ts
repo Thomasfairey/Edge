@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { getVoiceForCharacter, CHARACTER_VOICE_MAP, ELEVENLABS_MODEL } from "@/lib/voice-map";
+import { logger } from "@/lib/logger";
 
 const MAX_TTS_LENGTH = 5000; // ElevenLabs has a 5000 char limit per request
 
@@ -93,7 +94,7 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      console.error(`[tts] ElevenLabs error ${response.status}: ${errorText}`);
+      logger.error(`ElevenLabs error ${response.status}: ${errorText}`, { phase: "tts" });
       return NextResponse.json(
         { error: response.status === 401 ? "TTS service authentication failed" : "TTS service unavailable" },
         { status: 502 }
@@ -107,9 +108,7 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
       );
     }
 
-    console.log(
-      `[tts] voice=${voice.voiceName} | character=${characterId ?? "default"} | chars=${cleaned.length}`
-    );
+    logger.info(`voice=${voice.voiceName} | character=${characterId ?? "default"} | chars=${cleaned.length}`, { phase: "tts" });
 
     // Stream the audio directly to the client
     return new Response(response.body, {

@@ -13,8 +13,9 @@ import { buildPersistentContext } from "@/lib/prompts/system-context";
 import { buildRetrievalBridgePrompt } from "@/lib/prompts/retrieval-bridge";
 import { Concept, truncate } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { validateText, ValidationError } from "@/lib/validate";
+import { validateText, validateConcept, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
@@ -25,7 +26,15 @@ async function handlePost(req: NextRequest, userId: string | null) {
     );
   }
 
-  const concept = body.concept as Concept;
+  let concept: Concept;
+  try {
+    concept = validateConcept(body.concept);
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
+  }
   const userResponse = body.userResponse ? truncate(body.userResponse, 5000) : undefined;
 
   // First call — return the question without an LLM call
@@ -52,7 +61,8 @@ async function handlePost(req: NextRequest, userId: string | null) {
     const rawResponse = await generateResponse(
       systemPrompt,
       [{ role: "user", content: userResponse }],
-      PHASE_CONFIG.checkin
+      PHASE_CONFIG.checkin,
+      12_000 // Must be < maxDuration (15s)
     );
 
     // Use case-insensitive check with boundary matching to avoid false positives
@@ -60,7 +70,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
 
     return NextResponse.json({ response: rawResponse, ready });
   } catch (error) {
-    console.error("[retrieval-bridge] Error:", error);
+    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "retrieval-bridge" });
     return NextResponse.json(
       { error: "Retrieval evaluation failed. Please try again." },
       { status: 500 }

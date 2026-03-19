@@ -6,8 +6,6 @@ import { describe, it, expect } from "vitest";
 import {
   SCORE_DIMENSIONS,
   TIER_LIMITS,
-  type SessionScores,
-  type ConceptDomain,
 } from "../../src/types/domain.js";
 
 describe("SCORE_DIMENSIONS", () => {

@@ -12,6 +12,7 @@ import { updateLastMissionOutcome } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { truncate } from "@/lib/types";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 const VALID_OUTCOME_TYPES = ["completed", "tried", "skipped"] as const;
 
@@ -25,20 +26,29 @@ async function handlePost(req: NextRequest, userId: string | null) {
   }
 
   const previousMission = truncate(body.previousMission, 2000);
-  const outcomeType = body.outcomeType as string;
   const userOutcome = truncate(body.userOutcome ?? "", 5000);
 
-  // Validate outcomeType
+  // Validate outcomeType is a string and one of the allowed values
+  if (typeof body.outcomeType !== "string") {
+    return NextResponse.json(
+      { error: "outcomeType must be a string" },
+      { status: 400 }
+    );
+  }
+  const outcomeType = body.outcomeType;
+
   if (!VALID_OUTCOME_TYPES.includes(outcomeType as typeof VALID_OUTCOME_TYPES[number])) {
     return NextResponse.json(
       { error: "outcomeType must be 'completed', 'tried', or 'skipped'" },
       { status: 400 }
     );
   }
+  // After validation, outcomeType is guaranteed to be one of the valid types
+  const validatedOutcomeType = outcomeType as typeof VALID_OUTCOME_TYPES[number];
 
   try {
     // Handle "skipped" — no API call needed
-    if (outcomeType === "skipped") {
+    if (validatedOutcomeType === "skipped") {
       await updateLastMissionOutcome("NOT EXECUTED", userId);
       return NextResponse.json({
         response: "No problem. The mission you\u2019re about to get will give you a clean shot.",
@@ -50,7 +60,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     const checkinPrompt = buildCheckinPrompt(
       previousMission,
       userOutcome || "",
-      outcomeType as "completed" | "tried"
+      validatedOutcomeType
     );
     const systemPrompt = `${await buildPersistentContext(userId)}\n\n${checkinPrompt}`;
 
@@ -79,7 +89,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
 
     return NextResponse.json({ response, type, insight });
   } catch (error) {
-    console.error("[checkin] Error:", error);
+    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "checkin" });
     return NextResponse.json(
       { error: "Check-in failed. Please try again." },
       { status: 500 }

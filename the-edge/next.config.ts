@@ -21,6 +21,9 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
+      // unsafe-inline is required because the app uses inline scripts
+      // (e.g. LegacySwCleanup in layout.tsx). This should be migrated to
+      // nonce-based CSP once all inline scripts are removed or refactored.
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",

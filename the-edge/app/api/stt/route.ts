@@ -10,10 +10,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB — ElevenLabs limit
 
-async function handler(req: NextRequest): Promise<Response> {
+async function handler(req: NextRequest, _userId: string | null): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -69,9 +71,9 @@ async function handler(req: NextRequest): Promise<Response> {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      console.error(`[stt] ElevenLabs error ${response.status}: ${errorText}`);
+      logger.error(`ElevenLabs error ${response.status}: ${errorText}`, { phase: "stt" });
       if (response.status === 401) {
-        console.error("[stt] API key missing speech_to_text permission — regenerate key in ElevenLabs dashboard");
+        logger.error("API key missing speech_to_text permission — regenerate key in ElevenLabs dashboard", { phase: "stt" });
       }
       return NextResponse.json(
         { error: response.status === 401
@@ -84,11 +86,11 @@ async function handler(req: NextRequest): Promise<Response> {
     const data = await response.json();
     const text = data.text?.trim() || "";
 
-    console.log(`[stt] transcribed ${audioBlob.size} bytes -> "${text.slice(0, 50)}${text.length > 50 ? "..." : ""}"`);
+    logger.info(`transcribed ${audioBlob.size} bytes -> "${text.slice(0, 50)}${text.length > 50 ? "..." : ""}"`, { phase: "stt" });
 
     return NextResponse.json({ text });
   } catch (error) {
-    console.error("[stt] error:", error);
+    logger.error(`error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "stt" });
     return NextResponse.json(
       { error: "Transcription failed" },
       { status: 502 }
@@ -96,5 +98,5 @@ async function handler(req: NextRequest): Promise<Response> {
   }
 }
 
-// Rate limit: 15 requests per minute
-export const POST = withRateLimit(handler, 15);
+// Rate limit: 15 requests per minute, auth required
+export const POST = withRateLimit(withAuth(handler), 15);

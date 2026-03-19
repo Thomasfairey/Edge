@@ -183,7 +183,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         <button
           onClick={goBack}
           disabled={screen === 0}
-          className={`touch-target text-body font-medium transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2 rounded-lg px-2 py-1 ${screen === 0 ? "opacity-0 pointer-events-none" : ""}`}
+          className={`touch-target text-body font-medium transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 rounded-lg px-2 py-1 ${screen === 0 ? "opacity-0 pointer-events-none" : ""}`}
           style={{ color: "var(--text-secondary)" }}
           aria-label="Go back"
         >
@@ -191,12 +191,11 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         </button>
 
         {/* Progress dots */}
-        <div className="flex gap-2.5" role="tablist" aria-label="Onboarding progress">
+        <div className="flex gap-2.5" aria-label="Onboarding progress">
           {Array.from({ length: TOTAL_SCREENS }, (_, i) => (
             <div
               key={i}
-              role="tab"
-              aria-selected={i === screen}
+              role="presentation"
               aria-label={`Step ${i + 1} of ${TOTAL_SCREENS}: ${SCREEN_LABELS[i]}`}
               className="rounded-full transition-all"
               style={{
@@ -211,7 +210,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         <button
           onClick={goForward}
           disabled={screen === 3 && !selectedWindow}
-          className="btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
+          className="btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
           style={{ width: "auto", minWidth: 100 }}
         >
           {screen === TOTAL_SCREENS - 1 ? "Start" : "Next"}

@@ -42,13 +42,7 @@ const PHASE_BG: Record<string, string> = {
   mission: "#F0FAF4",
 };
 
-const PHASE_TINT: Record<string, string> = {
-  lesson: "#EFF6FA",
-  retrieval: "#EFF6FA",
-  roleplay: "#FDF2F2",
-  debrief: "#F3F0FA",
-  mission: "#F0FAF4",
-};
+// PHASE_TINT removed — identical to PHASE_BG; use PHASE_BG instead.
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -415,7 +409,6 @@ function LessonCards({
   onSpeak,
   onStopSpeaking,
   isSpeaking,
-  voiceEnabled,
 }: {
   sections: { title: string; content: string }[];
   isStreaming: boolean;
@@ -425,7 +418,6 @@ function LessonCards({
   onSpeak?: (text: string) => void;
   onStopSpeaking?: () => void;
   isSpeaking?: boolean;
-  voiceEnabled?: boolean;
 }) {
   const [currentCard, setCurrentCard] = useState(0);
   const [showSwipeHint, setShowSwipeHint] = useState(true);
@@ -474,9 +466,10 @@ function LessonCards({
       const t = setTimeout(() => setCurrentCard((c) => c + 1), 600);
       return () => clearTimeout(t);
     }
-    // Stop auto-play when last card finishes
+    // Stop auto-play when last card finishes (deferred to avoid setState in effect body)
     if (!isSpeaking && autoPlaySpokenCard.current === currentCard && currentCard === sections.length - 1) {
-      setAutoPlay(false);
+      const t = setTimeout(() => setAutoPlay(false), 0);
+      return () => clearTimeout(t);
     }
   }, [isSpeaking, autoPlay, currentCard, sections.length]);
 
@@ -565,7 +558,7 @@ function LessonCards({
                 onClick={handleListenCard}
                 className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all active:scale-[0.95] ${
                   isSpeaking && !autoPlay
-                    ? "bg-[#5A52E0] text-white"
+                    ? "bg-[var(--accent)] text-white"
                     : "bg-white/80 text-[#5B8BA8] hover:bg-white"
                 }`}
                 title={isSpeaking ? "Stop" : "Listen to this section"}
@@ -587,7 +580,7 @@ function LessonCards({
                 onClick={handleAutoPlayAll}
                 className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all active:scale-[0.95] ${
                   autoPlay
-                    ? "bg-[#5A52E0] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
+                    ? "bg-[var(--accent)] text-white shadow-[0_2px_8px_rgba(90,82,224,0.3)]"
                     : "bg-white/80 text-[#5B8BA8] hover:bg-white"
                 }`}
                 title={autoPlay ? "Stop auto-play" : "Listen to full lesson"}
@@ -610,28 +603,28 @@ function LessonCards({
         {/* Auto-play indicator */}
         {autoPlay && (
           <div className="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-[#EEEDFF] py-2">
-            <div className="flex items-center gap-1 h-4 text-[#5A52E0]">
+            <div className="flex items-center gap-1 h-4 text-[var(--accent)]">
               <span className="voice-bar" />
               <span className="voice-bar" />
               <span className="voice-bar" />
             </div>
-            <span className="text-xs font-medium text-[#5A52E0]">
+            <span className="text-xs font-medium text-[var(--accent)]">
               Playing lesson — {currentCard + 1} of {sections.length}
             </span>
           </div>
         )}
 
-        <div className="space-y-1">
+        <div className="space-y-1" aria-live="polite">
           {renderMarkdown(section.content, "lesson")}
           {isStreaming && currentCard === sections.length - 1 && (
-            <span className="inline-block animate-pulse text-[#5A52E0]">|</span>
+            <span className="inline-block animate-pulse text-[var(--accent)]">|</span>
           )}
         </div>
 
         {/* Swipe hint on first card */}
         {currentCard === 0 && showSwipeHint && sections.length > 1 && (
           <div
-            className="mt-4 text-center text-xs text-[#5A52E0] transition-opacity duration-1000"
+            className="mt-4 text-center text-xs text-[var(--accent)] transition-opacity duration-1000"
             style={{ opacity: showSwipeHint ? 0.8 : 0 }}
           >
             Swipe to continue &rarr;
@@ -720,7 +713,7 @@ function parseDebriefSections(text: string): { title: string; content: React.Rea
     } else if (lower.includes("why this works") || lower.includes("why it works")) {
       currentSection.content.push(
         <div key={key++} className="mt-2 mb-2 rounded-2xl bg-[#EEEDFF] px-4 py-3">
-          <p className="text-xs font-semibold text-[#5A52E0] uppercase tracking-wider mb-1">Why this works</p>
+          <p className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wider mb-1">Why this works</p>
           <p className="text-sm leading-relaxed text-primary">
             {line.replace(/^.*?(?:why (?:this|it) works)[^:]*:\s*/i, "").replace(/\*\*/g, "")}
           </p>
@@ -1908,7 +1901,7 @@ export default function SessionPage() {
           onClick={voice.toggleVoice}
           className={`absolute right-2 top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full transition-all ${
             voice.voiceEnabled
-              ? "bg-[#5A52E0] text-white"
+              ? "bg-[var(--accent)] text-white"
               : "bg-[#F0EDE8] text-secondary"
           }`}
           aria-label={voice.voiceEnabled ? "Mute audio" : "Enable audio"}
@@ -1986,7 +1979,7 @@ export default function SessionPage() {
                   </p>
 
                   <textarea
-                    className="w-full rounded-2xl border border-[#E8E5E0] bg-[#FAF9F6] px-4 py-3 text-sm text-primary placeholder-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-[#5A52E0]/30"
+                    className="w-full rounded-2xl border border-[#E8E5E0] bg-[#FAF9F6] px-4 py-3 text-sm text-primary placeholder-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
                     rows={5}
                     placeholder="e.g. I'm the CEO of a fintech startup. We're raising our seed round and trying to sign our first enterprise clients in banking. I need to get better at high-stakes negotiations and investor pitches..."
                     value={onboardingBio}
@@ -2007,8 +2000,8 @@ export default function SessionPage() {
                         }}
                         className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
                           voice.state === "listening"
-                            ? "bg-[#5A52E0] text-white"
-                            : "bg-[#EEEDFF] text-[#5A52E0]"
+                            ? "bg-[var(--accent)] text-white"
+                            : "bg-[#EEEDFF] text-[var(--accent)]"
                         }`}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
@@ -2027,7 +2020,7 @@ export default function SessionPage() {
                         }
                       }}
                       disabled={onboardingBio.trim().length < 20}
-                      className="rounded-2xl bg-[#5A52E0] px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                      className="rounded-2xl bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
                     >
                       Next
                     </button>
@@ -2060,7 +2053,7 @@ export default function SessionPage() {
                           haptic();
                           completeOnboarding(opt.value);
                         }}
-                        className="w-full rounded-2xl border-2 border-[#E8E5E0] bg-[#FAF9F6] p-4 text-left transition-all hover:border-[#5A52E0]/30 active:scale-[0.98]"
+                        className="w-full rounded-2xl border-2 border-[#E8E5E0] bg-[#FAF9F6] p-4 text-left transition-all hover:border-[var(--accent)]/30 active:scale-[0.98]"
                       >
                         <div className="flex items-center gap-3">
                           <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
@@ -2132,7 +2125,6 @@ export default function SessionPage() {
                     onSpeak={voice.speakDirect}
                     onStopSpeaking={voice.stopSpeaking}
                     isSpeaking={voice.state === "speaking"}
-                    voiceEnabled={voice.voiceEnabled}
                   />
                 </>
               )}
@@ -2182,7 +2174,7 @@ export default function SessionPage() {
                       {/* Voice listening state for retrieval */}
                       {voice.voiceEnabled && voice.state === "listening" && (
                         <div className="flex flex-col items-center gap-3 py-4">
-                          <div className="flex items-center gap-1.5 h-6 text-[#5A52E0]">
+                          <div className="flex items-center gap-1.5 h-6 text-[var(--accent)]">
                             <span className="voice-bar" />
                             <span className="voice-bar" />
                             <span className="voice-bar" />
@@ -2327,7 +2319,7 @@ export default function SessionPage() {
                 <p className="mb-2 text-center text-xs text-secondary animate-pulse">Same concept. Fresh start.</p>
               )}
 
-              <div className="space-y-3.5 pb-4">
+              <div className="space-y-3.5 pb-4" role="log" aria-live="polite">
                 {roleplayTranscript.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === "user" ? "justify-end pl-10" : "justify-start pr-10 gap-2.5"} animate-fade-in-up`}>
                     {msg.role === "assistant" && (
@@ -2354,7 +2346,7 @@ export default function SessionPage() {
                 ))}
 
                 {isStreaming && streamingText && (
-                  <div className="flex justify-start pr-10 gap-2.5">
+                  <div className="flex justify-start pr-10 gap-2.5" aria-live="polite">
                     <div
                       className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-body mt-1"
                       style={{ backgroundColor: "var(--phase-simulate-tint)" }}
@@ -2472,7 +2464,7 @@ export default function SessionPage() {
                   )}
 
                   {/* Analysis card — collapsible sections */}
-                  <div className="select-text mb-5 card-tinted" style={{ backgroundColor: "var(--phase-debrief-tint)" }}>
+                  <div className="select-text mb-5 card-tinted" style={{ backgroundColor: "var(--phase-debrief-tint)" }} aria-live="polite">
                     {(() => {
                       const sections = parseDebriefSections(debriefContent);
                       if (sections.length <= 1) {
@@ -2574,7 +2566,7 @@ export default function SessionPage() {
                         {/* Voice listening state for check-in */}
                         {voice.voiceEnabled && voice.state === "listening" && (
                           <div className="flex flex-col items-center gap-3 py-4">
-                            <div className="flex items-center gap-1.5 h-6 text-[#5A52E0]">
+                            <div className="flex items-center gap-1.5 h-6 text-[var(--accent)]">
                               <span className="voice-bar" />
                               <span className="voice-bar" />
                               <span className="voice-bar" />
@@ -2598,8 +2590,8 @@ export default function SessionPage() {
                               <input
                                 type="text"
                                 placeholder={checkinPillSelected === "completed" ? "What was the exact reaction?" : "What happened when you tried?"}
-                                className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[#5A52E0]/20"
-                                style={{ backgroundColor: PHASE_TINT.mission }}
+                                className="flex-1 rounded-2xl border-none px-4 py-3 text-base text-primary placeholder-tertiary outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
+                                style={{ backgroundColor: PHASE_BG.mission }}
                                 value={inputValue}
                                 onChange={(e) => setInputValue(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter" && inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
@@ -2608,7 +2600,7 @@ export default function SessionPage() {
                               {voice.voiceEnabled && !inputValue.trim() && (
                                 <button
                                   onClick={voice.startListening}
-                                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#5A52E0] text-white transition-transform active:scale-[0.97]"
+                                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white transition-transform active:scale-[0.97]"
                                   title="Speak"
                                 >
                                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -2624,7 +2616,7 @@ export default function SessionPage() {
                             <button
                               onClick={() => { if (inputValue.trim()) { submitCheckin(checkinPillSelected, inputValue.trim()); setInputValue(""); } }}
                               disabled={!inputValue.trim()}
-                              className="w-full rounded-2xl bg-[#5A52E0] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                              className="w-full rounded-2xl bg-[var(--accent)] py-3.5 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
                             >
                               Submit
                             </button>
@@ -2689,7 +2681,7 @@ export default function SessionPage() {
                     </button>
                   ) : (
                     <div className="animate-fade-in-up space-y-5 relative">
-                      <Confetti />
+                      {/* Confetti removed — uses animate-celebrate card instead */}
                       {/* Enhanced completion card */}
                       <div className="card-tinted animate-celebrate" style={{ backgroundColor: "var(--score-high-bg)", padding: "28px 24px" }}>
                         <p className="mb-1 text-center text-heading font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -2822,7 +2814,7 @@ export default function SessionPage() {
                                   ctx.rect(0, 0, 600, 400);
                                 }
                                 ctx.fill();
-                                ctx.fillStyle = "#5A52E0";
+                                ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#5A52E0";
                                 ctx.fillRect(0, 0, 600, 6);
                                 ctx.fillStyle = "#2D2B3D";
                                 ctx.font = "bold 28px sans-serif";
@@ -2960,7 +2952,7 @@ export default function SessionPage() {
           {/* Voice listening state — replaces text input when actively listening */}
           {voice.voiceEnabled && voice.state === "listening" && (
             <div className="flex flex-col items-center gap-3 mb-2 py-2">
-              <div className="flex items-center gap-1.5 h-6 text-[#5A52E0]">
+              <div className="flex items-center gap-1.5 h-6 text-[var(--accent)]">
                 <span className="voice-bar" />
                 <span className="voice-bar" />
                 <span className="voice-bar" />
@@ -3163,7 +3155,7 @@ export default function SessionPage() {
       {/* ================================================================== */}
       {voice.voiceEnabled && !isRoleplay && voice.state === "speaking" && (
         <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex items-center gap-3 rounded-full bg-white px-5 py-3 shadow-[0_4px_20px_rgba(0,0,0,0.12)]">
-          <div className="flex items-center gap-1.5 h-5 text-[#5A52E0]">
+          <div className="flex items-center gap-1.5 h-5 text-[var(--accent)]">
             <span className="voice-bar" />
             <span className="voice-bar" />
             <span className="voice-bar" />

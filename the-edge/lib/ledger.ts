@@ -11,6 +11,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { LedgerEntry } from "@/lib/types";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Row ↔ LedgerEntry mapping
@@ -104,7 +105,7 @@ export async function getLedger(userId?: string | null): Promise<LedgerEntry[]> 
   const { data, error } = await query;
 
   if (error) {
-    console.error("[ledger] Failed to read:", error.message);
+    logger.error(`Failed to read: ${error.message}`, { phase: "ledger" });
     return [];
   }
   return (data as LedgerRow[]).map(rowToEntry);
@@ -119,7 +120,7 @@ export async function appendEntry(entry: LedgerEntry, userId?: string | null): P
     .insert(entryToRow(entry, userId));
 
   if (error) {
-    console.error("[ledger] Failed to write:", error.message);
+    throw new Error(`Ledger write failed: ${error.message}`);
   }
 }
 
@@ -163,7 +164,7 @@ export async function updateLastMissionOutcome(outcome: string, userId?: string 
     .eq("id", data[0].id);
 
   if (error) {
-    console.error("[ledger] Failed to update mission_outcome:", error.message);
+    logger.error(`Failed to update mission_outcome: ${error.message}`, { phase: "ledger" });
   }
 }
 

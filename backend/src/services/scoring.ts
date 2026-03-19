@@ -8,7 +8,7 @@
  * 4. Score parsing — extracts structured scores from AI response text
  */
 
-import { SessionScores, SCORE_DIMENSIONS, ScoreDimension } from "../types/domain.js";
+import { SessionScores, SCORE_DIMENSIONS } from "../types/domain.js";
 import { ValidationError } from "../types/errors.js";
 
 // ---------------------------------------------------------------------------

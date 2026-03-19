@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, extractClientIp } from "./rate-limit";
+import { logger } from "@/lib/logger";
 
 type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
 
@@ -59,7 +60,7 @@ export function withRateLimit(handler: RouteHandler, limit: number = 10): RouteH
     const result = checkRateLimit(key, limit);
 
     if (!result.success) {
-      console.warn(`[rate-limit] ${routeKey} blocked for ${ip} (retry in ${result.retryAfter}s)`);
+      logger.warn(`${routeKey} blocked for ${ip} (retry in ${result.retryAfter}s)`, { phase: "rate-limit" });
       return NextResponse.json(
         { error: "Too many requests. Please wait before trying again." },
         {

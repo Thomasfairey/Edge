@@ -5,16 +5,17 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 async function handleGet(_req: NextRequest, userId: string | null) {
   if (!userId) {
     return NextResponse.json({ profileData: null, displayName: "" });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("profiles")
     .select("profile_data, display_name")
     .eq("id", userId)
@@ -53,13 +54,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
     return NextResponse.json({ error: "Invalid feedbackStyle" }, { status: 400 });
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from("profiles")
     .update({ profile_data: profileData })
     .eq("id", userId);
 
   if (error) {
-    console.error("[profile] Failed to update:", error.message);
+    logger.error(`Failed to update: ${error.message}`, { phase: "profile" });
     return NextResponse.json({ error: "Failed to save profile" }, { status: 500 });
   }
 

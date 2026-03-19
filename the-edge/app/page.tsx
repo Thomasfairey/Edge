@@ -8,8 +8,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { SessionScores, LedgerEntry } from "@/lib/types";
-import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import { hapticTap } from "@/lib/haptics";
+import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import Onboarding from "./components/Onboarding";
 import TrendDashboard from "./components/TrendDashboard";
 
@@ -191,6 +191,8 @@ export default function Home() {
   const [expandedDim, setExpandedDim] = useState<string | null>(null);
   const expandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   // Cleanup expand timeout on unmount
   useEffect(() => {
@@ -198,6 +200,24 @@ export default function Home() {
       if (expandTimeout.current) clearTimeout(expandTimeout.current);
     };
   }, []);
+
+  // Close settings menu on outside click
+  useEffect(() => {
+    if (!showSettingsMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowSettingsMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showSettingsMenu]);
+
+  const handleSignOut = useCallback(async () => {
+    const supabase = createBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  }, [router]);
 
   useEffect(() => {
     const goOnline = () => setOnline(true);
@@ -304,7 +324,58 @@ export default function Home() {
       <div className="flex min-h-[90dvh] flex-col items-center justify-center gap-7">
 
         {/* Header */}
-        <div className="text-center">
+        <div className="relative text-center w-full">
+          {/* Settings button */}
+          <div ref={settingsRef} className="absolute right-0 top-0" style={{ zIndex: 10 }}>
+            <button
+              type="button"
+              onClick={() => setShowSettingsMenu((v) => !v)}
+              className="flex items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+              style={{
+                width: 40,
+                height: 40,
+                backgroundColor: showSettingsMenu ? "var(--border)" : "transparent",
+                color: "var(--text-tertiary)",
+              }}
+              aria-label="Settings"
+              aria-expanded={showSettingsMenu}
+              aria-haspopup="true"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="10" cy="10" r="2.5" />
+                <path d="M16.2 12.8a1.4 1.4 0 0 0 .28 1.54l.05.05a1.7 1.7 0 1 1-2.4 2.4l-.05-.05a1.4 1.4 0 0 0-1.54-.28 1.4 1.4 0 0 0-.85 1.28v.15a1.7 1.7 0 1 1-3.4 0v-.08a1.4 1.4 0 0 0-.91-1.28 1.4 1.4 0 0 0-1.54.28l-.05.05a1.7 1.7 0 1 1-2.4-2.4l.05-.05a1.4 1.4 0 0 0 .28-1.54 1.4 1.4 0 0 0-1.28-.85H2.3a1.7 1.7 0 1 1 0-3.4h.08a1.4 1.4 0 0 0 1.28-.91 1.4 1.4 0 0 0-.28-1.54l-.05-.05a1.7 1.7 0 1 1 2.4-2.4l.05.05a1.4 1.4 0 0 0 1.54.28h.07a1.4 1.4 0 0 0 .85-1.28V2.3a1.7 1.7 0 1 1 3.4 0v.08a1.4 1.4 0 0 0 .85 1.28 1.4 1.4 0 0 0 1.54-.28l.05-.05a1.7 1.7 0 1 1 2.4 2.4l-.05.05a1.4 1.4 0 0 0-.28 1.54v.07a1.4 1.4 0 0 0 1.28.85h.15a1.7 1.7 0 1 1 0 3.4h-.08a1.4 1.4 0 0 0-1.28.85z" />
+              </svg>
+            </button>
+            {showSettingsMenu && (
+              <div
+                className="animate-fade-in-up absolute right-0 mt-2 w-40 rounded-[var(--radius-md)] p-1"
+                style={{
+                  backgroundColor: "var(--surface)",
+                  boxShadow: "var(--shadow-elevated)",
+                  zIndex: 20,
+                }}
+                role="menu"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleSignOut}
+                  className="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2.5 text-left text-body font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  style={{ color: "var(--score-low-text)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--score-low-bg)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 14H3.33A1.33 1.33 0 0 1 2 12.67V3.33A1.33 1.33 0 0 1 3.33 2H6" />
+                    <polyline points="10.67 11.33 14 8 10.67 4.67" />
+                    <line x1="14" y1="8" x2="6" y2="8" />
+                  </svg>
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
+
           <h1 className="text-display font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
             <span style={{ color: "var(--accent)" }}>the</span> edge
           </h1>
@@ -342,7 +413,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => handleScoreCircleClick(key)}
-                  className="flex items-center justify-center rounded-full text-body font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
+                  className="flex items-center justify-center rounded-full text-body font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
                   style={{
                     width: 52,
                     height: 52,
@@ -363,8 +434,8 @@ export default function Home() {
                 <span className="text-caption" style={{ color: "var(--text-tertiary)", fontSize: 12 }}>{label}</span>
                 {isExpanded && (
                   <div
-                    className="animate-fade-in-up w-40 rounded-[var(--radius-lg)] bg-white p-3.5 text-center"
-                    style={{ boxShadow: "var(--shadow-elevated)" }}
+                    className="animate-fade-in-up w-40 rounded-[var(--radius-lg)] p-3.5 text-center"
+                    style={{ backgroundColor: "var(--surface)", boxShadow: "var(--shadow-elevated)" }}
                     role="tooltip"
                   >
                     <p className="text-caption font-semibold" style={{ color: "var(--text-primary)" }}>{fullName}</p>
@@ -399,7 +470,7 @@ export default function Home() {
               <button
                 onClick={() => { if (online) router.push("/session"); }}
                 disabled={!online}
-                className="btn-primary flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
+                className="btn-primary flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
               >
                 Resume
               </button>
@@ -410,7 +481,7 @@ export default function Home() {
                   if (online) router.push("/session");
                 }}
                 disabled={!online}
-                className="btn-secondary flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
+                className="btn-secondary flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
               >
                 Start fresh
               </button>
@@ -423,12 +494,80 @@ export default function Home() {
           <button
             onClick={() => { hapticTap(); if (online) router.push("/session"); }}
             disabled={!online}
-            className="btn-primary w-full max-w-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
+            className="btn-primary w-full max-w-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
           >
             {online ? "Begin today\u2019s session" : "Offline"}
           </button>
         )}
       </div>
+
+      {/* Session history */}
+      {allScores.length > 0 && (
+        <section className="mt-4 w-full" aria-label="Session history">
+          <h2
+            className="text-body font-semibold mb-4"
+            style={{ color: "var(--text-primary)" }}
+          >
+            Recent sessions
+          </h2>
+          <div className="flex flex-col gap-2.5">
+            {allScores.slice(-5).reverse().map((entry) => {
+              const avg =
+                (entry.scores.technique_application +
+                  entry.scores.tactical_awareness +
+                  entry.scores.frame_control +
+                  entry.scores.emotional_regulation +
+                  entry.scores.strategic_outcome) / 5;
+              const formattedDate = new Date(entry.date + "T00:00:00").toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+              });
+              return (
+                <div
+                  key={`${entry.day}-${entry.date}`}
+                  className="flex items-center justify-between rounded-[var(--radius-md)] px-4 py-3"
+                  style={{
+                    backgroundColor: "var(--surface)",
+                    boxShadow: "var(--shadow-sm)",
+                  }}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className="text-caption font-bold shrink-0"
+                      style={{
+                        color: "var(--accent)",
+                        width: 36,
+                      }}
+                    >
+                      D{entry.day}
+                    </span>
+                    <div className="min-w-0">
+                      <p
+                        className="text-body font-medium truncate"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {entry.concept}
+                      </p>
+                      <p
+                        className="text-caption"
+                        style={{ color: "var(--text-tertiary)" }}
+                      >
+                        {formattedDate}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className="text-body font-bold shrink-0 ml-3"
+                    style={{ color: scoreTextColor(Math.round(avg)) }}
+                  >
+                    {avg.toFixed(1)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

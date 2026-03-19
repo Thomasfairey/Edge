@@ -3,7 +3,7 @@
  * Validates request bodies at the system boundary before passing to LLM or DB.
  */
 
-import { Message } from "@/lib/types";
+import { Message, Concept, CharacterArchetype } from "@/lib/types";
 
 const MAX_TRANSCRIPT_TURNS = 100;
 const MAX_MESSAGE_LENGTH = 5000;
@@ -91,6 +91,45 @@ export function validateScores(
     out[key] = val;
   }
   return out;
+}
+
+/**
+ * Validate an incoming Concept object.
+ * Ensures `id`, `name`, and `domain` are present strings.
+ */
+export function validateConcept(obj: unknown): Concept {
+  if (!obj || typeof obj !== "object") {
+    throw new ValidationError("concept must be an object");
+  }
+  const c = obj as Record<string, unknown>;
+  if (typeof c.id !== "string" || c.id.length === 0) {
+    throw new ValidationError("concept.id must be a non-empty string");
+  }
+  if (typeof c.name !== "string" || c.name.length === 0) {
+    throw new ValidationError("concept.name must be a non-empty string");
+  }
+  if (typeof c.domain !== "string" || c.domain.length === 0) {
+    throw new ValidationError("concept.domain must be a non-empty string");
+  }
+  return obj as Concept;
+}
+
+/**
+ * Validate an incoming CharacterArchetype object.
+ * Ensures `id` and `name` are present strings.
+ */
+export function validateCharacter(obj: unknown): CharacterArchetype {
+  if (!obj || typeof obj !== "object") {
+    throw new ValidationError("character must be an object");
+  }
+  const c = obj as Record<string, unknown>;
+  if (typeof c.id !== "string" || c.id.length === 0) {
+    throw new ValidationError("character.id must be a non-empty string");
+  }
+  if (typeof c.name !== "string" || c.name.length === 0) {
+    throw new ValidationError("character.name must be a non-empty string");
+  }
+  return obj as CharacterArchetype;
 }
 
 export class ValidationError extends Error {

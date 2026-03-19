@@ -5,6 +5,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 export interface SREntry {
   conceptId: string;
@@ -60,7 +61,7 @@ export async function getSRData(userId?: string | null): Promise<SREntry[]> {
   const { data, error } = await query;
 
   if (error) {
-    console.error("[sr] Failed to read:", error.message);
+    logger.error("Failed to read SR data", { phase: "sr", error: error.message });
     return [];
   }
   return (data as SRRow[]).map(rowToEntry);
@@ -76,7 +77,7 @@ export async function getSRData(userId?: string | null): Promise<SREntry[]> {
 export async function updateSREntry(conceptId: string, scores: { [key: string]: number }, userId?: string | null): Promise<void> {
   const values = Object.values(scores);
   if (values.length === 0) {
-    console.warn("[sr] updateSREntry called with empty scores — skipping");
+    logger.warn("updateSREntry called with empty scores — skipping", { phase: "sr" });
     return;
   }
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
@@ -124,7 +125,7 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
       })
       .eq("id", row.id);
 
-    if (error) console.error("[sr] Failed to update:", error.message);
+    if (error) logger.error("Failed to update SR entry", { phase: "sr", error: error.message });
   } else {
     const initialInterval = avg >= 4 ? 7 : avg >= 3 ? 3 : 1;
 
@@ -143,7 +144,7 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
       .from("spaced_repetition")
       .insert(insertData);
 
-    if (error) console.error("[sr] Failed to insert:", error.message);
+    if (error) logger.error("Failed to insert SR entry", { phase: "sr", error: error.message });
   }
 }
 

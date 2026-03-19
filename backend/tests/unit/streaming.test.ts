@@ -67,7 +67,7 @@ describe("streamingResponse", () => {
   });
 
   it("should include extra headers", () => {
-    const encoder = new TextEncoder();
+    const _encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
         controller.close();

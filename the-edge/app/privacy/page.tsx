@@ -51,6 +51,15 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
+          <h2 className="mb-2 text-lg font-semibold">Cookies</h2>
+          <p>
+            The Edge uses cookies solely for session management. Supabase authentication
+            sets cookies to maintain your login session across page loads. We do not use
+            tracking cookies, advertising cookies, or any third-party analytics cookies.
+          </p>
+        </section>
+
+        <section>
           <h2 className="mb-2 text-lg font-semibold">Data storage</h2>
           <p>
             Your data is stored securely in Supabase (hosted on AWS) with row-level security
@@ -60,11 +69,22 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
+          <h2 className="mb-2 text-lg font-semibold">Data retention</h2>
+          <p>
+            Session data, performance scores, and learning progress are retained for as long
+            as your account exists. If you delete your account, all associated data will be
+            permanently removed within 30 days. Under GDPR, we retain personal data only for
+            as long as necessary to fulfil the purposes for which it was collected.
+          </p>
+        </section>
+
+        <section>
           <h2 className="mb-2 text-lg font-semibold">Your rights</h2>
           <p>
             You can request deletion of your account and all associated data at any time by
-            contacting us. Under GDPR, you also have the right to access, rectify, or export
-            your data.
+            contacting us. Under GDPR, you also have the right to access, rectify, restrict
+            processing of, or export your data. We will respond to any data subject request
+            within 30 days.
           </p>
         </section>
 
@@ -72,8 +92,8 @@ export default function PrivacyPolicy() {
           <h2 className="mb-2 text-lg font-semibold">Contact</h2>
           <p>
             For privacy enquiries, email{" "}
-            <a href="mailto:privacy@presential.ai" className="text-[#5A52E0] underline">
-              privacy@presential.ai
+            <a href="mailto:privacy@theedge.app" className="text-[var(--accent)] underline">
+              privacy@theedge.app
             </a>
           </p>
         </section>

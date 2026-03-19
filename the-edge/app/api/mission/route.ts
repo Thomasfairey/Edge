@@ -26,8 +26,9 @@ import {
   truncate,
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { validateScores, validateText, ValidationError } from "@/lib/validate";
+import { validateScores, validateText, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
@@ -38,7 +39,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
     );
   }
 
+  let concept: Concept;
+  let character: CharacterArchetype;
   try {
+    concept = validateConcept(body.concept);
+    character = validateCharacter(body.character);
     body.scores = validateScores(body.scores);
     if (body.behavioralWeaknessSummary) {
       validateText(body.behavioralWeaknessSummary, "behavioralWeaknessSummary");
@@ -52,10 +57,15 @@ async function handlePost(req: NextRequest, userId: string | null) {
     }
     throw e;
   }
-
-  const concept = body.concept as Concept;
-  const character = body.character as CharacterArchetype;
-  const scores = body.scores as SessionScores;
+  // validateScores already verified all 5 keys are integers 1-5
+  const validatedScores = body.scores as Record<string, number>;
+  const scores: SessionScores = {
+    technique_application: validatedScores.technique_application,
+    tactical_awareness: validatedScores.tactical_awareness,
+    frame_control: validatedScores.frame_control,
+    emotional_regulation: validatedScores.emotional_regulation,
+    strategic_outcome: validatedScores.strategic_outcome,
+  };
   const behavioralWeaknessSummary = truncate(body.behavioralWeaknessSummary ?? "", 2000);
   const keyMoment = truncate(body.keyMoment ?? "", 2000);
   const commandsUsed = Array.isArray(body.commandsUsed)
@@ -85,7 +95,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     } else {
       mission = rawMission.trim();
       rationale = "";
-      console.warn("[mission] Could not parse RATIONALE: section from response");
+      logger.warn("Could not parse RATIONALE: section from response", { phase: "mission" });
     }
 
     // Assemble the complete ledger entry
@@ -109,19 +119,20 @@ async function handlePost(req: NextRequest, userId: string | null) {
 
     // Write to Supabase
     await appendEntry(ledgerEntry, userId);
-    console.log(`[mission] Day ${day} ledger entry written. Mission assigned.`);
+    logger.info(`Day ${day} ledger entry written. Mission assigned.`, { phase: "mission" });
 
     // Update spaced repetition data
     try {
-      await updateSREntry(concept.id, scores as unknown as { [key: string]: number }, userId);
-      console.log(`[mission] SR entry updated for concept: ${concept.id}`);
+      const scoresRecord: { [key: string]: number } = { ...scores };
+      await updateSREntry(concept.id, scoresRecord, userId);
+      logger.info(`SR entry updated for concept: ${concept.id}`, { phase: "mission" });
     } catch (e) {
-      console.warn("[mission] Failed to update SR entry:", e);
+      logger.warn(`Failed to update SR entry: ${e instanceof Error ? e.message : "Unknown error"}`, { phase: "mission" });
     }
 
     return NextResponse.json({ mission, rationale, ledgerEntry });
   } catch (error) {
-    console.error("[mission] Error:", error);
+    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "mission" });
     return NextResponse.json(
       { error: "Mission generation failed. Please try again." },
       { status: 500 }

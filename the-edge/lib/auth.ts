@@ -10,6 +10,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
+import { logger } from "@/lib/logger";
 
 export type AuthRouteHandler = (req: NextRequest, userId: string | null) => Promise<Response | NextResponse>;
 type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
@@ -70,11 +71,11 @@ async function getAuthUser(req: NextRequest): Promise<{ userId: string | null; e
     }
   } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NODE_ENV === "development") {
     // No Supabase and no API key configured — development mode only
-    console.warn("[auth] No auth configured — allowing unauthenticated access (development only)");
+    logger.warn("No auth configured — allowing unauthenticated access (development only)", { phase: "auth" });
     return { userId: null, error: null };
   }
 
-  console.warn(`[auth] Rejected request to ${req.nextUrl.pathname}`);
+  logger.warn(`Rejected request to ${req.nextUrl.pathname}`, { phase: "auth" });
   return {
     userId: null,
     error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),

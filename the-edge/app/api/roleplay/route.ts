@@ -27,8 +27,9 @@ import {
   MAX_INPUT_LENGTH,
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { validateTranscript, validateText, ValidationError } from "@/lib/validate";
+import { validateTranscript, validateText, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, _userId: string | null) {
   const body = await req.json().catch(() => null);
@@ -39,7 +40,11 @@ async function handlePost(req: NextRequest, _userId: string | null) {
     );
   }
 
+  let concept: Concept;
+  let character: CharacterArchetype;
   try {
+    concept = validateConcept(body.concept);
+    character = validateCharacter(body.character);
     if (body.transcript) body.transcript = validateTranscript(body.transcript);
     if (body.userMessage !== null && body.userMessage !== undefined) {
       validateText(body.userMessage, "userMessage");
@@ -50,16 +55,14 @@ async function handlePost(req: NextRequest, _userId: string | null) {
     }
     throw e;
   }
-
-  const concept = body.concept as Concept;
-  const character = body.character as CharacterArchetype;
   const userMessage = body.userMessage != null
     ? truncate(body.userMessage, MAX_INPUT_LENGTH)
     : null;
   const scenarioContext = body.scenarioContext
     ? truncate(body.scenarioContext, MAX_INPUT_LENGTH)
     : undefined;
-  const transcript = (body.transcript ?? []) as Message[];
+  // body.transcript has been validated by validateTranscript above (returns Message[])
+  const transcript: Message[] = body.transcript ?? [];
 
   try {
     // Generate or reuse scenario context
@@ -102,7 +105,7 @@ async function handlePost(req: NextRequest, _userId: string | null) {
       },
     });
   } catch (error) {
-    console.error("[roleplay] Error:", error);
+    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "roleplay" });
     return NextResponse.json(
       { error: "Roleplay failed. Please try again." },
       { status: 500 }

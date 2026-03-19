@@ -48,6 +48,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 describe("Health endpoint", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let app: any;
 
   beforeAll(async () => {
@@ -81,6 +82,7 @@ describe("Health endpoint", () => {
 });
 
 describe("Auth routes — validation", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let app: any;
 
   beforeAll(async () => {
@@ -125,6 +127,7 @@ describe("Auth routes — validation", () => {
 });
 
 describe("Protected routes — auth required", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let app: any;
 
   beforeAll(async () => {

@@ -17,20 +17,23 @@ import { CONCEPTS, selectConcept } from "@/lib/concepts";
 import { getCompletedConcepts } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, userId: string | null) {
-  const body = (await req.json().catch(() => ({}))) as {
-    conceptId?: string;
-    stream?: boolean;
-  };
+  const raw: unknown = await req.json().catch(() => ({}));
+  if (!raw || typeof raw !== "object") {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const body = raw as Record<string, unknown>;
 
-  if (body.conceptId && typeof body.conceptId !== "string") {
+  if (body.conceptId !== undefined && typeof body.conceptId !== "string") {
     return NextResponse.json(
       { error: "Invalid conceptId" },
       { status: 400 }
     );
   }
 
+  const conceptId = typeof body.conceptId === "string" ? body.conceptId : undefined;
   const shouldStream = body.stream !== false;
 
   try {
@@ -38,11 +41,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
     let concept;
     let isReview = false;
 
-    if (body.conceptId) {
-      const found = CONCEPTS.find((c) => c.id === body.conceptId);
+    if (conceptId) {
+      const found = CONCEPTS.find((c) => c.id === conceptId);
       if (!found) {
         return NextResponse.json(
-          { error: `Concept not found: ${body.conceptId}` },
+          { error: `Concept not found: ${conceptId}` },
           { status: 400 }
         );
       }
@@ -86,7 +89,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
       return NextResponse.json({ concept, lessonContent, isReview });
     }
   } catch (error) {
-    console.error("[lesson] Error:", error);
+    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "lesson" });
     return NextResponse.json(
       { error: "Lesson generation failed. Please try again." },
       { status: 500 }

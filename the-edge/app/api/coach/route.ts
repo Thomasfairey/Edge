@@ -14,8 +14,9 @@ import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildCoachPrompt } from "@/lib/prompts/coach";
 import { Concept, Message } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { validateTranscript, ValidationError } from "@/lib/validate";
+import { validateTranscript, validateConcept, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 async function handlePost(req: NextRequest, _userId: string | null) {
   const body = await req.json().catch(() => null);
@@ -26,8 +27,10 @@ async function handlePost(req: NextRequest, _userId: string | null) {
     );
   }
 
+  let concept: Concept;
   try {
     body.transcript = validateTranscript(body.transcript);
+    concept = validateConcept(body.concept);
   } catch (e) {
     if (e instanceof ValidationError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -35,21 +38,21 @@ async function handlePost(req: NextRequest, _userId: string | null) {
     throw e;
   }
 
-  const transcript = body.transcript as Message[];
-  const concept = body.concept as Concept;
+  const transcript: Message[] = body.transcript;
 
   try {
-    const systemPrompt = buildCoachPrompt(transcript as Message[], concept);
+    const systemPrompt = buildCoachPrompt(transcript, concept);
 
     const advice = await generateResponse(
       systemPrompt,
       [{ role: "user", content: "What are my best moves right now?" }],
-      PHASE_CONFIG.coach
+      PHASE_CONFIG.coach,
+      12_000 // Must be < maxDuration (15s)
     );
 
     return NextResponse.json({ advice });
   } catch (error) {
-    console.error("[coach] Error:", error);
+    logger.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "coach" });
     return NextResponse.json(
       { error: "Coach assist failed. Please try again." },
       { status: 500 }
