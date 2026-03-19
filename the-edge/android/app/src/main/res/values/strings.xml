@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">The Edge</string>
+    <string name="title_activity_main">The Edge</string>
+    <string name="package_name">com.theedge.app</string>
+    <string name="custom_url_scheme">com.theedge.app</string>
+</resources>

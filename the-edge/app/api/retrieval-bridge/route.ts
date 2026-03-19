@@ -14,8 +14,9 @@ import { buildRetrievalBridgePrompt } from "@/lib/prompts/retrieval-bridge";
 import { Concept, truncate } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateText, ValidationError } from "@/lib/validate";
+import { withAuth } from "@/lib/auth";
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.concept) {
     return NextResponse.json(
@@ -46,7 +47,7 @@ async function handlePost(req: NextRequest) {
   try {
     // Second call — evaluate the user's response via LLM
     const retrievalPrompt = buildRetrievalBridgePrompt(concept);
-    const systemPrompt = `${await buildPersistentContext()}\n\n${retrievalPrompt}`;
+    const systemPrompt = `${await buildPersistentContext(userId)}\n\n${retrievalPrompt}`;
 
     const rawResponse = await generateResponse(
       systemPrompt,
@@ -55,7 +56,7 @@ async function handlePost(req: NextRequest) {
     );
 
     // Use case-insensitive check with boundary matching to avoid false positives
-    const ready = /let['']?s go\./i.test(rawResponse);
+    const ready = /let[''\u2019]?s go/i.test(rawResponse);
 
     return NextResponse.json({ response: rawResponse, ready });
   } catch (error) {
@@ -67,4 +68,5 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 10);
+export const maxDuration = 15;
+export const POST = withRateLimit(withAuth(handlePost), 10);

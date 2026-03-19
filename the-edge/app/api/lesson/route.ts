@@ -16,8 +16,9 @@ import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
 import { getCompletedConcepts } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { withAuth } from "@/lib/auth";
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = (await req.json().catch(() => ({}))) as {
     conceptId?: string;
     stream?: boolean;
@@ -47,14 +48,14 @@ async function handlePost(req: NextRequest) {
       }
       concept = found;
     } else {
-      const completedIds = await getCompletedConcepts();
-      const result = await selectConcept(completedIds);
+      const completedIds = await getCompletedConcepts(userId);
+      const result = await selectConcept(completedIds, userId);
       concept = result.concept;
       isReview = result.isReview;
     }
 
     const lessonPrompt = buildLessonPrompt(concept, isReview);
-    const systemPrompt = `${await buildPersistentContext()}\n\n${lessonPrompt}`;
+    const systemPrompt = `${await buildPersistentContext(userId)}\n\n${lessonPrompt}`;
 
     const userMessage = {
       role: "user" as const,
@@ -93,4 +94,5 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 5);
+export const maxDuration = 30;
+export const POST = withRateLimit(withAuth(handlePost), 5);

@@ -13,7 +13,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 // ---------------------------------------------------------------------------
-// Client singleton
+// Client singleton (lazy init — avoids crashing at import/build time)
 // ---------------------------------------------------------------------------
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -203,12 +203,12 @@ export function streamResponse(
 
         controller.close();
       } catch (error: unknown) {
-        const message =
+        const rawMessage =
           error instanceof Error ? error.message : "Unknown error";
-        console.error(`[anthropic] ${phaseName} stream error: ${message}`);
+        console.error(`[anthropic] ${phaseName} stream error: ${rawMessage}`);
         controller.enqueue(
           encoder.encode(
-            `\n\n[System: Response generation failed — ${message}. Please try again.]`
+            `\n\n[System: Response generation failed. Please try again.]`
           )
         );
         controller.close();
@@ -262,9 +262,9 @@ export async function generateResponseViaStream(
 
     return fullText;
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[anthropic] ${phaseName} stream-buffer error: ${message}`);
-    return `[System: Response generation failed — ${message}. Please try again.]`;
+    const rawMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[anthropic] ${phaseName} stream-buffer error: ${rawMessage}`);
+    return `[System: Response generation failed. Please try again.]`;
   }
 }
 
@@ -301,8 +301,8 @@ export async function generateResponse(
 
     return text;
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[anthropic] ${phaseName} generation error: ${message}`);
-    return `[System: Response generation failed — ${message}. Please try again.]`;
+    const rawMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[anthropic] ${phaseName} generation error: ${rawMessage}`);
+    return `[System: Response generation failed. Please try again.]`;
   }
 }

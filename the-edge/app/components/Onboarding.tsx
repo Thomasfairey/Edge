@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * 3-screen onboarding flow — premium, emotionally compelling.
+ * 4-screen onboarding flow — premium, emotionally compelling.
  * Screen 1: Hook + value prop
  * Screen 2: How it works (4 phases)
  * Screen 3: Five scoring dimensions
+ * Screen 4: Implementation intention — "When will you train?"
  */
 
 import { useState } from "react";
@@ -24,15 +25,28 @@ const PHASES = [
   { label: "Deploy", color: "var(--phase-deploy)", tint: "var(--phase-deploy-tint)", desc: "Real-world mission for tomorrow" },
 ];
 
-const SCREEN_LABELS = ["Introduction", "How it works", "Your five dimensions"];
+const TRAINING_WINDOWS = [
+  { label: "Morning commute", emoji: "\u2600\uFE0F", desc: "Start the day sharp" },
+  { label: "Lunch break", emoji: "\uD83C\uDF5C", desc: "Midday reset" },
+  { label: "Evening wind-down", emoji: "\uD83C\uDF19", desc: "Reflect and prepare" },
+];
+
+const TOTAL_SCREENS = 4;
+const SCREEN_LABELS = ["Introduction", "How it works", "Your five dimensions", "Training window"];
 
 export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [screen, setScreen] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
+  const [selectedWindow, setSelectedWindow] = useState<string | null>(null);
 
   function goForward() {
-    if (screen === 2) {
-      try { localStorage.setItem("edge-onboarding-complete", "1"); } catch { /* ok */ }
+    if (screen === TOTAL_SCREENS - 1) {
+      try {
+        localStorage.setItem("edge-onboarding-complete", "1");
+        if (selectedWindow) {
+          localStorage.setItem("edge-training-window", selectedWindow);
+        }
+      } catch { /* ok */ }
       onComplete();
       return;
     }
@@ -108,7 +122,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         {screen === 2 && (
           <div className="card" style={{ padding: "28px 24px" }}>
             <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>Your five dimensions</p>
-            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>Scored 1\u20135 after every roleplay</p>
+            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>Scored 1&ndash;5 after every roleplay</p>
             <div className="mt-6 space-y-4" role="list" aria-label="Score dimensions">
               {DIMENSIONS.map((d) => (
                 <div key={d.label} className="flex items-start gap-3.5" role="listitem">
@@ -128,6 +142,40 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
             </div>
           </div>
         )}
+
+        {screen === 3 && (
+          <div className="card" style={{ padding: "28px 24px" }}>
+            <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>When will you train?</p>
+            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>
+              Pick your daily window &mdash; consistency beats intensity
+            </p>
+            <div className="mt-6 space-y-3">
+              {TRAINING_WINDOWS.map((w) => (
+                <button
+                  key={w.label}
+                  onClick={() => setSelectedWindow(w.label)}
+                  className={`w-full flex items-center gap-3 rounded-[var(--radius-md)] p-4 text-left transition-all ${
+                    selectedWindow === w.label
+                      ? "ring-2 ring-[var(--accent)] scale-[1.01]"
+                      : "hover:opacity-80"
+                  }`}
+                  style={{
+                    backgroundColor: selectedWindow === w.label ? "var(--accent-soft)" : "var(--background)",
+                  }}
+                >
+                  <span className="text-2xl">{w.emoji}</span>
+                  <div>
+                    <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>{w.label}</p>
+                    <p className="text-caption" style={{ color: "var(--text-secondary)" }}>{w.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="mt-5 text-center text-caption" style={{ color: "var(--text-tertiary)" }}>
+              You can change this anytime. This helps build your daily habit.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
@@ -144,12 +192,12 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
         {/* Progress dots */}
         <div className="flex gap-2.5" role="tablist" aria-label="Onboarding progress">
-          {[0, 1, 2].map((i) => (
+          {Array.from({ length: TOTAL_SCREENS }, (_, i) => (
             <div
               key={i}
               role="tab"
               aria-selected={i === screen}
-              aria-label={`Step ${i + 1} of 3: ${SCREEN_LABELS[i]}`}
+              aria-label={`Step ${i + 1} of ${TOTAL_SCREENS}: ${SCREEN_LABELS[i]}`}
               className="rounded-full transition-all"
               style={{
                 width: i === screen ? 24 : 8,
@@ -162,10 +210,11 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
         <button
           onClick={goForward}
+          disabled={screen === 3 && !selectedWindow}
           className="btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
           style={{ width: "auto", minWidth: 100 }}
         >
-          {screen === 2 ? "Start" : "Next"}
+          {screen === TOTAL_SCREENS - 1 ? "Start" : "Next"}
         </button>
       </nav>
     </div>

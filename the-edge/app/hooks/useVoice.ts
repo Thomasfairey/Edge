@@ -6,6 +6,14 @@ import {
   playOnSharedAudio,
   stopSharedAudio,
 } from "@/app/components/AudioUnlock";
+import { Capacitor } from "@capacitor/core";
+import { SpeechRecognition } from "@capacitor-community/speech-recognition";
+
+// ---------------------------------------------------------------------------
+// Capacitor detection
+// ---------------------------------------------------------------------------
+
+const isNative = Capacitor.isNativePlatform();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,7 +159,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
   // Run feature detection on client only (after hydration) — prevents SSR mismatch
   useEffect(() => {
-    const native = detectNativeSpeechRecognition();
+    const native = isNative || detectNativeSpeechRecognition();
     const mic = detectMicAccess();
     setNativeSTT(native);
     setSttSupported(native || mic);
@@ -218,6 +226,65 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       return next;
     });
   }, [cleanupRecording]);
+
+  // -------------------------------------------------------------------------
+  // Speech Recognition (STT) — Capacitor native
+  // -------------------------------------------------------------------------
+
+  const startNativeCapacitorListening = useCallback(async () => {
+    // Stop any current audio playback
+    abortRef.current?.abort();
+    stopSharedAudio();
+
+    // Request permission if needed
+    const { speechRecognition } = await SpeechRecognition.requestPermissions();
+    if (speechRecognition !== "granted") {
+      setMicError("Microphone permission denied. Please allow it in Settings.");
+      return;
+    }
+
+    setState("listening");
+    setInterimTranscript("");
+    setMicError(null);
+
+    // Listen for partial results
+    SpeechRecognition.addListener("partialResults", (data: { matches: string[] }) => {
+      if (data.matches?.[0]) {
+        setInterimTranscript(data.matches[0]);
+      }
+    });
+
+    try {
+      const result = await SpeechRecognition.start({
+        language: lang,
+        partialResults: true,
+        popup: false,
+      });
+
+      setInterimTranscript("");
+      if (result.matches?.[0]) {
+        setState("processing");
+        onTranscriptRef.current?.(result.matches[0].trim());
+      } else {
+        setState("idle");
+      }
+    } catch (err) {
+      console.warn("[useVoice] Native recognition error:", err);
+      setMicError("Speech recognition failed. Please try again.");
+      setState("idle");
+    } finally {
+      SpeechRecognition.removeAllListeners();
+    }
+  }, [lang]);
+
+  const stopNativeCapacitorListening = useCallback(async () => {
+    try {
+      await SpeechRecognition.stop();
+    } catch {}
+    SpeechRecognition.removeAllListeners();
+    setState("idle");
+    setInterimTranscript("");
+  }, []);
 
   // -------------------------------------------------------------------------
   // Speech Recognition (STT) — native Web Speech API
@@ -609,7 +676,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     abortRef.current?.abort();
     stopSharedAudio();
 
-    if (nativeSTT) {
+    if (isNative) {
+      // Capacitor native speech recognition
+      startNativeCapacitorListening();
+    } else if (nativeSTT) {
       startNativeListening();
     } else if (typeof MediaRecorder !== "undefined" && detectMicAccess()) {
       startMediaRecorderListening();
@@ -619,9 +689,13 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     } else {
       setMicError("Microphone not available on this browser.");
     }
-  }, [nativeSTT, startNativeListening, startMediaRecorderListening, startFallbackListening]);
+  }, [nativeSTT, startNativeListening, startMediaRecorderListening, startFallbackListening, startNativeCapacitorListening]);
 
   const stopListening = useCallback(() => {
+    if (isNative) {
+      stopNativeCapacitorListening();
+      return;
+    }
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       setState("idle");
@@ -638,7 +712,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     if (isRecordingRef.current) {
       stopFallbackListening();
     }
-  }, [stopFallbackListening]);
+  }, [stopFallbackListening, stopNativeCapacitorListening]);
 
   // -------------------------------------------------------------------------
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
@@ -702,6 +776,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         .catch((err) => {
           if (err.name === "AbortError") return;
           console.warn("[useVoice] TTS fetch error:", err.message);
+          setMicError("Voice synthesis failed. Check your connection.");
           setState("idle");
         });
     },

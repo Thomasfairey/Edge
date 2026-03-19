@@ -5,6 +5,7 @@
  * one entry. The serialisation function compresses entries into clean markdown
  * for prompt injection.
  *
+ * All queries are scoped by user_id when provided.
  * Reference: PRD Section 4.4, Appendix B
  */
 
@@ -34,6 +35,7 @@ interface LedgerRow {
   mission_outcome: string;
   commands_used: string[];
   session_completed: boolean;
+  user_id?: string;
 }
 
 function rowToEntry(row: LedgerRow): LedgerEntry {
@@ -60,8 +62,8 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
   };
 }
 
-function entryToRow(entry: LedgerEntry): Omit<LedgerRow, "id"> {
-  return {
+function entryToRow(entry: LedgerEntry, userId?: string | null): Omit<LedgerRow, "id"> {
+  const row: Omit<LedgerRow, "id"> = {
     day: entry.day,
     date: entry.date,
     concept: entry.concept,
@@ -80,6 +82,8 @@ function entryToRow(entry: LedgerEntry): Omit<LedgerRow, "id"> {
     commands_used: entry.commands_used,
     session_completed: entry.session_completed,
   };
+  if (userId) row.user_id = userId;
+  return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,11 +93,15 @@ function entryToRow(entry: LedgerEntry): Omit<LedgerRow, "id"> {
 /**
  * Read all ledger entries from Supabase, ordered by day ascending.
  */
-export async function getLedger(): Promise<LedgerEntry[]> {
-  const { data, error } = await supabase
+export async function getLedger(userId?: string | null): Promise<LedgerEntry[]> {
+  let query = supabase
     .from("ledger")
     .select("*")
     .order("day", { ascending: true });
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[ledger] Failed to read:", error.message);
@@ -105,10 +113,10 @@ export async function getLedger(): Promise<LedgerEntry[]> {
 /**
  * Append a new entry to the ledger.
  */
-export async function appendEntry(entry: LedgerEntry): Promise<void> {
+export async function appendEntry(entry: LedgerEntry, userId?: string | null): Promise<void> {
   const { error } = await supabase
     .from("ledger")
-    .insert(entryToRow(entry));
+    .insert(entryToRow(entry, userId));
 
   if (error) {
     console.error("[ledger] Failed to write:", error.message);
@@ -118,12 +126,16 @@ export async function appendEntry(entry: LedgerEntry): Promise<void> {
 /**
  * Return the most recent ledger entry, or null if empty.
  */
-export async function getLastEntry(): Promise<LedgerEntry | null> {
-  const { data, error } = await supabase
+export async function getLastEntry(userId?: string | null): Promise<LedgerEntry | null> {
+  let query = supabase
     .from("ledger")
     .select("*")
     .order("day", { ascending: false })
     .limit(1);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error || !data || data.length === 0) return null;
   return rowToEntry(data[0] as LedgerRow);
@@ -132,12 +144,16 @@ export async function getLastEntry(): Promise<LedgerEntry | null> {
 /**
  * Update the mission_outcome of the most recent entry.
  */
-export async function updateLastMissionOutcome(outcome: string): Promise<void> {
-  const { data } = await supabase
+export async function updateLastMissionOutcome(outcome: string, userId?: string | null): Promise<void> {
+  let query = supabase
     .from("ledger")
     .select("id")
     .order("day", { ascending: false })
     .limit(1);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data } = await query;
 
   if (!data || data.length === 0) return;
 
@@ -154,12 +170,16 @@ export async function updateLastMissionOutcome(outcome: string): Promise<void> {
 /**
  * Serialise the last `count` entries into clean markdown for prompt injection.
  */
-export async function serialiseForPrompt(count: number = 7): Promise<string> {
-  const { data, error } = await supabase
+export async function serialiseForPrompt(count: number = 7, userId?: string | null): Promise<string> {
+  let query = supabase
     .from("ledger")
     .select("*")
     .order("day", { ascending: false })
     .limit(count);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error || !data || data.length === 0) {
     return "No prior sessions recorded.";
@@ -180,10 +200,14 @@ export async function serialiseForPrompt(count: number = 7): Promise<string> {
 /**
  * Return concept names from all ledger entries (for de-duplication).
  */
-export async function getCompletedConcepts(): Promise<string[]> {
-  const { data, error } = await supabase
+export async function getCompletedConcepts(userId?: string | null): Promise<string[]> {
+  let query = supabase
     .from("ledger")
     .select("concept");
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error || !data) return [];
   return data.map((e: { concept: string }) => e.concept);
@@ -192,10 +216,14 @@ export async function getCompletedConcepts(): Promise<string[]> {
 /**
  * Return the total number of ledger entries.
  */
-export async function getLedgerCount(): Promise<number> {
-  const { count, error } = await supabase
+export async function getLedgerCount(userId?: string | null): Promise<number> {
+  let query = supabase
     .from("ledger")
     .select("id", { count: "exact", head: true });
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { count, error } = await query;
 
   if (error) return 0;
   return count ?? 0;

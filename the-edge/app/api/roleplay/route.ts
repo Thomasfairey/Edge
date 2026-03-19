@@ -28,8 +28,9 @@ import {
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateTranscript, validateText, ValidationError } from "@/lib/validate";
+import { withAuth } from "@/lib/auth";
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, _userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.concept || !body.character) {
     return NextResponse.json(
@@ -109,4 +110,5 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 10);
+export const maxDuration = 30;
+export const POST = withRateLimit(withAuth(handlePost), 10);

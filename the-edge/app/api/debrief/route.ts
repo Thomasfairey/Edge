@@ -26,6 +26,7 @@ import {
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateTranscript, ValidationError } from "@/lib/validate";
+import { withAuth } from "@/lib/auth";
 
 export const maxDuration = 60;
 
@@ -124,7 +125,7 @@ function parseLedgerFields(text: string): {
   };
 }
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.transcript || !body.concept || !body.character) {
     return NextResponse.json(
@@ -156,8 +157,8 @@ async function handlePost(req: NextRequest) {
 
   try {
     const [ledgerCount, serialisedLedger] = await Promise.all([
-      getLedgerCount(),
-      serialiseForPrompt(),
+      getLedgerCount(userId),
+      serialiseForPrompt(7, userId),
     ]);
 
     const debriefPrompt = buildDebriefPrompt(
@@ -169,7 +170,7 @@ async function handlePost(req: NextRequest) {
       checkinContext
     );
 
-    const systemPrompt = `${await buildPersistentContext()}\n\n${debriefPrompt}`;
+    const systemPrompt = `${await buildPersistentContext(userId)}\n\n${debriefPrompt}`;
 
     // Use streaming internally to keep connection alive
     const debriefContent = await generateResponseViaStream(
@@ -207,4 +208,4 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 5);
+export const POST = withRateLimit(withAuth(handlePost), 5);

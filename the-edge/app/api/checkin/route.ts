@@ -11,10 +11,11 @@ import { buildCheckinPrompt } from "@/lib/prompts/checkin";
 import { updateLastMissionOutcome } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { truncate } from "@/lib/types";
+import { withAuth } from "@/lib/auth";
 
 const VALID_OUTCOME_TYPES = ["completed", "tried", "skipped"] as const;
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.previousMission || !body.outcomeType) {
     return NextResponse.json(
@@ -38,7 +39,7 @@ async function handlePost(req: NextRequest) {
   try {
     // Handle "skipped" — no API call needed
     if (outcomeType === "skipped") {
-      await updateLastMissionOutcome("NOT EXECUTED");
+      await updateLastMissionOutcome("NOT EXECUTED", userId);
       return NextResponse.json({
         response: "No problem. The mission you\u2019re about to get will give you a clean shot.",
         type: "SKIPPED",
@@ -51,7 +52,7 @@ async function handlePost(req: NextRequest) {
       userOutcome || "",
       outcomeType as "completed" | "tried"
     );
-    const systemPrompt = `${await buildPersistentContext()}\n\n${checkinPrompt}`;
+    const systemPrompt = `${await buildPersistentContext(userId)}\n\n${checkinPrompt}`;
 
     const rawResponse = await generateResponse(
       systemPrompt,
@@ -74,7 +75,7 @@ async function handlePost(req: NextRequest) {
       .trim();
 
     // Update the most recent ledger entry's mission_outcome
-    await updateLastMissionOutcome(userOutcome || outcomeType);
+    await updateLastMissionOutcome(userOutcome || outcomeType, userId);
 
     return NextResponse.json({ response, type, insight });
   } catch (error) {
@@ -86,4 +87,5 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 10);
+export const maxDuration = 30;
+export const POST = withRateLimit(withAuth(handlePost), 10);

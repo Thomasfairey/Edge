@@ -1,17 +1,28 @@
-const CACHE_NAME = "edge-v3";
-const APP_SHELL = ["/", "/session", "/manifest.json", "/icon-192.png", "/icon-512.png"];
+/**
+ * Service Worker — basic offline support and caching.
+ * Caches the app shell and static assets for offline access.
+ */
 
-// Install — pre-cache app shell
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+const CACHE_NAME = "edge-v1";
+const SHELL_ASSETS = [
+  "/",
+  "/login",
+  "/manifest.json",
+  "/icon-192.png",
+  "/icon-512.png",
+];
+
+// Install — cache app shell
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS))
   );
   self.skipWaiting();
 });
 
 // Activate — clean old caches
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
     )
@@ -19,32 +30,35 @@ self.addEventListener("activate", (e) => {
   self.clients.claim();
 });
 
-// Fetch — skip API routes, cache-first for everything else
-self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
+// Fetch — network first, fall back to cache for navigation
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
 
-  // Never cache API calls — always go to network
-  if (url.pathname.startsWith("/api/")) return;
+  // Skip non-GET and API requests
+  if (request.method !== "GET" || request.url.includes("/api/")) {
+    return;
+  }
 
-  e.respondWith(
-    caches.match(e.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(e.request)
-        .then((res) => {
-          // Cache successful GET responses
-          if (res.ok && e.request.method === "GET") {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-          }
-          return res;
-        })
-        .catch(() => {
-          // Offline navigation fallback — serve cached home page
-          if (e.request.mode === "navigate") {
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        // Cache successful responses for static assets
+        if (response.ok && (request.url.includes("/_next/") || SHELL_ASSETS.some(a => request.url.endsWith(a)))) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      })
+      .catch(() => {
+        // Offline fallback — serve from cache
+        return caches.match(request).then((cached) => {
+          if (cached) return cached;
+          // For navigation requests, serve the cached home page
+          if (request.mode === "navigate") {
             return caches.match("/");
           }
           return new Response("Offline", { status: 503 });
         });
-    })
+      })
   );
 });

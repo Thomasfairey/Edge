@@ -8,6 +8,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { SessionScores, LedgerEntry } from "@/lib/types";
+import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
+import { hapticTap } from "@/lib/haptics";
 import Onboarding from "./components/Onboarding";
 import TrendDashboard from "./components/TrendDashboard";
 
@@ -166,7 +168,7 @@ function HomeSkeleton() {
 
 const CACHE_KEY = "edge-status-cache";
 const SESSION_STORAGE_KEY = "edge-session-state";
-const SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours — match session page
 
 export default function Home() {
   const router = useRouter();
@@ -419,7 +421,7 @@ export default function Home() {
         {/* Begin session button */}
         {!hasIncompleteSession && (
           <button
-            onClick={() => { if (online) router.push("/session"); }}
+            onClick={() => { hapticTap(); if (online) router.push("/session"); }}
             disabled={!online}
             className="btn-primary w-full max-w-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A52E0] focus-visible:ring-offset-2"
           >

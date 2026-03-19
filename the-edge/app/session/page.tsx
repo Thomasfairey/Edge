@@ -25,7 +25,7 @@ import { useVoice } from "@/app/hooks/useVoice";
 // ---------------------------------------------------------------------------
 
 const SESSION_STORAGE_KEY = "edge-session-state";
-const SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours — sessions are same-day
 
 const PHASES: { key: SessionPhase; label: string; color: string }[] = [
   { key: "lesson", label: "Learn", color: "#B8D4E3" },
@@ -54,10 +54,13 @@ const PHASE_TINT: Record<string, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function haptic(ms = 10) {
-  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-    navigator.vibrate(ms);
-  }
+function haptic() {
+  // Use Capacitor haptics (works on iOS + Android), fallback to vibrate API
+  import("@/lib/haptics").then((h) => h.hapticImpact()).catch(() => {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate(10);
+    }
+  });
 }
 
 /** Normalise scores that may use abbreviated keys (TA/TW/FC/ER/SO) to canonical form. */
@@ -870,6 +873,45 @@ function DebriefSection({ title, children, scores, defaultOpen }: {
 // Motivational line based on trajectory
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Variable-reward motivational lines — prevents habituation
+// ---------------------------------------------------------------------------
+
+const IMPROVEMENT_LINES = [
+  "The work is compounding.",
+  "Momentum. Don\u2019t let it go.",
+  "That\u2019s a gear shift. You\u2019re moving differently now.",
+  "You wouldn\u2019t have scored this on Day 1.",
+];
+
+const MARGINAL_LINES = [
+  "Marginal gains. Keep stacking.",
+  "Small edge, big compound. This is how it works.",
+  "Incremental. Relentless. That\u2019s the pattern.",
+];
+
+const STEADY_LINES = [
+  "Holding steady. The next breakthrough is close.",
+  "Plateaus precede breakthroughs. Keep pushing.",
+  "Consistency is a weapon. You\u2019re wielding it.",
+];
+
+const DIP_LINES = [
+  "Tougher session \u2014 that\u2019s where growth happens.",
+  "Hard reps build the edge that easy reps can\u2019t.",
+  "A dip today, a spike tomorrow. Stay in it.",
+];
+
+const HARD_DAY_LINES = [
+  "Hard day. The best sessions often follow the worst.",
+  "This is the session you\u2019ll look back on as a turning point.",
+  "Discomfort is the price of growth. You paid it today.",
+];
+
+function pick(arr: string[]): string {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 function getMotivationalLine(scores: SessionScores, previousScores: SessionScores | null): string {
   if (!previousScores) return "First session in the books. The baseline is set.";
 
@@ -877,11 +919,22 @@ function getMotivationalLine(scores: SessionScores, previousScores: SessionScore
   const prevAvg = Object.values(previousScores).reduce((a, b) => a + b, 0) / 5;
   const diff = currentAvg - prevAvg;
 
-  if (diff > 0.5) return "The work is compounding.";
-  if (diff > 0) return "Marginal gains. Keep stacking.";
-  if (diff === 0) return "Holding steady. The next breakthrough is close.";
-  if (diff > -0.5) return "Tougher session \u2014 that\u2019s where growth happens.";
-  return "Hard day. The best sessions often follow the worst.";
+  if (diff > 0.5) return pick(IMPROVEMENT_LINES);
+  if (diff > 0) return pick(MARGINAL_LINES);
+  if (diff === 0) return pick(STEADY_LINES);
+  if (diff > -0.5) return pick(DIP_LINES);
+  return pick(HARD_DAY_LINES);
+}
+
+/** Milestone messages shown at notable day counts. */
+function getMilestoneLine(day: number): string | null {
+  if (day === 7) return "One week complete. You\u2019ve built the foundation \u2014 most people quit by Day 3.";
+  if (day === 14) return "Two weeks in. The concepts are starting to compound. You\u2019ll notice it in real conversations.";
+  if (day === 21) return "21 days \u2014 the habit is forming. This is no longer a novelty, it\u2019s a practice.";
+  if (day === 30) return "30 days. You\u2019ve completed a full cycle of The Edge. Very few make it here.";
+  if (day === 50) return "50 sessions deep. The person who started this programme wouldn\u2019t recognise you now.";
+  if (day % 10 === 0 && day > 30) return `Day ${day}. Still here. Still sharper than yesterday.`;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -949,6 +1002,12 @@ export default function SessionPage() {
   // Completion
   const [showConfetti, setShowConfetti] = useState(false);
 
+  // Onboarding (profile capture)
+  const [onboardingNeeded, setOnboardingNeeded] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"bio" | "style" | "saving">("bio");
+  const [onboardingBio, setOnboardingBio] = useState("");
+  const [onboardingDisplayName, setOnboardingDisplayName] = useState("");
+
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -995,7 +1054,11 @@ export default function SessionPage() {
     if (voiceAutoSubmitRef.current && !isStreaming && !isLoading) {
       const text = voiceAutoSubmitRef.current;
       voiceAutoSubmitRef.current = null;
-      if (currentPhase === "roleplay") {
+      if (onboardingNeeded && onboardingStep === "bio") {
+        // Voice transcript goes to onboarding bio — don't auto-submit, let user review
+        setOnboardingBio(text);
+        setInputValue("");
+      } else if (currentPhase === "roleplay") {
         handleRoleplayInput(text);
       } else if (currentPhase === "retrieval" && retrievalQuestion && !retrievalResponse) {
         submitRetrievalResponse(text);
@@ -1244,23 +1307,60 @@ export default function SessionPage() {
       }
     } catch {}
 
-    // Always start with lesson — fetch status to check if checkin needed later
-    fetch("/api/status")
-      .then((res) => res.json())
-      .then((data) => {
-        setDayNumber(data.dayNumber);
-        if (data.lastEntry) {
-          setLastMission(data.lastEntry.mission);
-          setCheckinNeeded(true);
-          // Store previous scores for completion screen deltas
-          if (data.lastEntry.scores) {
-            setPreviousScores(normaliseScores(data.lastEntry.scores));
+    // Fetch status + profile in parallel
+    Promise.all([
+      fetch("/api/status").then((r) => r.json()).catch(() => null),
+      fetch("/api/profile").then((r) => r.json()).catch(() => null),
+    ]).then(([statusData, profileData]) => {
+        if (statusData) {
+          setDayNumber(statusData.dayNumber);
+          if (statusData.lastEntry) {
+            setLastMission(statusData.lastEntry.mission);
+            setCheckinNeeded(true);
+            if (statusData.lastEntry.scores) {
+              setPreviousScores(normaliseScores(statusData.lastEntry.scores));
+            }
           }
         }
+
+        // Check if user has completed profile setup
+        if (profileData && !profileData.profileData) {
+          setOnboardingNeeded(true);
+          setOnboardingDisplayName(profileData.displayName || "");
+          setIsLoading(false);
+          return; // Don't fetch lesson yet — onboarding first
+        }
+
         fetchLesson();
       })
       .catch(() => { fetchLesson(); });
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Onboarding: save profile and proceed to lesson
+  // ---------------------------------------------------------------------------
+
+  async function completeOnboarding(feedbackStyle: "direct" | "balanced" | "supportive") {
+    setOnboardingStep("saving");
+    try {
+      const res = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileData: {
+            bio: onboardingBio.trim(),
+            feedbackStyle,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setOnboardingNeeded(false);
+      fetchLesson();
+    } catch {
+      setError("Couldn't save your profile. Tap retry.");
+      setOnboardingStep("style");
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Phase transition
@@ -1269,6 +1369,7 @@ export default function SessionPage() {
   function advancePhase(from: SessionPhase, to: SessionPhase) {
     voice.stopSpeaking();
     setPhaseAnimation("exit");
+    setInputValue("");
     setTimeout(() => {
       setCompletedPhases((prev) => new Set([...prev, from]));
       setCurrentPhase(to);
@@ -1342,7 +1443,11 @@ export default function SessionPage() {
       // Extract concept from header
       const conceptHeader = res.headers.get("X-Concept");
       if (conceptHeader) {
-        setConcept(JSON.parse(decodeURIComponent(conceptHeader)));
+        try {
+          setConcept(JSON.parse(decodeURIComponent(conceptHeader)));
+        } catch {
+          console.warn("[session] Failed to parse X-Concept header");
+        }
       }
 
       // Check if review session
@@ -1651,6 +1756,7 @@ export default function SessionPage() {
     if (!lastMission || submittingRef.current) return;
     submittingRef.current = true;
     setIsLoading(true);
+    setInputValue("");
     // Store user text for debrief context
     if (userOutcome) setCheckinUserText(userOutcome);
     try {
@@ -1862,9 +1968,133 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
+          {/* ONBOARDING (profile capture — Day 1 only, before lesson)        */}
+          {/* ============================================================== */}
+          {onboardingNeeded && (
+            <div className="space-y-6 animate-fade-in-up">
+              {onboardingStep === "bio" && (
+                <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <h2 className="text-xl font-semibold text-primary mb-2">
+                    Welcome to The Edge{onboardingDisplayName ? `, ${onboardingDisplayName}` : ""}
+                  </h2>
+                  <p className="text-sm text-secondary mb-5">
+                    Before we begin, tell me about yourself. Your role, your company,
+                    what you&apos;re working on, and what you&apos;re trying to achieve.
+                  </p>
+                  <p className="text-xs text-tertiary mb-4">
+                    This is used to personalise every scenario, lesson, and mission to your world.
+                  </p>
+
+                  <textarea
+                    className="w-full rounded-2xl border border-[#E8E5E0] bg-[#FAF9F6] px-4 py-3 text-sm text-primary placeholder-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-[#5A52E0]/30"
+                    rows={5}
+                    placeholder="e.g. I'm the CEO of a fintech startup. We're raising our seed round and trying to sign our first enterprise clients in banking. I need to get better at high-stakes negotiations and investor pitches..."
+                    value={onboardingBio}
+                    onChange={(e) => setOnboardingBio(e.target.value)}
+                    maxLength={2000}
+                  />
+
+                  <div className="flex items-center justify-between mt-3">
+                    {/* Voice input button */}
+                    {voice.sttSupported && voice.voiceEnabled && (
+                      <button
+                        onClick={() => {
+                          if (voice.state === "listening") {
+                            voice.stopListening();
+                          } else {
+                            voice.startListening();
+                          }
+                        }}
+                        className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
+                          voice.state === "listening"
+                            ? "bg-[#5A52E0] text-white"
+                            : "bg-[#EEEDFF] text-[#5A52E0]"
+                        }`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                          <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
+                          <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
+                        </svg>
+                        {voice.state === "listening" ? "Listening..." : "Speak"}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        if (onboardingBio.trim().length >= 20) {
+                          setOnboardingStep("style");
+                          haptic();
+                        }
+                      }}
+                      disabled={onboardingBio.trim().length < 20}
+                      className="rounded-2xl bg-[#5A52E0] px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+
+                  {voice.state === "listening" && voice.interimTranscript && (
+                    <p className="mt-2 text-xs text-secondary italic">{voice.interimTranscript}</p>
+                  )}
+                </div>
+              )}
+
+              {onboardingStep === "style" && (
+                <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <h2 className="text-lg font-semibold text-primary mb-2">
+                    How do you prefer feedback?
+                  </h2>
+                  <p className="text-sm text-secondary mb-5">
+                    This shapes how The Edge speaks to you — in debriefs, coaching, and missions.
+                  </p>
+
+                  <div className="space-y-3">
+                    {([
+                      { value: "direct" as const, label: "Direct & blunt", desc: "No softening. Tell me exactly what I did wrong.", color: "#E88B8B" },
+                      { value: "balanced" as const, label: "Balanced", desc: "Clear and honest, but measured. Direct without being harsh.", color: "#F5C563" },
+                      { value: "supportive" as const, label: "Supportive", desc: "Encouraging with constructive framing. Still honest, but warm.", color: "#6BC9A0" },
+                    ]).map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          haptic();
+                          completeOnboarding(opt.value);
+                        }}
+                        className="w-full rounded-2xl border-2 border-[#E8E5E0] bg-[#FAF9F6] p-4 text-left transition-all hover:border-[#5A52E0]/30 active:scale-[0.98]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
+                          <div>
+                            <p className="text-sm font-semibold text-primary">{opt.label}</p>
+                            <p className="text-xs text-secondary mt-0.5">{opt.desc}</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setOnboardingStep("bio")}
+                    className="mt-4 text-xs text-secondary underline"
+                  >
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {onboardingStep === "saving" && (
+                <div className="text-center py-8">
+                  <p className="mb-2 text-sm text-secondary">Setting up your profile...</p>
+                  <LoadingDots />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ============================================================== */}
           {/* LEARN                                                           */}
           {/* ============================================================== */}
-          {currentPhase === "lesson" && (
+          {currentPhase === "lesson" && !onboardingNeeded && (
             <>
               {isLoading && (
                 <div className="text-center py-8">
@@ -1943,6 +2173,12 @@ export default function SessionPage() {
 
                   {!retrievalResponse && (
                     <div className="space-y-3">
+                      {/* Voice error banner for retrieval */}
+                      {voice.micError && (
+                        <div className="rounded-xl bg-[#FDF2F2] px-4 py-2.5 text-sm text-[#C4524B] text-center">
+                          {voice.micError}
+                        </div>
+                      )}
                       {/* Voice listening state for retrieval */}
                       {voice.voiceEnabled && voice.state === "listening" && (
                         <div className="flex flex-col items-center gap-3 py-4">
@@ -2278,7 +2514,7 @@ export default function SessionPage() {
                     {/* Outcome pills */}
                     <div className="flex gap-3">
                       <button
-                        onClick={() => { setCheckinPillSelected("completed"); haptic(20); }}
+                        onClick={() => { setCheckinPillSelected("completed"); haptic(); }}
                         className={`flex-1 text-body font-semibold transition-all ${
                           checkinPillSelected === "completed" ? "animate-celebrate scale-[1.02]" : ""
                         }`}
@@ -2329,6 +2565,12 @@ export default function SessionPage() {
                         }}>
                           {checkinPillSelected === "completed" ? "Nice work! Quick follow-up:" : "Good effort. Tell me more:"}
                         </p>
+                        {/* Voice error banner for check-in */}
+                        {voice.micError && (
+                          <div className="rounded-xl bg-[#FDF2F2] px-4 py-2.5 text-sm text-[#C4524B] text-center">
+                            {voice.micError}
+                          </div>
+                        )}
                         {/* Voice listening state for check-in */}
                         {voice.voiceEnabled && voice.state === "listening" && (
                           <div className="flex flex-col items-center gap-3 py-4">
@@ -2457,6 +2699,14 @@ export default function SessionPage() {
                           Day {dayNumber} &middot; {concept?.name}
                         </p>
 
+                        {/* Milestone badge (Days 7, 14, 21, 30, 50...) */}
+                        {getMilestoneLine(dayNumber) && (
+                          <div className="mb-4 card-tinted text-center" style={{ backgroundColor: "var(--accent-soft)", padding: "12px 16px", borderRadius: "var(--radius-md)" }}>
+                            <p className="text-caption font-bold uppercase tracking-wider mb-1" style={{ color: "var(--accent)" }}>Milestone</p>
+                            <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{getMilestoneLine(dayNumber)}</p>
+                          </div>
+                        )}
+
                         {/* Motivational line */}
                         {scores && (
                           <p className="mb-5 text-center text-caption font-medium" style={{ color: "var(--phase-deploy-muted)" }}>
@@ -2555,7 +2805,8 @@ export default function SessionPage() {
                         {/* Share button */}
                         <button
                           onClick={async () => {
-                            const text = `The Edge - Day ${dayNumber}\nConcept: ${concept?.name}\nScores: ${scores ? Object.values(scores).join(", ") : "-"}\nMission: ${mission || "-"}`;
+                            const avg = scores ? (Object.values(scores).reduce((a, b) => a + b, 0) / 5).toFixed(1) : null;
+                            const text = `${concept?.name ? `Today I practised ${concept.name}` : "The Edge"}${avg ? ` — scored ${avg}/5` : ""} on Day ${dayNumber}.\n${keyMoment ? `\nKey takeaway: ${keyMoment}\n` : ""}\nThe Edge — daily influence training\n${window.location.origin}`;
 
                             try {
                               const canvas = document.createElement("canvas");
@@ -2628,7 +2879,7 @@ export default function SessionPage() {
 
                                 ctx.fillStyle = "#B5B3BD";
                                 ctx.font = "12px sans-serif";
-                                ctx.fillText("the-edge-xi.vercel.app", 32, 384);
+                                ctx.fillText(window.location.hostname, 32, 384);
 
                                 const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
                                 if (blob && navigator.share && navigator.canShare?.({ files: [new File([blob], "edge-session.png", { type: "image/png" })] })) {

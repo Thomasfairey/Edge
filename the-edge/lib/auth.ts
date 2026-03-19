@@ -1,15 +1,17 @@
 /**
- * API key protection.
- * When EDGE_API_KEY is set, all requests must include it via
- * the Authorization header (Bearer token) or X-API-Key header.
- * Query-param auth is intentionally excluded to avoid key leakage in logs.
+ * Authentication middleware for API routes.
  *
- * Uses timing-safe comparison to prevent timing attacks on API key validation.
+ * Uses Supabase session auth (cookie-based) as primary auth.
+ * Falls back to X-API-Key header (with timing-safe comparison) for programmatic access.
+ * Query-param auth is intentionally excluded to avoid key leakage in logs.
+ * Passes userId directly to route handlers via closure.
  */
 
+import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 
+export type AuthRouteHandler = (req: NextRequest, userId: string | null) => Promise<Response | NextResponse>;
 type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
 
 /**
@@ -26,39 +28,67 @@ function safeCompare(a: string, b: string): boolean {
 }
 
 /**
- * Check if request has valid API key.
- * Returns null if auth passes, or a 401 NextResponse if it fails.
+ * Extract authenticated user_id from the request.
+ * Checks Supabase session cookies first, then X-API-Key header.
  */
-export function checkAuth(req: NextRequest): NextResponse | null {
-  const requiredKey = process.env.EDGE_API_KEY;
-
-  // If no key is configured, all requests pass (dev mode)
-  if (!requiredKey) return null;
-
-  // Accept Authorization: Bearer <key> or X-API-Key header (not query params)
-  const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const headerKey = req.headers.get("x-api-key");
-  const providedKey = bearerToken || headerKey;
-
-  if (!providedKey || !safeCompare(providedKey, requiredKey)) {
-    console.warn(`[auth] Rejected request to ${req.nextUrl.pathname}`);
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
+async function getAuthUser(req: NextRequest): Promise<{ userId: string | null; error: NextResponse | null }> {
+  // Try Supabase session auth first
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll() {
+            // No-op in route handlers — middleware handles token refresh
+          },
+        },
+      }
     );
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      return { userId: user.id, error: null };
+    }
+  } catch {
+    // Supabase auth failed, try API key
   }
 
-  return null;
+  // Fallback: API key auth (for programmatic access / mobile)
+  // Uses timing-safe comparison to prevent timing attacks on API key validation.
+  const requiredKey = process.env.EDGE_API_KEY;
+  if (requiredKey) {
+    const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    const headerKey = req.headers.get("x-api-key");
+    const providedKey = bearerToken || headerKey;
+    if (providedKey && safeCompare(providedKey, requiredKey)) {
+      // API key users have no user scoping (backwards compat)
+      return { userId: null, error: null };
+    }
+  } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NODE_ENV === "development") {
+    // No Supabase and no API key configured — development mode only
+    console.warn("[auth] No auth configured — allowing unauthenticated access (development only)");
+    return { userId: null, error: null };
+  }
+
+  console.warn(`[auth] Rejected request to ${req.nextUrl.pathname}`);
+  return {
+    userId: null,
+    error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+  };
 }
 
 /**
- * HOF wrapper — compose with withRateLimit:
- * export const POST = withRateLimit(withAuth(handlePost), 5)
+ * HOF wrapper — authenticates the request and passes userId to the handler.
+ * Handler signature: (req: NextRequest, userId: string | null) => Promise<Response>
  */
-export function withAuth(handler: RouteHandler): RouteHandler {
+export function withAuth(handler: AuthRouteHandler): RouteHandler {
   return async (req: NextRequest) => {
-    const authResult = checkAuth(req);
-    if (authResult) return authResult;
-    return handler(req);
+    const { userId, error } = await getAuthUser(req);
+    if (error) return error;
+    return handler(req, userId);
   };
 }

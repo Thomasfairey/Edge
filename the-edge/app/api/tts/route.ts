@@ -13,15 +13,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { getVoiceForCharacter, ELEVENLABS_MODEL } from "@/lib/voice-map";
+import { withAuth } from "@/lib/auth";
+import { getVoiceForCharacter, CHARACTER_VOICE_MAP, ELEVENLABS_MODEL } from "@/lib/voice-map";
 
 const MAX_TTS_LENGTH = 5000; // ElevenLabs has a 5000 char limit per request
 
-async function handler(req: NextRequest): Promise<Response> {
+async function handler(req: NextRequest, _userId: string | null): Promise<Response> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "ELEVENLABS_API_KEY not configured" },
+      { error: "Speech service not configured" },
       { status: 500 }
     );
   }
@@ -43,6 +44,11 @@ async function handler(req: NextRequest): Promise<Response> {
 
   if (text.length > MAX_TTS_LENGTH) {
     return NextResponse.json({ error: "text exceeds maximum length" }, { status: 400 });
+  }
+
+  // Validate characterId against known characters
+  if (characterId && !(characterId in CHARACTER_VOICE_MAP)) {
+    return NextResponse.json({ error: "Invalid characterId" }, { status: 400 });
   }
 
   // Clean text for more natural speech
@@ -115,14 +121,13 @@ async function handler(req: NextRequest): Promise<Response> {
         "X-Voice-Name": voice.voiceName,
       },
     });
-  } catch (error) {
-    console.error("[tts] fetch error:", error);
+  } catch {
     return NextResponse.json(
-      { error: "Failed to connect to ElevenLabs" },
+      { error: "Speech synthesis unavailable" },
       { status: 502 }
     );
   }
 }
 
 // Rate limit: 30 requests per minute (narration across all phases + roleplay)
-export const POST = withRateLimit(handler, 30);
+export const POST = withRateLimit(withAuth(handler), 30);

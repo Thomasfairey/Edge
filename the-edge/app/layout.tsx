@@ -9,10 +9,13 @@
 import type { Metadata, Viewport } from "next";
 import AudioUnlock from "@/app/components/AudioUnlock";
 import "./globals.css";
+import { ServiceWorkerRegistrar } from "./sw-register";
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
   themeColor: "#5A52E0",
 };
@@ -23,7 +26,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "The Edge",
   },
 };
@@ -38,6 +41,7 @@ function LegacySwCleanup() {
     />
   );
 }
+
 export default function RootLayout({
   children,
 }: {
@@ -62,6 +66,7 @@ export default function RootLayout({
           {children}
         </div>
         <LegacySwCleanup />
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );

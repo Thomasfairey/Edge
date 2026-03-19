@@ -27,8 +27,9 @@ import {
 } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateScores, validateText, ValidationError } from "@/lib/validate";
+import { withAuth } from "@/lib/auth";
 
-async function handlePost(req: NextRequest) {
+async function handlePost(req: NextRequest, userId: string | null) {
   const body = await req.json().catch(() => null);
   if (!body || !body.concept || !body.character || !body.scores) {
     return NextResponse.json(
@@ -63,9 +64,9 @@ async function handlePost(req: NextRequest) {
 
   try {
     // Generate the mission
-    const serialisedLedger = await serialiseForPrompt();
+    const serialisedLedger = await serialiseForPrompt(7, userId);
     const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
-    const systemPrompt = `${await buildPersistentContext()}\n\n${missionPrompt}`;
+    const systemPrompt = `${await buildPersistentContext(userId)}\n\n${missionPrompt}`;
 
     const rawMission = await generateResponse(
       systemPrompt,
@@ -88,7 +89,7 @@ async function handlePost(req: NextRequest) {
     }
 
     // Assemble the complete ledger entry
-    const day = (await getLedgerCount()) + 1;
+    const day = (await getLedgerCount(userId)) + 1;
 
     const ledgerEntry: LedgerEntry = {
       day,
@@ -107,12 +108,12 @@ async function handlePost(req: NextRequest) {
     };
 
     // Write to Supabase
-    await appendEntry(ledgerEntry);
+    await appendEntry(ledgerEntry, userId);
     console.log(`[mission] Day ${day} ledger entry written. Mission assigned.`);
 
     // Update spaced repetition data
     try {
-      await updateSREntry(concept.id, scores as unknown as { [key: string]: number });
+      await updateSREntry(concept.id, scores as unknown as { [key: string]: number }, userId);
       console.log(`[mission] SR entry updated for concept: ${concept.id}`);
     } catch (e) {
       console.warn("[mission] Failed to update SR entry:", e);
@@ -128,4 +129,5 @@ async function handlePost(req: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handlePost, 5);
+export const maxDuration = 30;
+export const POST = withRateLimit(withAuth(handlePost), 5);
