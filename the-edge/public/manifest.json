@@ -43,21 +43,5 @@
       "icon": "/icon-192.png",
       "description": "Begin today's influence training session"
     }
-  ],
-  "screenshots": [
-    {
-      "src": "/screenshots/narrow.png",
-      "sizes": "1080x1920",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "The Edge — daily influence training session"
-    },
-    {
-      "src": "/screenshots/wide.png",
-      "sizes": "1920x1080",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "The Edge — desktop dashboard view"
-    }
   ]
 }

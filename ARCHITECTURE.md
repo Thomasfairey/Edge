@@ -95,6 +95,22 @@ Edge/
 
 ---
 
+## Web App vs Backend: Why Both Exist
+
+The repository contains two server-side codebases that serve different deployment targets:
+
+- **`the-edge/`** is the reference **Next.js web app** deployed on **Vercel**. It uses Next.js API routes for all AI calls (lesson, roleplay, debrief, mission, etc.) and serves the full session UI. This is the primary development surface and the fastest way to iterate on the product.
+
+- **`backend/`** is a dedicated **Hono/TypeScript API server** designed for the **native iOS app**. It provides versioned REST endpoints (`/v1/session/*`), Supabase Auth integration, and is intended to run on a long-lived Node.js host. The iOS app communicates exclusively with this backend.
+
+**Why not share a single backend?** The two apps are separately deployable and have different operational requirements (Vercel serverless functions vs. persistent Node.js process). The web app benefits from Next.js SSR, edge middleware, and zero-config deployment. The native app needs a stable, versioned API contract with auth middleware that issues JWTs.
+
+**Content duplication:** Characters (`lib/characters.ts` vs `backend/src/content/characters.ts`) and concepts (`lib/concepts.ts` vs `backend/src/content/concepts.ts`) are intentionally duplicated across both codebases. This is a deliberate trade-off: the two apps may diverge as the iOS app ships features on a different cadence, and coupling them through a shared package would complicate independent deployment.
+
+**Keeping content in sync:** When curriculum changes (new concepts, updated character archetypes, scoring rubric adjustments), both codebases should be updated in the same PR where practical. A quick diff between `the-edge/lib/` and `backend/src/content/` will surface any drift.
+
+---
+
 ## Architecture Decisions
 
 ### 1. Backend: Hono on Node.js

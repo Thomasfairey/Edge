@@ -34,6 +34,7 @@ app.use("*", cors({
     "X-Character",
     "X-RateLimit-Limit",
     "X-RateLimit-Remaining",
+    "X-Request-Id",
   ],
   maxAge: 86400,
 }));

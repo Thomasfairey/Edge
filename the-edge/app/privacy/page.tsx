@@ -72,9 +72,13 @@ export default function PrivacyPolicy() {
           <h2 className="mb-2 text-lg font-semibold">Data retention</h2>
           <p>
             Session data, performance scores, and learning progress are retained for as long
-            as your account exists. If you delete your account, all associated data will be
-            permanently removed within 30 days. Under GDPR, we retain personal data only for
-            as long as necessary to fulfil the purposes for which it was collected.
+            as your account exists. If you request account deletion, we will begin processing
+            your request immediately; all associated data will be permanently and irreversibly
+            removed within 30 days of the request. This 30-day window covers the technical
+            processing time required to purge data from all systems and backups — your data is
+            not retained for any other purpose during this period. Under GDPR, we retain
+            personal data only for as long as necessary to fulfil the purposes for which it
+            was collected.
           </p>
         </section>
 

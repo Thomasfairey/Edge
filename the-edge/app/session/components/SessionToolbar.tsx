@@ -55,6 +55,7 @@ export default function SessionToolbar({
           <button
             onClick={voice.stopListening}
             className="voice-listening flex h-14 w-14 items-center justify-center rounded-full text-white transition-transform active:scale-[0.93]"
+            aria-label="Stop listening"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
               <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
@@ -91,6 +92,7 @@ export default function SessionToolbar({
           <button
             onClick={() => { voice.stopSpeaking(); }}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-[#FDF2F2] text-[#D4908F] transition-transform active:scale-[0.93] voice-speaking"
+            aria-label="Stop speaking"
             title="Stop speaking"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -130,6 +132,7 @@ export default function SessionToolbar({
               onClick={voice.startListening}
               className="touch-target rounded-full"
               style={{ backgroundColor: "var(--accent)", color: "white" }}
+              aria-label="Speak"
               title="Speak"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -146,6 +149,7 @@ export default function SessionToolbar({
               disabled={isStreaming || isLoading || !inputValue.trim()}
               className="touch-target rounded-full disabled:opacity-40"
               style={{ backgroundColor: "var(--accent)", color: "white" }}
+              aria-label="Send message"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                 <path d="M3.105 2.288a.75.75 0 0 0-.826.95l1.414 4.926A1.5 1.5 0 0 0 5.135 9.25h6.115a.75.75 0 0 1 0 1.5H5.135a1.5 1.5 0 0 0-1.442 1.086l-1.414 4.926a.75.75 0 0 0 .826.95l14.095-5.637a.75.75 0 0 0 0-1.4L3.105 2.289Z" />
@@ -174,6 +178,7 @@ export default function SessionToolbar({
                   color: voice.voiceEnabled ? "white" : "var(--text-secondary)",
                   boxShadow: voice.voiceEnabled ? "var(--shadow-accent)" : "none",
                 }}
+                aria-label={voice.voiceEnabled ? "Disable voice mode" : "Enable voice mode"}
                 title={voice.voiceEnabled ? "Voice on" : "Voice off"}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -192,7 +197,7 @@ export default function SessionToolbar({
             </div>
           )}
           <div className="flex flex-col items-center gap-1">
-            <button onClick={handleCoach} className="touch-target rounded-full text-lead" style={{ backgroundColor: "var(--coach-bg)" }} title="Coach">
+            <button onClick={handleCoach} className="touch-target rounded-full text-lead" style={{ backgroundColor: "var(--coach-bg)" }} aria-label="Get a hint" title="Coach">
               &#128161;
             </button>
             <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Hint</span>
@@ -202,13 +207,13 @@ export default function SessionToolbar({
         {/* Center: Session controls */}
         <div className="flex items-center gap-3">
           <div className="flex flex-col items-center gap-1">
-            <button onClick={handleReset} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} title="Reset">
+            <button onClick={handleReset} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} aria-label="Reset roleplay" title="Reset">
               &#128260;
             </button>
             <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Reset</span>
           </div>
           <div className="flex flex-col items-center gap-1">
-            <button onClick={handleSkip} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} title="Skip">
+            <button onClick={handleSkip} className="touch-target rounded-full text-body" style={{ backgroundColor: "var(--border)" }} aria-label="Skip roleplay" title="Skip">
               &#9197;
             </button>
             <span className="text-caption" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Skip</span>
@@ -221,6 +226,7 @@ export default function SessionToolbar({
             onClick={handleDone}
             className="flex h-[52px] w-[52px] items-center justify-center rounded-full text-lead font-bold"
             style={{ backgroundColor: "var(--score-high)", color: "white", boxShadow: "0 3px 12px rgba(107,201,160,0.3)" }}
+            aria-label="Finish roleplay"
             title="Done"
           >
             &#10003;
