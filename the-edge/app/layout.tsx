@@ -27,7 +27,8 @@ export const metadata: Metadata = {
   },
 };
 
-function ServiceWorkerScript() {
+/** Clean up legacy service workers and stale caches from earlier PWA builds. */
+function LegacySwCleanup() {
   return (
     <script
       dangerouslySetInnerHTML={{
@@ -58,6 +59,7 @@ export default function RootLayout({
         <div id="main-content">
           {children}
         </div>
+        <LegacySwCleanup />
       </body>
     </html>
   );

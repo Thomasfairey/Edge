@@ -12,15 +12,18 @@ interface RateLimitEntry {
 
 const store = new Map<string, RateLimitEntry>();
 const MAX_STORE_SIZE = 10_000; // prevent unbounded memory growth
+let lastCleanup = Date.now();
 
-// Cleanup old entries every 5 minutes
-setInterval(() => {
+/** Cleanup stale entries lazily on each check — safe for serverless */
+function cleanupIfNeeded() {
   const now = Date.now();
+  if (now - lastCleanup < 60_000) return; // At most once per minute
+  lastCleanup = now;
   for (const [key, entry] of store) {
     entry.timestamps = entry.timestamps.filter((t) => now - t < 120_000);
     if (entry.timestamps.length === 0) store.delete(key);
   }
-}, 300_000);
+}
 
 /**
  * Extract the most trustworthy client IP.
@@ -48,6 +51,7 @@ export function checkRateLimit(
   limit: number,
   windowMs: number = 60_000
 ): { success: boolean; remaining: number; retryAfter: number } {
+  cleanupIfNeeded();
   const now = Date.now();
 
   // Evict oldest entry if store at capacity

@@ -149,8 +149,20 @@ export default function Home() {
   const router = useRouter();
   const [status, setStatus] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [online, setOnline] = useState(true);
-  const [hasIncompleteSession, setHasIncompleteSession] = useState(false);
+  const [online, setOnline] = useState(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  const [hasIncompleteSession, setHasIncompleteSession] = useState(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(SESSION_STORAGE_KEY) : null;
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) return true;
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch { /* empty */ }
+    return false;
+  });
   const [expandedDim, setExpandedDim] = useState<string | null>(null);
   const expandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);

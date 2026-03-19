@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { getLedger, getLastEntry, getLedgerCount } from "@/lib/ledger";
 import { getSRSummary } from "@/lib/spaced-repetition";
-import { SessionScores } from "@/lib/types";
+import type { SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 
 /**
