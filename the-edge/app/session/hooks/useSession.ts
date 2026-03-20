@@ -99,13 +99,17 @@ export function useSession() {
   const [sessionLocked, setSessionLocked] = useState(false);
 
   useEffect(() => {
-    const channel = new BroadcastChannel('edge-session-lock');
-    channel.onmessage = (event) => {
-      if (event.data?.type === 'session-claimed' && event.data.tabId !== tabId.current) {
-        setSessionLocked(true);
-      }
-    };
-    return () => { channel.close(); };
+    try {
+      const channel = new BroadcastChannel('edge-session-lock');
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'session-claimed' && event.data.tabId !== tabId.current) {
+          setSessionLocked(true);
+        }
+      };
+      return () => { channel.close(); };
+    } catch {
+      // BroadcastChannel not available (e.g. some WebView contexts) — cross-tab locking disabled
+    }
   }, []);
 
   // Session state
@@ -240,6 +244,12 @@ export function useSession() {
     clearMicError: voice.clearMicError,
   };
 
+  // Stable refs for voice functions — avoids stale closures in useEffect deps
+  const voiceSpeakRef = useRef(voice.speak);
+  const voiceStartListeningRef = useRef(voice.startListening);
+  voiceSpeakRef.current = voice.speak;
+  voiceStartListeningRef.current = voice.startListening;
+
   // Lesson card advance ref (passed to LessonPhase component)
   const lessonCardAdvanceRef = useRef<((card: number) => void) | null>(null);
 
@@ -307,6 +317,7 @@ export function useSession() {
   // =========================================================================
 
   async function fetchLesson() {
+    if (sessionLocked) { setError("Session is active in another tab."); return; }
     setIsLoading(true);
     setError(null);
 
@@ -495,6 +506,7 @@ export function useSession() {
   }
 
   async function sendRoleplayMessage(userMessage: string) {
+    if (sessionLocked) { setError("Session is active in another tab."); return; }
     if (!concept || !character || isStreaming || submittingRef.current) return;
     submittingRef.current = true;
     setPendingRetry(null);
@@ -543,7 +555,9 @@ export function useSession() {
   }
 
   async function handleCoach() {
+    if (sessionLocked) { setError("Session is active in another tab."); return; }
     if (!concept || roleplayTranscript.length === 0) return;
+    const conceptSnapshot = concept.id;
     setCoachAdvice(null); setCoachLoading(true);
     setCommandsUsed((p) => p.includes("/coach") ? p : [...p, "/coach"]);
     haptic();
@@ -555,6 +569,8 @@ export function useSession() {
       });
       if (!res.ok) throw new Error("API failed");
       const data = await res.json();
+      // Discard stale advice if concept changed during the request
+      if (concept?.id !== conceptSnapshot) { setCoachLoading(false); return; }
       setCoachAdvice(data.advice);
     } catch { setCoachAdvice("Coach unavailable right now. Trust your instincts."); }
     finally { setCoachLoading(false); }
@@ -611,6 +627,7 @@ export function useSession() {
   // =========================================================================
 
   async function fetchDebrief() {
+    if (sessionLocked) { setError("Session is active in another tab."); return; }
     if (!concept || !character) return;
     setIsLoading(true); setError(null);
     try {
@@ -673,6 +690,7 @@ export function useSession() {
   }
 
   async function submitCheckin(outcomeType: "completed" | "tried" | "skipped", userOutcome?: string) {
+    if (sessionLocked) { setError("Session is active in another tab."); return; }
     if (!lastMission || submittingRef.current) return;
     submittingRef.current = true;
     setIsLoading(true);
@@ -700,6 +718,7 @@ export function useSession() {
   }
 
   async function fetchMission() {
+    if (sessionLocked) { setError("Session is active in another tab."); return; }
     if (!concept || !character || !scores || submittingRef.current) return;
     submittingRef.current = true;
     setIsLoading(true); setError(null);
@@ -815,6 +834,8 @@ export function useSession() {
   // =========================================================================
 
   // Process auto-submit after voice transcript arrives
+  // Note: handler functions (handleRoleplayInput, submitRetrievalResponse, submitCheckin) are
+  // intentionally excluded from deps — they are called imperatively via ref guard, not reactively.
   useEffect(() => {
     if (voiceAutoSubmitRef.current && !isStreaming && !isLoading) {
       const text = voiceAutoSubmitRef.current;
@@ -833,7 +854,7 @@ export function useSession() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputValue, isStreaming, isLoading, currentPhase, retrievalQuestion, retrievalResponse, checkinPillSelected, checkinDone]);
+  }, [inputValue, isStreaming, isLoading, currentPhase, onboardingNeeded, onboardingStep, retrievalQuestion, retrievalResponse, checkinPillSelected, checkinDone]);
 
   // Auto-speak AI roleplay responses when voice mode is on
   const lastSpokenIndex = useRef(-1);
@@ -846,10 +867,9 @@ export function useSession() {
       roleplayTranscript.length - 1 > lastSpokenIndex.current
     ) {
       lastSpokenIndex.current = roleplayTranscript.length - 1;
-      voice.speak(lastMsg.content);
+      voiceSpeakRef.current(lastMsg.content);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roleplayTranscript, currentPhase, voice.voiceEnabled]);
+  }, [roleplayTranscript, currentPhase, voice.voiceEnabled, voice.ttsSupported]);
 
   // Auto-speak lesson content when voice mode is on
   const lessonSpokenRef = useRef<string | null>(null);
@@ -875,12 +895,11 @@ export function useSession() {
         } else {
           voiceSpeakEndActionRef.current = null;
         }
-        voice.speak(cardText, MENTOR_VOICE_ID);
+        voiceSpeakRef.current(cardText, MENTOR_VOICE_ID);
       }
     }
 
     speakNextCard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonContent, currentPhase, voice.voiceEnabled, isLoading, lessonStreaming]);
 
   // Auto-speak retrieval question
@@ -889,9 +908,8 @@ export function useSession() {
     if (!voice.voiceEnabled || currentPhase !== "retrieval") return;
     if (!retrievalQuestion || retrievalSpokenRef.current === retrievalQuestion) return;
     retrievalSpokenRef.current = retrievalQuestion;
-    voiceSpeakEndActionRef.current = () => voice.startListening();
-    voice.speak(retrievalQuestion, MENTOR_VOICE_ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    voiceSpeakEndActionRef.current = () => voiceStartListeningRef.current();
+    voiceSpeakRef.current(retrievalQuestion, MENTOR_VOICE_ID);
   }, [retrievalQuestion, currentPhase, voice.voiceEnabled]);
 
   // Auto-speak retrieval response (feedback)
@@ -900,8 +918,7 @@ export function useSession() {
     if (!voice.voiceEnabled || currentPhase !== "retrieval") return;
     if (!retrievalResponse || retrievalFeedbackSpokenRef.current === retrievalResponse) return;
     retrievalFeedbackSpokenRef.current = retrievalResponse;
-    voice.speak(retrievalResponse, MENTOR_VOICE_ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    voiceSpeakRef.current(retrievalResponse, MENTOR_VOICE_ID);
   }, [retrievalResponse, currentPhase, voice.voiceEnabled]);
 
   // Auto-speak debrief content
@@ -910,8 +927,7 @@ export function useSession() {
     if (!voice.voiceEnabled || currentPhase !== "debrief") return;
     if (!debriefContent || isLoading || debriefSpokenRef.current === debriefContent) return;
     debriefSpokenRef.current = debriefContent;
-    voice.speak(debriefContent, MENTOR_VOICE_ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    voiceSpeakRef.current(debriefContent, MENTOR_VOICE_ID);
   }, [debriefContent, currentPhase, voice.voiceEnabled, isLoading]);
 
   // Auto-speak mission content
@@ -921,8 +937,7 @@ export function useSession() {
     if (!mission || isLoading || missionSpokenRef.current === mission) return;
     missionSpokenRef.current = mission;
     const fullText = mission + (rationale ? ". " + rationale : "");
-    voice.speak(fullText, MENTOR_VOICE_ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    voiceSpeakRef.current(fullText, MENTOR_VOICE_ID);
   }, [mission, rationale, currentPhase, voice.voiceEnabled, isLoading]);
 
   // Auto-speak check-in response
@@ -931,8 +946,7 @@ export function useSession() {
     if (!voice.voiceEnabled || currentPhase !== "mission") return;
     if (!checkinResponse || checkinResponseSpokenRef.current === checkinResponse) return;
     checkinResponseSpokenRef.current = checkinResponse;
-    voice.speak(checkinResponse, MENTOR_VOICE_ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    voiceSpeakRef.current(checkinResponse, MENTOR_VOICE_ID);
   }, [checkinResponse, currentPhase, voice.voiceEnabled]);
 
   // Auto-start listening after TTS finishes (conversational phases)
@@ -947,12 +961,11 @@ export function useSession() {
       !isStreaming &&
       !isLoading
     ) {
-      const t = setTimeout(() => voice.startListening(), 400);
+      const t = setTimeout(() => voiceStartListeningRef.current(), 400);
       prevVoiceState.current = voice.state;
       return () => clearTimeout(t);
     }
     prevVoiceState.current = voice.state;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.state, voice.voiceEnabled, currentPhase, isStreaming, isLoading]);
 
   // Auto-narrate scenario context when entering roleplay
@@ -965,8 +978,7 @@ export function useSession() {
     const intro = character
       ? `You're about to speak with ${character.name}. ${cleanForSpeech(scenarioContext)}`
       : cleanForSpeech(scenarioContext);
-    voice.speak(intro, MENTOR_VOICE_ID);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    voiceSpeakRef.current(intro, MENTOR_VOICE_ID);
   }, [scenarioContext, currentPhase, voice.voiceEnabled, roleplayTranscript.length, character]);
 
   // =========================================================================

@@ -131,7 +131,7 @@ export function streamResponse(
   systemPrompt: string,
   messages: ChatMessage[],
   config: PhaseConfig,
-  onComplete?: (fullText: string) => void
+  onComplete?: (fullText: string) => void | Promise<void>
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
@@ -161,7 +161,7 @@ export function streamResponse(
 
         // Fire post-stream callback (e.g. to persist the full response)
         if (onComplete) {
-          try { onComplete(fullText); } catch (e) {
+          try { await onComplete(fullText); } catch (e) {
             console.log(JSON.stringify({ level: "error", service: "anthropic", method: "stream_onComplete", message: e instanceof Error ? e.message : "Unknown", timestamp: new Date().toISOString() }));
           }
         }

@@ -391,18 +391,16 @@ ${difficultyModifier(sessionDifficulty)}
   // Append user message to transcript immediately
   const updatedTranscript = [...transcript, { role: "user", content: message }];
 
-  const stream = streamResponse(roleplayPrompt, messages, PHASE_CONFIG.roleplay, (fullAssistantResponse) => {
+  const stream = streamResponse(roleplayPrompt, messages, PHASE_CONFIG.roleplay, async (fullAssistantResponse) => {
     // Persist both user message AND assistant response to session transcript
     const completeTranscript = [...updatedTranscript, { role: "assistant", content: fullAssistantResponse }];
-    db.from("sessions")
+    const { error: updateError } = await db.from("sessions")
       .update({ roleplay_transcript: completeTranscript })
       .eq("id", session_id)
-      .eq("user_id", user.id)
-      .then(({ error: updateError }) => {
-        if (updateError) {
-          console.log(JSON.stringify({ level: "error", service: "session", operation: "transcript_persist", message: updateError.message, timestamp: new Date().toISOString() }));
-        }
-      });
+      .eq("user_id", user.id);
+    if (updateError) {
+      console.log(JSON.stringify({ level: "error", service: "session", operation: "transcript_persist", message: updateError.message, timestamp: new Date().toISOString() }));
+    }
   });
 
   // Save the user message immediately (assistant response saved in onComplete callback above)

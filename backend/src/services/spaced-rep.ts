@@ -82,7 +82,7 @@ export async function updateSREntry(
     const next = new Date(today);
     next.setDate(next.getDate() + interval);
 
-    await db
+    const { data: updated, error: updateError } = await db
       .from("spaced_repetition")
       .update({
         last_practiced: today,
@@ -93,7 +93,35 @@ export async function updateSREntry(
         next_review: next.toISOString().split("T")[0],
       })
       .eq("user_id", userId)
-      .eq("concept_id", conceptId);
+      .eq("concept_id", conceptId)
+      .eq("practice_count", row.practice_count) // Optimistic lock: only update if unchanged
+      .select("id");
+
+    // If optimistic lock failed (concurrent update), re-read and retry once
+    if (!updateError && (!updated || updated.length === 0)) {
+      console.log(JSON.stringify({ level: "warn", service: "spaced-rep", operation: "update_retry", conceptId, timestamp: new Date().toISOString() }));
+      const { data: fresh } = await db
+        .from("spaced_repetition")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("concept_id", conceptId)
+        .limit(1);
+      if (fresh && fresh.length > 0) {
+        const freshRow = fresh[0] as SRRow;
+        await db
+          .from("spaced_repetition")
+          .update({
+            last_practiced: today,
+            practice_count: freshRow.practice_count + 1,
+            last_score_avg: Math.round(avg * 10) / 10,
+            ease_factor: Math.round(easeFactor * 100) / 100,
+            interval,
+            next_review: next.toISOString().split("T")[0],
+          })
+          .eq("user_id", userId)
+          .eq("concept_id", conceptId);
+      }
+    }
   } else {
     const initialInterval = avg >= 4 ? 7 : avg >= 3 ? 3 : 1;
     const next = new Date(today);
