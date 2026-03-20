@@ -17,6 +17,7 @@ import {
 import { useVoice } from "@/app/hooks/useVoice";
 import { haptic, cleanForSpeech, splitLessonSections } from "../components/types";
 import type { VoiceProps } from "../components/types";
+import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -52,11 +53,12 @@ async function fetchWithRetry(
   delay = 3000,
   onAttempt?: (attempt: number) => void
 ): Promise<Response> {
+  const { fetchWithRequestId: fetchR } = await import("@/lib/fetch-with-request-id");
   let lastError: Error | null = null;
   for (let i = 1; i <= maxRetries; i++) {
     try {
       onAttempt?.(i);
-      const res = await fetch(url, options);
+      const res = await fetchR(url, options);
       if (res.ok) return res;
       throw new Error(`HTTP ${res.status}`);
     } catch (e) {
@@ -104,6 +106,9 @@ export function useSession() {
       channel.onmessage = (event) => {
         if (event.data?.type === 'session-claimed' && event.data.tabId !== tabId.current) {
           setSessionLocked(true);
+          // Cancel any in-flight requests from this tab
+          abortRef.current?.abort();
+          abortRef.current = new AbortController();
         }
       };
       return () => { channel.close(); };
@@ -216,12 +221,18 @@ export function useSession() {
   }, []);
 
   const voiceAutoSubmitRef = useRef<string | null>(null);
+  const voiceAutoSubmitTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const voice = useVoice({
     onTranscript: useCallback((text: string) => {
       if (text.trim()) {
         setInputValue(text);
         voiceAutoSubmitRef.current = text.trim();
+        // Clear stale auto-submit after 10s to prevent ghost submissions
+        if (voiceAutoSubmitTimeout.current) clearTimeout(voiceAutoSubmitTimeout.current);
+        voiceAutoSubmitTimeout.current = setTimeout(() => {
+          voiceAutoSubmitRef.current = null;
+        }, 10000);
       }
     }, []),
     onSpeakEnd: handleSpeakEnd,
@@ -276,6 +287,9 @@ export function useSession() {
     try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
   }
 
+  // saveSession is a closure that reads all state at call time. Adding it as a dep would
+  // cause infinite loops (it's redefined every render). Instead we list the specific state
+  // values whose changes should trigger a save.
   useEffect(() => {
     if (!isLoading) saveSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -347,7 +361,7 @@ export function useSession() {
     } catch {}
 
     try {
-      const res = await fetch("/api/lesson", {
+      const res = await fetchWithRequestId("/api/lesson", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stream: true }),
@@ -459,7 +473,7 @@ export function useSession() {
     submittingRef.current = true;
     setIsLoading(true);
     try {
-      const res = await fetch("/api/retrieval-bridge", {
+      const res = await fetchWithRequestId("/api/retrieval-bridge", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, userResponse }),
         signal: AbortSignal.timeout(30000),
@@ -488,7 +502,7 @@ export function useSession() {
     advancePhase("retrieval", "roleplay");
     setIsLoading(true);
     try {
-      const res = await fetch("/api/roleplay", {
+      const res = await fetchWithRequestId("/api/roleplay", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character: char, transcript: [], userMessage: null }),
         signal: AbortSignal.timeout(30000),
@@ -516,7 +530,7 @@ export function useSession() {
     setInputValue("");
     haptic();
     try {
-      const res = await fetch("/api/roleplay", {
+      const res = await fetchWithRequestId("/api/roleplay", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character, transcript: updated, userMessage: null, scenarioContext }),
         signal: AbortSignal.timeout(30000),
@@ -562,7 +576,7 @@ export function useSession() {
     setCommandsUsed((p) => p.includes("/coach") ? p : [...p, "/coach"]);
     haptic();
     try {
-      const res = await fetch("/api/coach", {
+      const res = await fetchWithRequestId("/api/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transcript: roleplayTranscript, concept }),
         signal: AbortSignal.timeout(30000),
@@ -589,7 +603,7 @@ export function useSession() {
     if (!concept || !character) return;
     setIsLoading(true);
     try {
-      const res = await fetch("/api/roleplay", {
+      const res = await fetchWithRequestId("/api/roleplay", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concept, character, transcript: [], userMessage: null }),
         signal: AbortSignal.timeout(30000),
@@ -697,7 +711,7 @@ export function useSession() {
     setInputValue("");
     if (userOutcome) setCheckinUserText(userOutcome);
     try {
-      const res = await fetch("/api/checkin", {
+      const res = await fetchWithRequestId("/api/checkin", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ previousMission: lastMission, outcomeType, userOutcome }),
         signal: AbortSignal.timeout(30000),
@@ -810,7 +824,7 @@ export function useSession() {
   async function completeOnboarding(feedbackStyle: "direct" | "balanced" | "supportive") {
     setOnboardingStep("saving");
     try {
-      const res = await fetch("/api/profile", {
+      const res = await fetchWithRequestId("/api/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -853,6 +867,9 @@ export function useSession() {
         setInputValue("");
       }
     }
+    // Handler functions (handleRoleplayInput, submitRetrievalResponse, submitCheckin) are
+    // intentionally excluded — they're called imperatively via the voiceAutoSubmitRef guard,
+    // not reactively. Including them would trigger re-renders without purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputValue, isStreaming, isLoading, currentPhase, onboardingNeeded, onboardingStep, retrievalQuestion, retrievalResponse, checkinPillSelected, checkinDone]);
 

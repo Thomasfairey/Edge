@@ -127,17 +127,30 @@ export async function incrementSessionCount(
       .single();
 
     if (existing) {
-      const { error: updateError } = await db
-        .from("session_usage")
-        .update({ session_count: existing.session_count + 1 })
-        .eq("user_id", userId)
-        .eq("week_start", weekStartStr)
-        .eq("session_count", existing.session_count); // optimistic lock
+      // Retry loop with optimistic lock — handles concurrent session starts
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const current = attempt === 0
+          ? existing
+          : (await db.from("session_usage").select("session_count").eq("user_id", userId).eq("week_start", weekStartStr).single()).data;
 
-      if (updateError) {
-        throw new Error(`Failed to increment session count: ${updateError.message}`);
+        if (!current) break;
+
+        const { data: updated, error: updateError } = await db
+          .from("session_usage")
+          .update({ session_count: current.session_count + 1 })
+          .eq("user_id", userId)
+          .eq("week_start", weekStartStr)
+          .eq("session_count", current.session_count) // optimistic lock
+          .select("session_count")
+          .single();
+
+        if (updateError) {
+          throw new Error(`Failed to increment session count: ${updateError.message}`);
+        }
+        if (updated) return updated.session_count;
+        // Lock failed (concurrent update) — retry
       }
-      return existing.session_count + 1;
+      throw new Error("Failed to increment session count after 3 retries. Concurrent conflict.");
     } else {
       await db.from("session_usage").insert({
         user_id: userId,

@@ -107,14 +107,9 @@ subscription.get("/status", rateLimit(20), async (c) => {
     });
   }
 
-  const isExpired =
-    profile.subscription_tier === "pro" &&
-    profile.subscription_expires_at &&
-    new Date(profile.subscription_expires_at) < new Date();
-
-  // Auto-downgrade expired subscriptions
-  if (isExpired) {
-    await adminClient
+  // Atomic auto-downgrade: expiry check + update in a single SQL WHERE clause
+  if (profile.subscription_tier === "pro" && profile.subscription_expires_at) {
+    const { data: downgraded } = await adminClient
       .from("user_profiles")
       .update({
         subscription_tier: "free",
@@ -122,12 +117,16 @@ subscription.get("/status", rateLimit(20), async (c) => {
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id)
-      .eq("subscription_tier", "pro"); // Conditional update prevents race
+      .eq("subscription_tier", "pro")
+      .lt("subscription_expires_at", new Date().toISOString())
+      .select("id");
 
-    return c.json({
-      success: true,
-      data: { tier: "free", expires_at: null, is_active: true },
-    });
+    if (downgraded && downgraded.length > 0) {
+      return c.json({
+        success: true,
+        data: { tier: "free", expires_at: null, is_active: true },
+      });
+    }
   }
 
   return c.json({

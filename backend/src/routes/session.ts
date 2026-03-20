@@ -253,12 +253,15 @@ One example of the same technique being used AGAINST someone. Show how to recogn
     lessonPrompt,
     [{ role: "user", content: `Teach me about ${concept.name}.` }],
     PHASE_CONFIG.lesson,
-    () => {
-      // Update session phase after streaming completes
-      db.from("sessions")
-        .update({ phase: "roleplay" })
+    async (fullLessonText) => {
+      // Update session phase and persist lesson after streaming completes
+      const { error: phaseErr } = await db.from("sessions")
+        .update({ phase: "retrieval", lesson_content: fullLessonText })
         .eq("id", sessionId)
         .eq("user_id", user.id);
+      if (phaseErr) {
+        console.log(JSON.stringify({ level: "error", service: "session", operation: "lesson_phase_update", message: phaseErr.message, timestamp: new Date().toISOString() }));
+      }
     }
   );
 
@@ -455,26 +458,35 @@ Be direct. No preamble. Under 150 words total.`;
     PHASE_CONFIG.coach
   );
 
-  // Fetch current coach_messages and commands_used
-  const { data: currentSession } = await db
-    .from("sessions")
-    .select("coach_messages, commands_used")
-    .eq("id", session_id)
-    .eq("user_id", user.id)
-    .single();
+  // Atomic append using raw SQL to avoid read-then-write race between concurrent /coach calls
+  const { error: appendError } = await db.rpc("append_coach_message", {
+    p_session_id: session_id,
+    p_user_id: user.id,
+    p_message: advice,
+    p_command: "/coach",
+  });
 
-  const existingCoach = (currentSession?.coach_messages as string[]) ?? [];
-  const existingCommands = (currentSession?.commands_used as string[]) ?? [];
+  // Fallback to read-then-write if RPC not available (e.g. function not yet deployed)
+  if (appendError) {
+    const { data: currentSession } = await db
+      .from("sessions")
+      .select("coach_messages, commands_used")
+      .eq("id", session_id)
+      .eq("user_id", user.id)
+      .single();
 
-  // Append to existing arrays instead of overwriting
-  await db
-    .from("sessions")
-    .update({
-      coach_messages: [...existingCoach, advice],
-      commands_used: [...new Set([...existingCommands, "/coach"])],
-    })
-    .eq("id", session_id)
-    .eq("user_id", user.id);
+    const existingCoach = (currentSession?.coach_messages as string[]) ?? [];
+    const existingCommands = (currentSession?.commands_used as string[]) ?? [];
+
+    await db
+      .from("sessions")
+      .update({
+        coach_messages: [...existingCoach, advice],
+        commands_used: [...new Set([...existingCommands, "/coach"])],
+      })
+      .eq("id", session_id)
+      .eq("user_id", user.id);
+  }
 
   return c.json({ success: true, data: { advice } });
 });
