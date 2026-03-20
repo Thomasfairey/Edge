@@ -70,8 +70,10 @@ export async function updateSREntry(
     if (avg >= 4) {
       easeFactor = Math.min(easeFactor * 1.3, 5);
       interval = Math.round(interval * easeFactor);
+      interval = Math.max(1, interval);
     } else if (avg >= 3) {
       interval = Math.round(interval * easeFactor);
+      interval = Math.max(1, interval);
     } else {
       easeFactor = Math.max(easeFactor * 0.8, 1.3);
       interval = 1;

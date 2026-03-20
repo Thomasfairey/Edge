@@ -83,11 +83,17 @@ export async function selectConcept(
   return { concept: selectNewConcept(completedIds), isReview: false };
 }
 
-function selectNewConcept(completedIds: string[]): Concept {
+function selectNewConcept(completedIds: string[], dueReviewIds?: string[]): Concept {
   const completedSet = new Set(completedIds);
   const available = CONCEPTS.filter((c) => !completedSet.has(c.id));
 
   if (available.length === 0) {
+    // All concepts completed — prefer the one due for review soonest
+    if (dueReviewIds && dueReviewIds.length > 0) {
+      const reviewConcept = CONCEPTS.find((c) => c.id === dueReviewIds[0]);
+      if (reviewConcept) return reviewConcept;
+    }
+    // Otherwise pick random (SR system will handle prioritization on next session)
     return CONCEPTS[Math.floor(Math.random() * CONCEPTS.length)];
   }
 

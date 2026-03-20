@@ -146,7 +146,10 @@ const DOMAIN_CHARACTER_MAP: Record<ConceptDomain, string[]> = {
 };
 
 export function selectCharacter(concept: Concept): CharacterArchetype {
-  const appropriateIds = DOMAIN_CHARACTER_MAP[concept.domain];
+  const appropriateIds = DOMAIN_CHARACTER_MAP[concept.domain] ?? [];
+  if (appropriateIds.length === 0) {
+    return CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+  }
   const selectedId = appropriateIds[Math.floor(Math.random() * appropriateIds.length)];
   const character = CHARACTERS.find((c) => c.id === selectedId);
   return character ?? CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];

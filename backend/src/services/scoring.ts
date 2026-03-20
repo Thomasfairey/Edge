@@ -77,7 +77,7 @@ export function parseScores(text: string): SessionScores | null {
   const scores: Partial<SessionScores> = {};
 
   for (const dim of SCORE_DIMENSIONS) {
-    const match = scoresBlock.match(new RegExp(`${dim}:\\s*(\\d)`));
+    const match = scoresBlock.match(new RegExp(`${dim}:\\s*(\\d+)`));
     if (match) {
       const value = parseInt(match[1], 10);
       if (value >= 1 && value <= 5) {

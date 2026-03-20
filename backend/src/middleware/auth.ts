@@ -4,7 +4,7 @@
 
 import { Context, Next } from "hono";
 import { adminClient } from "../db/client.js";
-import { AuthError } from "../types/errors.js";
+import { AppError, AuthError } from "../types/errors.js";
 import type { AppEnv } from "../types/env.js";
 
 export interface AuthUser {
@@ -29,7 +29,15 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     error,
   } = await adminClient.auth.getUser(token);
 
-  if (error || !user) {
+  if (error) {
+    // Distinguish auth failures from service outages
+    if (error.status && error.status >= 500) {
+      throw new AppError("SERVICE_UNAVAILABLE", "Authentication service temporarily unavailable", 503);
+    }
+    throw new AuthError("Invalid or expired token");
+  }
+
+  if (!user) {
     throw new AuthError("Invalid or expired token");
   }
 

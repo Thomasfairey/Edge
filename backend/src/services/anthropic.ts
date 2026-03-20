@@ -130,7 +130,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export function streamResponse(
   systemPrompt: string,
   messages: ChatMessage[],
-  config: PhaseConfig
+  config: PhaseConfig,
+  onComplete?: (fullText: string) => void
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
@@ -143,6 +144,7 @@ export function streamResponse(
         );
 
         let tokenCount = 0;
+        let fullText = "";
 
         for await (const event of stream) {
           if (
@@ -150,17 +152,26 @@ export function streamResponse(
             event.delta.type === "text_delta"
           ) {
             tokenCount += Math.ceil(event.delta.text.length / 4);
+            fullText += event.delta.text;
             controller.enqueue(encoder.encode(event.delta.text));
           }
         }
 
         console.log(JSON.stringify({ level: "info", service: "anthropic", method: "stream", model: config.model, tokens: tokenCount, timestamp: new Date().toISOString() }));
+
+        // Fire post-stream callback (e.g. to persist the full response)
+        if (onComplete) {
+          try { onComplete(fullText); } catch (e) {
+            console.log(JSON.stringify({ level: "error", service: "anthropic", method: "stream_onComplete", message: e instanceof Error ? e.message : "Unknown", timestamp: new Date().toISOString() }));
+          }
+        }
+
         controller.close();
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";
         console.log(JSON.stringify({ level: "error", service: "anthropic", method: "stream", message, timestamp: new Date().toISOString() }));
         controller.enqueue(
-          encoder.encode(`\n\n[System: Response generation failed — ${message}. Please try again.]`)
+          encoder.encode("\n\n[System: Response generation failed. Please try again.]")
         );
         controller.close();
       }

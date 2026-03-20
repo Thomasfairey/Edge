@@ -11,6 +11,7 @@ interface RateLimitEntry {
   timestamps: number[];
 }
 
+const MAX_STORE_SIZE = 10_000; // Prevent unbounded memory growth
 const store = new Map<string, RateLimitEntry>();
 
 // Cleanup every 5 minutes
@@ -19,6 +20,15 @@ setInterval(() => {
   for (const [key, entry] of store) {
     entry.timestamps = entry.timestamps.filter((t) => now - t < 120_000);
     if (entry.timestamps.length === 0) store.delete(key);
+  }
+  // Evict oldest entries if store exceeds max size
+  if (store.size > MAX_STORE_SIZE) {
+    const toDelete = store.size - MAX_STORE_SIZE;
+    const iter = store.keys();
+    for (let i = 0; i < toDelete; i++) {
+      const key = iter.next().value;
+      if (key) store.delete(key);
+    }
   }
 }, 300_000);
 

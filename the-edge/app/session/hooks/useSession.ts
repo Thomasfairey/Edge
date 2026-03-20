@@ -94,6 +94,20 @@ export function useSession() {
   // State
   // =========================================================================
 
+  // Cross-tab session lock
+  const tabId = useRef(crypto.randomUUID());
+  const [sessionLocked, setSessionLocked] = useState(false);
+
+  useEffect(() => {
+    const channel = new BroadcastChannel('edge-session-lock');
+    channel.onmessage = (event) => {
+      if (event.data?.type === 'session-claimed' && event.data.tabId !== tabId.current) {
+        setSessionLocked(true);
+      }
+    };
+    return () => { channel.close(); };
+  }, []);
+
   // Session state
   const [currentPhase, setCurrentPhase] = useState<SessionPhase>("lesson");
   const [completedPhases, setCompletedPhases] = useState<Set<SessionPhase>>(new Set());
@@ -156,6 +170,12 @@ export function useSession() {
   const [onboardingStep, setOnboardingStep] = useState<"bio" | "style" | "saving">("bio");
   const [onboardingBio, setOnboardingBio] = useState("");
   const [onboardingDisplayName, setOnboardingDisplayName] = useState("");
+
+  // Abort in-flight requests on unmount
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, []);
 
   // UI refs & state
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -249,13 +269,26 @@ export function useSession() {
   useEffect(() => {
     if (!isLoading) saveSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPhase, roleplayTranscript.length, turnCount, debriefContent, scores, mission, checkinDone, coachAdvice]);
+  }, [currentPhase, lessonContent, roleplayTranscript.length, turnCount, debriefContent, scores, mission, checkinDone, coachAdvice, behavioralWeaknessSummary, keyMoment, rationale, isLoading]);
 
   // =========================================================================
   // Phase transition
   // =========================================================================
 
+  const VALID_TRANSITIONS: Record<string, string[]> = {
+    lesson: ["retrieval"],
+    retrieval: ["roleplay"],
+    roleplay: ["debrief"],
+    debrief: ["mission"],
+    mission: [],
+  };
+
   function advancePhase(from: SessionPhase, to: SessionPhase) {
+    const allowed = VALID_TRANSITIONS[from];
+    if (allowed && !allowed.includes(to)) {
+      console.warn(`[session] Invalid phase transition: ${from} → ${to}`);
+      return; // Block invalid transition
+    }
     voice.stopSpeaking();
     setPhaseAnimation("exit");
     setInputValue("");
@@ -276,6 +309,14 @@ export function useSession() {
   async function fetchLesson() {
     setIsLoading(true);
     setError(null);
+
+    // Claim session across tabs
+    try {
+      const channel = new BroadcastChannel('edge-session-lock');
+      channel.postMessage({ type: 'session-claimed', tabId: tabId.current });
+      channel.close();
+    } catch {}
+
 
     try {
       const cached = localStorage.getItem("edge-pregenerated-lesson");
@@ -324,16 +365,27 @@ export function useSession() {
       setLessonStreaming(true);
       setIsLoading(false);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        fullText += decoder.decode(value, { stream: true });
-        setLessonContent(fullText);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fullText += decoder.decode(value, { stream: true });
+          setLessonContent(fullText);
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        throw e;
       }
 
       setLessonContent(fullText);
       setLessonStreaming(false);
-    } catch {
+
+      // Detect truncated or error responses
+      if (fullText.length < 50 || fullText.includes("[System:")) {
+        setError("Lesson may be incomplete. Tap to retry.");
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setLessonStreaming(false);
       setError("Couldn\u2019t load your session \u2014 your connection might be patchy. Tap to retry.");
       setIsLoading(false);
@@ -432,7 +484,9 @@ export function useSession() {
       });
       if (!res.ok) throw new Error("API failed");
       const sc = res.headers.get("X-Scenario-Context");
-      if (sc) setScenarioContext(decodeURIComponent(sc));
+      if (sc) {
+        try { setScenarioContext(decodeURIComponent(sc)); } catch { /* malformed header */ }
+      }
       await streamRoleplayResponse(res, []);
     } catch {
       setError("Failed to start roleplay. Try again.");
@@ -471,11 +525,16 @@ export function useSession() {
     if (!reader) return;
     const decoder = new TextDecoder();
     let fullText = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      fullText += decoder.decode(value, { stream: true });
-      setStreamingText(fullText);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fullText += decoder.decode(value, { stream: true });
+        setStreamingText(fullText);
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      throw e;
     }
     setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
     setStreamingText(""); setIsStreaming(false);
@@ -521,7 +580,9 @@ export function useSession() {
       });
       if (!res.ok) throw new Error("API failed");
       const sc = res.headers.get("X-Scenario-Context");
-      if (sc) setScenarioContext(decodeURIComponent(sc));
+      if (sc) {
+        try { setScenarioContext(decodeURIComponent(sc)); } catch { /* malformed header */ }
+      }
       await streamRoleplayResponse(res, []);
     } catch { setError("Failed to reset."); setIsLoading(false); }
   }
@@ -536,6 +597,7 @@ export function useSession() {
   }
 
   function handleRoleplayInput(value: string) {
+    voiceAutoSubmitRef.current = null; // Cancel pending voice auto-submit on manual send
     const t = value.trim().toLowerCase();
     if (t === "/coach") { handleCoach(); setInputValue(""); }
     else if (t === "/reset") { handleReset(); setInputValue(""); }
@@ -1031,6 +1093,9 @@ export function useSession() {
 
     // Network
     online,
+
+    // Cross-tab lock
+    sessionLocked,
 
     // Session state
     currentPhase,

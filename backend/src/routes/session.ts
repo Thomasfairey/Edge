@@ -252,15 +252,15 @@ One example of the same technique being used AGAINST someone. Show how to recogn
   const stream = streamResponse(
     lessonPrompt,
     [{ role: "user", content: `Teach me about ${concept.name}.` }],
-    PHASE_CONFIG.lesson
+    PHASE_CONFIG.lesson,
+    () => {
+      // Update session phase after streaming completes
+      db.from("sessions")
+        .update({ phase: "roleplay" })
+        .eq("id", sessionId)
+        .eq("user_id", user.id);
+    }
   );
-
-  // Update session phase
-  await db
-    .from("sessions")
-    .update({ phase: "roleplay" })
-    .eq("id", sessionId)
-    .eq("user_id", user.id);
 
   return new Response(stream, {
     headers: {
@@ -317,11 +317,12 @@ session.post("/retrieval", rateLimit(10), zValidator("json", RetrievalBridgeSche
 
   // Update session phase to roleplay
   if (ready) {
-    await db
+    const { error: phaseError } = await db
       .from("sessions")
       .update({ phase: "roleplay" })
       .eq("id", session_id)
       .eq("user_id", user.id);
+    if (phaseError) throw new ValidationError(`Phase update failed: ${phaseError.message}`);
   }
 
   return c.json({ success: true, data: { response, ready } });
@@ -387,10 +388,24 @@ ${difficultyModifier(sessionDifficulty)}
 - If the user deploys ${concept.name} effectively, show a realistic response to that technique
 - If the user is ineffective, maintain or increase pressure`;
 
-  const stream = streamResponse(roleplayPrompt, messages, PHASE_CONFIG.roleplay);
-
-  // Update transcript in session (append user message — assistant response appended by client)
+  // Append user message to transcript immediately
   const updatedTranscript = [...transcript, { role: "user", content: message }];
+
+  const stream = streamResponse(roleplayPrompt, messages, PHASE_CONFIG.roleplay, (fullAssistantResponse) => {
+    // Persist both user message AND assistant response to session transcript
+    const completeTranscript = [...updatedTranscript, { role: "assistant", content: fullAssistantResponse }];
+    db.from("sessions")
+      .update({ roleplay_transcript: completeTranscript })
+      .eq("id", session_id)
+      .eq("user_id", user.id)
+      .then(({ error: updateError }) => {
+        if (updateError) {
+          console.log(JSON.stringify({ level: "error", service: "session", operation: "transcript_persist", message: updateError.message, timestamp: new Date().toISOString() }));
+        }
+      });
+  });
+
+  // Save the user message immediately (assistant response saved in onComplete callback above)
   await db
     .from("sessions")
     .update({ roleplay_transcript: updatedTranscript })
@@ -442,12 +457,23 @@ Be direct. No preamble. Under 150 words total.`;
     PHASE_CONFIG.coach
   );
 
-  // Log coach usage
+  // Fetch current coach_messages and commands_used
+  const { data: currentSession } = await db
+    .from("sessions")
+    .select("coach_messages, commands_used")
+    .eq("id", session_id)
+    .eq("user_id", user.id)
+    .single();
+
+  const existingCoach = (currentSession?.coach_messages as string[]) ?? [];
+  const existingCommands = (currentSession?.commands_used as string[]) ?? [];
+
+  // Append to existing arrays instead of overwriting
   await db
     .from("sessions")
     .update({
-      coach_messages: [...([] as string[]), advice],
-      commands_used: [...([] as string[]), "/coach"],
+      coach_messages: [...existingCoach, advice],
+      commands_used: [...new Set([...existingCommands, "/coach"])],
     })
     .eq("id", session_id)
     .eq("user_id", user.id);
@@ -466,12 +492,16 @@ session.post("/debrief", rateLimit(5), zValidator("json", DebriefRequestSchema),
 
   const { data: sessionData } = await db
     .from("sessions")
-    .select("concept_id, character_id, roleplay_transcript, commands_used, day, difficulty")
+    .select("concept_id, character_id, roleplay_transcript, commands_used, day, difficulty, phase")
     .eq("id", session_id)
     .eq("user_id", user.id)
     .single();
 
   if (!sessionData) throw new ValidationError("Session not found");
+
+  if (sessionData.phase !== "roleplay") {
+    throw new ValidationError(`Session not ready for debrief. Current phase: ${sessionData.phase}`);
+  }
 
   const concept = CONCEPTS.find((c) => c.id === sessionData.concept_id);
   const character = CHARACTERS.find((c) => c.id === sessionData.character_id);
@@ -562,16 +592,32 @@ For EACH score, you MUST cite the specific transcript turn that justifies it.`;
   const scores = parseScores(debriefText);
   const ledgerFields = parseLedgerFields(debriefText);
 
+  // Validate that AI generated parseable scores — without them the ledger would be corrupted
+  if (!scores) {
+    throw new ValidationError(
+      "AI failed to generate valid scores. Please retry the debrief."
+    );
+  }
+  if (!ledgerFields) {
+    throw new ValidationError(
+      "AI failed to generate valid ledger data. Please retry the debrief."
+    );
+  }
+
   // Update session
-  await db
+  const { error: updateError } = await db
     .from("sessions")
     .update({
       phase: "mission",
       debrief_content: debriefText,
-      scores: scores ?? undefined,
+      scores,
     })
     .eq("id", session_id)
     .eq("user_id", user.id);
+
+  if (updateError) {
+    throw new ValidationError(`Failed to save debrief: ${updateError.message}`);
+  }
 
   return c.json({
     success: true,
@@ -675,11 +721,12 @@ RATIONALE: [why this reinforces the learning]`;
   }
 
   // Mark session complete
-  await db
+  const { error: phaseError } = await db
     .from("sessions")
     .update({ phase: "complete", mission })
     .eq("id", sessionId)
     .eq("user_id", user.id);
+  if (phaseError) throw new ValidationError(`Phase update failed: ${phaseError.message}`);
 
   return c.json({
     success: true,

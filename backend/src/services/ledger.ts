@@ -145,6 +145,7 @@ export async function updateLastMissionOutcome(
 
   if (error) {
     console.log(JSON.stringify({ level: "error", service: "ledger", operation: "update_mission_outcome", message: error.message, timestamp: new Date().toISOString() }));
+    throw new Error(`Failed to update mission outcome: ${error.message}`);
   }
 }
 
@@ -180,13 +181,17 @@ export async function getCompletedConcepts(
   db: SupabaseClient,
   userId: string
 ): Promise<string[]> {
+  // Query concept_id from sessions (not concept name from ledger) so IDs match selectNewConcept filter
   const { data, error } = await db
-    .from("ledger")
-    .select("concept")
-    .eq("user_id", userId);
+    .from("sessions")
+    .select("concept_id")
+    .eq("user_id", userId)
+    .eq("phase", "complete");
 
   if (error || !data) return [];
-  return data.map((e: { concept: string }) => e.concept);
+
+  // Deduplicate and return concept IDs
+  return [...new Set(data.map((e: { concept_id: string }) => e.concept_id))];
 }
 
 export async function getLedgerCount(
@@ -248,16 +253,19 @@ export async function getStreakCount(
   const today = new Date().toISOString().split("T")[0];
   const lastDate = data[0].date;
 
-  // If last session wasn't today or yesterday, streak is broken
-  const diffFromToday = Math.floor(
-    (new Date(today).getTime() - new Date(lastDate).getTime()) / 86400000
-  );
+  // Compare ISO date strings directly to avoid DST issues with millisecond math
+  function daysBetween(a: string, b: string): number {
+    // Parse as UTC noon to avoid DST boundary issues
+    const da = new Date(a + "T12:00:00Z");
+    const db = new Date(b + "T12:00:00Z");
+    return Math.round((da.getTime() - db.getTime()) / 86400000);
+  }
+
+  const diffFromToday = daysBetween(today, lastDate);
   if (diffFromToday > 1) return 0;
 
   for (let i = 1; i < data.length; i++) {
-    const prev = new Date(data[i - 1].date);
-    const curr = new Date(data[i].date);
-    const diff = Math.floor((prev.getTime() - curr.getTime()) / 86400000);
+    const diff = daysBetween(data[i - 1].date, data[i].date);
     if (diff === 1) {
       streak++;
     } else {

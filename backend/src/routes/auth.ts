@@ -28,6 +28,31 @@ auth.post("/signup", zValidator("json", SignupSchema), async (c) => {
     throw new AppError("AUTH_SIGNUP_FAILED", error.message, 400);
   }
 
+  // Create the user_profiles row so all downstream queries work
+  if (data.user) {
+    const { error: profileError } = await adminClient
+      .from("user_profiles")
+      .insert({
+        id: data.user.id,
+        email,
+        display_name: display_name || email.split("@")[0],
+        onboarding_completed: false,
+        subscription_tier: "free",
+        experience_level: "beginner",
+        goals: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (profileError) {
+      throw new AppError(
+        "PROFILE_CREATE_FAILED",
+        `Failed to create user profile: ${profileError.message}`,
+        500
+      );
+    }
+  }
+
   return c.json({
     success: true,
     data: {

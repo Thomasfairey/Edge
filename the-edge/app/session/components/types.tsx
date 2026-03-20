@@ -110,7 +110,9 @@ export function haptic() {
 // ---------------------------------------------------------------------------
 
 export function renderMarkdown(text: string, context: "lesson" | "debrief" | "default" = "default"): React.ReactNode[] {
-  const lines = text.split("\n");
+  // Strip any raw HTML tags from AI output to prevent XSS
+  const sanitized = text.replace(/<[^>]*>/g, "");
+  const lines = sanitized.split("\n");
   const elements: React.ReactNode[] = [];
   let key = 0;
   let isFirstParagraph = true;

@@ -13,6 +13,7 @@ import { rateLimit } from "../middleware/rate-limit.js";
 import { VerifyReceiptSchema } from "../types/api.js";
 import { ValidationError } from "../types/errors.js";
 import type { AppEnv } from "../types/env.js";
+import { verifyAppleReceipt } from "../services/apple-receipt.js";
 
 const subscription = new Hono<AppEnv>();
 
@@ -33,12 +34,14 @@ subscription.post(
     const user = c.get("user") as AuthUser;
     const { receipt_data, product_id } = c.req.valid("json");
 
-    // TODO: In production, verify receipt with Apple's StoreKit 2 Server API
-    // https://developer.apple.com/documentation/appstoreserverapi
-    // For now, we trust the receipt and activate the subscription.
+    // Verify receipt with Apple's servers
+    const verified = await verifyAppleReceipt(receipt_data, product_id);
+    if (!verified.isValid) {
+      throw new ValidationError("Receipt is invalid or subscription has expired");
+    }
 
-    const expiresAt = new Date();
-    expiresAt.setMonth(expiresAt.getMonth() + 1); // Default 1-month subscription
+    // Use Apple's expiration date, or default to 1 month if not a subscription
+    const expiresAt = verified.expiresDate ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     // Upsert subscription record (uses service role to bypass RLS)
     const { error: subError } = await adminClient
@@ -118,7 +121,8 @@ subscription.get("/status", rateLimit(20), async (c) => {
         subscription_expires_at: null,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .eq("subscription_tier", "pro"); // Conditional update prevents race
 
     return c.json({
       success: true,
