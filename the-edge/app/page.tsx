@@ -174,6 +174,7 @@ export default function Home() {
   const router = useRouter();
   const [status, setStatus] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
   const [online, setOnline] = useState(() =>
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
@@ -193,6 +194,18 @@ export default function Home() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+
+  // Check auth — redirect to login if no session
+  useEffect(() => {
+    const supabase = createBrowserSupabaseClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.replace("/login");
+      } else {
+        setAuthChecked(true);
+      }
+    });
+  }, [router]);
 
   // Cleanup expand timeout on unmount
   useEffect(() => {
@@ -302,6 +315,15 @@ export default function Home() {
     : 0;
 
   const hasData = latestScores !== null;
+
+  // Don't render anything until auth check completes (prevents flash)
+  if (!authChecked) {
+    return (
+      <main className="mx-auto max-w-[480px] px-5">
+        <HomeSkeleton />
+      </main>
+    );
+  }
 
   if (showOnboarding) {
     return (

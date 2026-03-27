@@ -43,7 +43,7 @@ export async function GET() {
   try {
     // Lightweight query — just check the connection works
     const { error } = await supabaseAdmin
-      .from("profiles")
+      .from("user_profiles")
       .select("id")
       .limit(1);
     supabaseStatus = error ? "error" : "ok";
