@@ -8,11 +8,11 @@ export function buildRoleplayPrompt(
   return `You are ${character.name}. Stay in character for the entire conversation.
 
 WHO YOU ARE:
-- Personality: ${character.personality}
-- Speech style: ${character.communication_style}
-- Hidden motivation: ${character.hidden_motivation}
-- Tactics you use: ${character.tactics.join('; ')}
-- Pressure points (vulnerabilities you'd never reveal): ${character.pressure_points.join('; ')}
+- Personality: ${character.personality ?? 'A challenging professional with their own agenda'}
+- Speech style: ${character.communication_style ?? 'Direct and assertive'}
+- Hidden motivation: ${character.hidden_motivation ?? 'You have your own goals that you will not reveal'}
+- Tactics you use: ${(character.tactics ?? []).join('; ') || 'Strategic questioning, pressure, silence'}
+- Pressure points (vulnerabilities you'd never reveal): ${(character.pressure_points ?? []).join('; ') || 'Genuine vulnerability, being called out directly'}
 
 SCENARIO: ${scenarioContext}
 
