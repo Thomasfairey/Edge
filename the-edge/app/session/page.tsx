@@ -334,7 +334,7 @@ export default function SessionPage() {
                 voice={s.voiceProps}
               />
 
-              {s.mission && !s.isLoading && !s.checkinResponse && (
+              {s.mission && !s.isLoading && (
                 <MissionPhase
                   isLoading={s.isLoading}
                   mission={s.mission}
@@ -453,7 +453,7 @@ export default function SessionPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  s.saveSession();
+                  try { s.saveSession(); } catch {}
                   s.router.push("/");
                 }}
                 className="btn-primary flex-1"

@@ -105,8 +105,9 @@ export function parseLedgerFields(text: string): {
   if (!ledgerMatch) return null;
 
   const block = ledgerMatch[1];
-  const summaryMatch = block.match(/behavioral_weakness_summary:\s*(.+?)(?:\n|$)/s);
-  const momentMatch = block.match(/key_moment:\s*(.+?)(?:\n|$)/s);
+  // Use lookahead to capture multi-line values up to the next field or end of block
+  const summaryMatch = block.match(/behavioral_weakness_summary:\s*(.+?)(?=\nkey_moment:)/s);
+  const momentMatch = block.match(/key_moment:\s*(.+?)$/s);
 
   if (!summaryMatch || !momentMatch) return null;
 

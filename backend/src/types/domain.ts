@@ -107,6 +107,7 @@ export interface LedgerEntry {
 export type SessionPhase =
   | "checkin"
   | "lesson"
+  | "retrieval"
   | "roleplay"
   | "debrief"
   | "mission"

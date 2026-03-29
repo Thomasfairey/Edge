@@ -231,7 +231,7 @@ export async function generateResponse(
       60000
     )) as Anthropic.Message;
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    const text = response.content.length > 0 && response.content[0].type === "text" ? response.content[0].text : "";
     const tokenCount = response.usage?.output_tokens ?? Math.ceil(text.length / 4);
     console.log(JSON.stringify({ level: "info", service: "anthropic", method: "sync", model: config.model, tokens: tokenCount, timestamp: new Date().toISOString() }));
     return text;

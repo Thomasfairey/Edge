@@ -54,11 +54,19 @@ async function fetchWithRetry(
   onAttempt?: (attempt: number) => void
 ): Promise<Response> {
   const { fetchWithRequestId: fetchR } = await import("@/lib/fetch-with-request-id");
+  // Extract signal to create a fresh timeout per attempt — reusing the same
+  // AbortSignal.timeout across retries causes all retries after the first to
+  // abort immediately because the original signal has already timed out.
+  const { signal, ...restOptions } = options;
+  const timeoutMs = (signal as ReturnType<typeof AbortSignal.timeout> | undefined) ? 30000 : 0;
   let lastError: Error | null = null;
   for (let i = 1; i <= maxRetries; i++) {
     try {
       onAttempt?.(i);
-      const res = await fetchR(url, options);
+      const res = await fetchR(url, {
+        ...restOptions,
+        signal: timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : signal,
+      });
       if (res.ok) return res;
       throw new Error(`HTTP ${res.status}`);
     } catch (e) {
@@ -200,11 +208,13 @@ export function useSession() {
     setLessonCardPos({ current, total });
   }, []);
 
-  // Debrief retry
+  // Debrief retry — use refs to avoid stale closure issues on rapid retry
+  const debriefRetryCountRef = useRef(0);
   const [debriefRetryCount, setDebriefRetryCount] = useState(0);
   const [canSkipDebrief, setCanSkipDebrief] = useState(false);
 
   // Mission retry
+  const missionRetryCountRef = useRef(0);
   const [missionRetryCount, setMissionRetryCount] = useState(0);
 
   // =========================================================================
@@ -278,6 +288,7 @@ export function useSession() {
         dayNumber, scenarioContext, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
         lastMission, coachAdvice, isReviewSession, previousScores,
+        retrievalQuestion, retrievalResponse, retrievalReady,
         timestamp: Date.now(),
       }));
     } catch {}
@@ -548,7 +559,7 @@ export function useSession() {
   async function streamRoleplayResponse(res: Response, currentTranscript: Message[]) {
     setIsStreaming(true); setStreamingText(""); setIsLoading(false);
     const reader = res.body?.getReader();
-    if (!reader) return;
+    if (!reader) { setIsStreaming(false); submittingRef.current = false; return; }
     const decoder = new TextDecoder();
     let fullText = "";
     try {
@@ -558,14 +569,19 @@ export function useSession() {
         fullText += decoder.decode(value, { stream: true });
         setStreamingText(fullText);
       }
+      setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
+      setTurnCount((p) => p + 1);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      throw e;
+      // Partial text recovered — still add it to transcript if we got anything
+      if (fullText.length > 0) {
+        setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
+      }
+      setError("Connection lost mid-response. Tap to retry.");
+    } finally {
+      setStreamingText(""); setIsStreaming(false);
+      submittingRef.current = false;
     }
-    setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
-    setStreamingText(""); setIsStreaming(false);
-    setTurnCount((p) => p + 1);
-    submittingRef.current = false;
   }
 
   async function handleCoach() {
@@ -659,7 +675,8 @@ export function useSession() {
         3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
-      let display = data.debriefContent;
+      let display = data.debriefContent || "";
+      if (!display) throw new Error("Missing debrief content");
       const idx = display.indexOf("---SCORES---");
       if (idx !== -1) display = display.slice(0, idx).trim();
       setDebriefContent(display);
@@ -667,9 +684,11 @@ export function useSession() {
       setBehavioralWeaknessSummary(data.behavioralWeaknessSummary);
       setKeyMoment(data.keyMoment);
       setError(null); setIsLoading(false);
+      debriefRetryCountRef.current = 0;
       setDebriefRetryCount(0);
     } catch {
-      const newCount = debriefRetryCount + 1;
+      debriefRetryCountRef.current += 1;
+      const newCount = debriefRetryCountRef.current;
       setDebriefRetryCount(newCount);
       if (newCount >= 2) {
         setCanSkipDebrief(true);
@@ -688,6 +707,8 @@ export function useSession() {
     setKeyMoment("Unable to identify key moment.");
     setCanSkipDebrief(false);
     setError(null);
+    // Advance to mission phase — without this, user gets stuck on debrief screen
+    enterDeploy();
   }
 
   // =========================================================================
@@ -748,9 +769,11 @@ export function useSession() {
       setMission(data.mission); setRationale(data.rationale);
       setError(null); setIsLoading(false);
       submittingRef.current = false;
+      missionRetryCountRef.current = 0;
       setMissionRetryCount(0);
     } catch {
-      const newCount = missionRetryCount + 1;
+      missionRetryCountRef.current += 1;
+      const newCount = missionRetryCountRef.current;
       setMissionRetryCount(newCount);
       if (newCount >= 2) {
         const fallbacks: Record<string, { mission: string; rationale: string }[]> = {
@@ -1079,7 +1102,29 @@ export function useSession() {
           if (s.coachAdvice) setCoachAdvice(s.coachAdvice);
           if (s.isReviewSession) setIsReviewSession(s.isReviewSession);
           if (s.previousScores) setPreviousScores(normaliseScores(s.previousScores));
-          setIsLoading(false); setRestored(true); return;
+          if (s.retrievalQuestion) setRetrievalQuestion(s.retrievalQuestion);
+          if (s.retrievalResponse) setRetrievalResponse(s.retrievalResponse);
+          if (s.retrievalReady) setRetrievalReady(s.retrievalReady);
+          setIsLoading(false); setRestored(true);
+          // If restored to retrieval phase without a question, re-fetch it
+          if (s.phase === "retrieval" && !s.retrievalQuestion && s.concept) {
+            setConcept(s.concept);
+            setTimeout(() => {
+              setIsLoading(true);
+              fetchWithRequestId("/api/retrieval-bridge", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ concept: s.concept }),
+                signal: AbortSignal.timeout(30000),
+              }).then(r => r.json()).then(d => {
+                setRetrievalQuestion(d.response);
+                setIsLoading(false);
+              }).catch(() => {
+                setError("Couldn\u2019t reload retrieval question. Tap to retry.");
+                setIsLoading(false);
+              });
+            }, 100);
+          }
+          return;
         } else { localStorage.removeItem(SESSION_STORAGE_KEY); }
       }
     } catch {}

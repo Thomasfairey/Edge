@@ -249,9 +249,12 @@ export async function getStreakCount(
 
   if (error || !data || data.length === 0) return 0;
 
+  // Deduplicate dates — multiple sessions per day should count as one streak day
+  const uniqueDates = [...new Set(data.map((d: { date: string }) => d.date))];
+
   let streak = 1;
   const today = new Date().toISOString().split("T")[0];
-  const lastDate = data[0].date;
+  const lastDate = uniqueDates[0];
 
   // Compare ISO date strings directly to avoid DST issues with millisecond math
   function daysBetween(a: string, b: string): number {
@@ -264,8 +267,8 @@ export async function getStreakCount(
   const diffFromToday = daysBetween(today, lastDate);
   if (diffFromToday > 1) return 0;
 
-  for (let i = 1; i < data.length; i++) {
-    const diff = daysBetween(data[i - 1].date, data[i].date);
+  for (let i = 1; i < uniqueDates.length; i++) {
+    const diff = daysBetween(uniqueDates[i - 1], uniqueDates[i]);
     if (diff === 1) {
       streak++;
     } else {

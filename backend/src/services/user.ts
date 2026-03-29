@@ -102,9 +102,11 @@ export async function incrementSessionCount(
   userId: string
 ): Promise<number> {
   const now = new Date();
-  const dayOfWeek = now.getDay();
+  // Use UTC to match getSessionsThisWeek — avoids week boundary mismatch
+  // when the server timezone differs from UTC
+  const dayOfWeek = now.getUTCDay();
   const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  weekStart.setUTCDate(now.getUTCDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   const weekStartStr = weekStart.toISOString().split("T")[0];
 
   // Atomic upsert: INSERT ... ON CONFLICT DO UPDATE avoids read-then-write race

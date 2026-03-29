@@ -50,6 +50,7 @@ export const OnboardingSchema = z.object({
 
 export const CheckinSchema = z.object({
   mission_response: z.string().min(1).max(2000),
+  session_id: z.string().uuid().optional(),
 });
 
 export const RoleplayMessageSchema = z.object({

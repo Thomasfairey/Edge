@@ -135,7 +135,7 @@ session.post("/start", rateLimit(5), async (c) => {
 session.post("/checkin", rateLimit(10), zValidator("json", CheckinSchema), async (c) => {
   const user = c.get("user") as AuthUser;
   const db = createUserClient(c.get("token") as string);
-  const { mission_response } = c.req.valid("json");
+  const { mission_response, session_id } = c.req.valid("json");
 
   const lastEntry = await getLastEntry(db, user.id);
   if (!lastEntry) {
@@ -173,6 +173,16 @@ Respond with ONLY the one-sentence response. No preamble, no labels.`;
 
   // Update ledger with mission outcome
   await updateLastMissionOutcome(db, user.id, mission_response);
+
+  // Advance session phase from "checkin" to "lesson"
+  if (session_id) {
+    await db
+      .from("sessions")
+      .update({ phase: "lesson" })
+      .eq("id", session_id)
+      .eq("user_id", user.id)
+      .eq("phase", "checkin");
+  }
 
   // Determine response type
   const lowerResponse = mission_response.toLowerCase();
