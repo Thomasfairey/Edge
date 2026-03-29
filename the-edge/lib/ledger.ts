@@ -95,12 +95,17 @@ function entryToRow(entry: LedgerEntry, userId?: string | null): Omit<LedgerRow,
  * Read all ledger entries from Supabase, ordered by day ascending.
  */
 export async function getLedger(userId?: string | null): Promise<LedgerEntry[]> {
+  // Require userId to prevent unscoped queries returning all users' data
+  if (!userId) {
+    logger.warn("getLedger called without userId — returning empty to prevent data leak", { phase: "ledger" });
+    return [];
+  }
   let query = supabase
     .from("ledger")
     .select("*")
     .order("day", { ascending: true });
 
-  if (userId) query = query.eq("user_id", userId);
+  query = query.eq("user_id", userId);
 
   const { data, error } = await query;
 
@@ -115,6 +120,9 @@ export async function getLedger(userId?: string | null): Promise<LedgerEntry[]> 
  * Append a new entry to the ledger.
  */
 export async function appendEntry(entry: LedgerEntry, userId?: string | null): Promise<void> {
+  if (!userId) {
+    throw new Error("Ledger write requires userId — refusing to write unscoped entry");
+  }
   const { error } = await supabase
     .from("ledger")
     .insert(entryToRow(entry, userId));
@@ -128,13 +136,14 @@ export async function appendEntry(entry: LedgerEntry, userId?: string | null): P
  * Return the most recent ledger entry, or null if empty.
  */
 export async function getLastEntry(userId?: string | null): Promise<LedgerEntry | null> {
+  if (!userId) return null;
   let query = supabase
     .from("ledger")
     .select("*")
     .order("day", { ascending: false })
     .limit(1);
 
-  if (userId) query = query.eq("user_id", userId);
+  query = query.eq("user_id", userId);
 
   const { data, error } = await query;
 
@@ -146,13 +155,14 @@ export async function getLastEntry(userId?: string | null): Promise<LedgerEntry 
  * Update the mission_outcome of the most recent entry.
  */
 export async function updateLastMissionOutcome(outcome: string, userId?: string | null): Promise<void> {
+  if (!userId) return;
   let query = supabase
     .from("ledger")
     .select("id")
     .order("day", { ascending: false })
     .limit(1);
 
-  if (userId) query = query.eq("user_id", userId);
+  query = query.eq("user_id", userId);
 
   const { data } = await query;
 
@@ -172,13 +182,14 @@ export async function updateLastMissionOutcome(outcome: string, userId?: string 
  * Serialise the last `count` entries into clean markdown for prompt injection.
  */
 export async function serialiseForPrompt(count: number = 7, userId?: string | null): Promise<string> {
+  if (!userId) return "No prior sessions recorded.";
   let query = supabase
     .from("ledger")
     .select("*")
     .order("day", { ascending: false })
     .limit(count);
 
-  if (userId) query = query.eq("user_id", userId);
+  query = query.eq("user_id", userId);
 
   const { data, error } = await query;
 
@@ -202,11 +213,12 @@ export async function serialiseForPrompt(count: number = 7, userId?: string | nu
  * Return concept names from all ledger entries (for de-duplication).
  */
 export async function getCompletedConcepts(userId?: string | null): Promise<string[]> {
+  if (!userId) return [];
   let query = supabase
     .from("ledger")
     .select("concept");
 
-  if (userId) query = query.eq("user_id", userId);
+  query = query.eq("user_id", userId);
 
   const { data, error } = await query;
 
@@ -218,11 +230,12 @@ export async function getCompletedConcepts(userId?: string | null): Promise<stri
  * Return the total number of ledger entries.
  */
 export async function getLedgerCount(userId?: string | null): Promise<number> {
+  if (!userId) return 0;
   let query = supabase
     .from("ledger")
     .select("id", { count: "exact", head: true });
 
-  if (userId) query = query.eq("user_id", userId);
+  query = query.eq("user_id", userId);
 
   const { count, error } = await query;
 

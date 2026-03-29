@@ -83,7 +83,7 @@ function parseScores(text: string): SessionScores {
   const block = scoresMatch[1];
 
   const extract = (key: string): number => {
-    const match = block.match(new RegExp(`${key}:\\s*(\\d+)`));
+    const match = block.match(new RegExp(`${key}:\\s*\\[?(\\d+)\\]?`));
     if (!match) return 3;
     return clampScore(parseInt(match[1], 10));
   };

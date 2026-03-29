@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
+import { timingSafeEqual } from "crypto";
 
 async function handler(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -19,7 +20,10 @@ async function handler(req: NextRequest) {
     return NextResponse.json({ valid: true });
   }
 
-  if (body.code.trim() !== validCode.trim()) {
+  // Use timing-safe comparison to prevent brute-force character-by-character attacks
+  const a = Buffer.from(body.code.trim());
+  const b = Buffer.from(validCode.trim());
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     return NextResponse.json({ error: "Invalid invite code" }, { status: 403 });
   }
 
