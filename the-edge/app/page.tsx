@@ -197,14 +197,17 @@ export default function Home() {
 
   // Check auth — redirect to login if no session
   useEffect(() => {
+    let cancelled = false;
     const supabase = createBrowserSupabaseClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
       if (!session) {
         router.replace("/login");
       } else {
         setAuthChecked(true);
       }
     });
+    return () => { cancelled = true; };
   }, [router]);
 
   // Cleanup expand timeout on unmount

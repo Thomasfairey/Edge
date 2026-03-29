@@ -67,6 +67,7 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
           "xi-api-key": apiKey,
         },
         body: form,
+        signal: AbortSignal.timeout(30_000),
       }
     );
 

@@ -90,6 +90,7 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
             use_speaker_boost: true,
           },
         }),
+        signal: AbortSignal.timeout(15_000),
       }
     );
 

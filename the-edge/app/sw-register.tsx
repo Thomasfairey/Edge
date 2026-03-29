@@ -63,7 +63,9 @@ export function ServiceWorkerRegistrar() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
-    navigator.serviceWorker
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const regPromise = navigator.serviceWorker
       .register(`/sw.js?v=${BUILD_ID}`)
       .then((registration) => {
         // If a new SW is already waiting, activate it immediately
@@ -89,7 +91,7 @@ export function ServiceWorkerRegistrar() {
         });
 
         // Periodically check for updates (every 60 minutes)
-        setInterval(
+        intervalId = setInterval(
           () => {
             registration.update().catch(() => {});
           },
@@ -100,13 +102,22 @@ export function ServiceWorkerRegistrar() {
         // SW registration failed — non-critical
       });
 
-    // When the new SW takes over, reload for fresh assets
+    // When the new SW takes over, show toast instead of hard-reloading.
+    // Hard reload during a session loses in-flight state.
     let refreshing = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
+    const onControllerChange = () => {
       if (refreshing) return;
       refreshing = true;
-      window.location.reload();
-    });
+      showUpdateToast();
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+      // Registration listeners are on the SW registration object which gets GC'd
+      void regPromise; // ensure promise is consumed
+    };
   }, []);
 
   return null;

@@ -482,11 +482,13 @@ export function useSession() {
       const data = await res.json();
       setRetrievalResponse(data.response);
       setRetrievalReady(data.ready);
-      setIsLoading(false); submittingRef.current = false;
+      setIsLoading(false);
       if (data.ready) setTimeout(() => startRoleplay(), 1500);
     } catch {
       setError("Failed to evaluate response. Try again.");
-      setIsLoading(false); submittingRef.current = false;
+      setIsLoading(false);
+    } finally {
+      submittingRef.current = false;
     }
   }
 
@@ -541,6 +543,7 @@ export function useSession() {
       setRoleplayTranscript(roleplayTranscript);
       setTurnCount((p) => p - 1);
       setPendingRetry(userMessage);
+    } finally {
       submittingRef.current = false;
     }
   }
@@ -565,7 +568,6 @@ export function useSession() {
     setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
     setStreamingText(""); setIsStreaming(false);
     setTurnCount((p) => p + 1);
-    submittingRef.current = false;
   }
 
   async function handleCoach() {
@@ -722,11 +724,11 @@ export function useSession() {
       setCheckinOutcome(data.type);
       setCheckinDone(true);
       setIsLoading(false);
-      submittingRef.current = false;
       setTimeout(() => { setCheckinResponse(null); fetchMission(); }, 3500);
     } catch {
       setError("Failed to submit. Try again.");
       setIsLoading(false);
+    } finally {
       submittingRef.current = false;
     }
   }
@@ -747,7 +749,6 @@ export function useSession() {
       const data = await res.json();
       setMission(data.mission); setRationale(data.rationale);
       setError(null); setIsLoading(false);
-      submittingRef.current = false;
       setMissionRetryCount(0);
     } catch {
       const newCount = missionRetryCount + 1;
@@ -794,7 +795,9 @@ export function useSession() {
       } else {
         setError("Couldn\u2019t load your mission \u2014 tap to retry.");
       }
-      setIsLoading(false); submittingRef.current = false;
+      setIsLoading(false);
+    } finally {
+      submittingRef.current = false;
     }
   }
 
