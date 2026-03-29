@@ -265,8 +265,12 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/status", { signal: controller.signal })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
+        if (data.error) throw new Error(data.error);
         setStatus(data);
         try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
 

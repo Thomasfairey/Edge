@@ -5,7 +5,18 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { withRateLimit } from "@/lib/with-rate-limit";
+
+function safeCompare(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) {
+    timingSafeEqual(aBuf, aBuf);
+    return false;
+  }
+  return timingSafeEqual(aBuf, bBuf);
+}
 
 async function handler(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -19,7 +30,7 @@ async function handler(req: NextRequest) {
     return NextResponse.json({ valid: true });
   }
 
-  if (body.code.trim() !== validCode.trim()) {
+  if (!safeCompare(body.code.trim(), validCode.trim())) {
     return NextResponse.json({ error: "Invalid invite code" }, { status: 403 });
   }
 

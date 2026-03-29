@@ -655,7 +655,7 @@ export function useSession() {
             commandsUsed,
             checkinContext: checkinUserText || undefined,
           }),
-          signal: AbortSignal.timeout(65000) },
+          signal: AbortSignal.timeout(55000) },
         3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
       );
       const data = await res.json();
@@ -1085,8 +1085,8 @@ export function useSession() {
     } catch {}
 
     Promise.all([
-      fetch("/api/status").then((r) => r.json()).catch(() => null),
-      fetch("/api/profile").then((r) => r.json()).catch(() => null),
+      fetchWithRequestId("/api/status", { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetchWithRequestId("/api/profile", { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
     ]).then(([statusData, profileData]) => {
         if (statusData) {
           setDayNumber(statusData.dayNumber);
