@@ -21,12 +21,9 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      // unsafe-inline is required because the app uses inline scripts
-      // (e.g. LegacySwCleanup in layout.tsx). This should be migrated to
-      // nonce-based CSP once all inline scripts are removed or refactored.
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self'",
       "img-src 'self' data: blob:",
       "connect-src 'self' https://api.elevenlabs.io https://*.supabase.co",
       "media-src 'self' blob:",
@@ -39,6 +36,12 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
+  compiler: {
+    // Strip console.log/warn in production builds (keep console.error for debugging)
+    removeConsole: process.env.NODE_ENV === "production"
+      ? { exclude: ["error"] }
+      : false,
+  },
   async headers() {
     return [
       {

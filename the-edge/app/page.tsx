@@ -377,7 +377,7 @@ export default function Home() {
             </button>
             {showSettingsMenu && (
               <div
-                className="animate-fade-in-up absolute right-0 mt-2 w-40 rounded-[var(--radius-md)] p-1"
+                className="animate-fade-in-up absolute right-0 mt-2 w-48 rounded-[var(--radius-md)] p-1"
                 style={{
                   backgroundColor: "var(--surface)",
                   boxShadow: "var(--shadow-elevated)",
@@ -385,6 +385,21 @@ export default function Home() {
                 }}
                 role="menu"
               >
+                <a
+                  href="/privacy"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2.5 text-left text-body font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  style={{ color: "var(--text-secondary)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--background)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="7" width="10" height="7" rx="1.5" />
+                    <path d="M5 7V5a3 3 0 0 1 6 0v2" />
+                  </svg>
+                  Privacy Policy
+                </a>
+                <div className="my-1 h-px mx-2" style={{ backgroundColor: "var(--border-subtle)" }} role="separator" />
                 <button
                   type="button"
                   role="menuitem"

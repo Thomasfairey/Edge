@@ -28,6 +28,8 @@ import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateTranscript, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
 import { logger, createRequestLogger } from "@/lib/logger";
+import { trackEvent } from "@/lib/analytics";
+import { captureError } from "@/lib/error-reporting";
 
 export const maxDuration = 60;
 
@@ -72,9 +74,18 @@ function computeFallbackScores(
 /**
  * Parse the ---SCORES--- block from debrief output.
  * Uses clampScore to ensure all values are valid 1-5.
+ * Handles multiple formatting variations:
+ * - Standard: "technique_application: 3"
+ * - With spaces: "technique_application : 3"
+ * - Abbreviated: "TA: 3" or "TA : 3"
+ * - Markdown bold: "**technique_application**: 3"
  */
 function parseScores(text: string): SessionScores {
-  const scoresMatch = text.match(/---SCORES---\s*([\s\S]*?)(?:---LEDGER---|$)/);
+  // Try multiple delimiter patterns for the scores block
+  const scoresMatch =
+    text.match(/---\s*SCORES\s*---\s*([\s\S]*?)(?:---\s*LEDGER\s*---|$)/) ??
+    text.match(/SCORES[:\s]*\n([\s\S]*?)(?:LEDGER|$)/i);
+
   if (!scoresMatch) {
     logger.warn("Could not find ---SCORES--- block, using defaults", { phase: "debrief" });
     return { ...DEFAULT_SCORES };
@@ -82,29 +93,36 @@ function parseScores(text: string): SessionScores {
 
   const block = scoresMatch[1];
 
-  const extract = (key: string): number => {
-    const match = block.match(new RegExp(`${key}:\\s*(\\d+)`));
-    if (!match) return 3;
-    return clampScore(parseInt(match[1], 10));
+  const extract = (key: string, ...aliases: string[]): number => {
+    for (const k of [key, ...aliases]) {
+      // Match "key: N", "key : N", "**key**: N", "**key** : N"
+      const match = block.match(new RegExp(`\\*?\\*?${k}\\*?\\*?\\s*:\\s*(\\d+)`, "i"));
+      if (match) return clampScore(parseInt(match[1], 10));
+    }
+    return 3;
   };
 
   return {
-    technique_application: extract("technique_application"),
-    tactical_awareness: extract("tactical_awareness"),
-    frame_control: extract("frame_control"),
-    emotional_regulation: extract("emotional_regulation"),
-    strategic_outcome: extract("strategic_outcome"),
+    technique_application: extract("technique_application", "TA"),
+    tactical_awareness: extract("tactical_awareness", "TW"),
+    frame_control: extract("frame_control", "FC"),
+    emotional_regulation: extract("emotional_regulation", "ER"),
+    strategic_outcome: extract("strategic_outcome", "SO"),
   };
 }
 
 /**
  * Parse the ---LEDGER--- block from debrief output.
+ * Handles variations in formatting (code fences, extra whitespace, bold markers).
  */
 function parseLedgerFields(text: string): {
   behavioralWeaknessSummary: string;
   keyMoment: string;
 } {
-  const ledgerMatch = text.match(/---LEDGER---\s*([\s\S]*?)(?:```|$)/);
+  const ledgerMatch =
+    text.match(/---\s*LEDGER\s*---\s*([\s\S]*?)(?:```|$)/) ??
+    text.match(/LEDGER[:\s]*\n([\s\S]*?)$/i);
+
   if (!ledgerMatch) {
     logger.warn("Could not find ---LEDGER--- block, using fallbacks", { phase: "debrief" });
     return {
@@ -115,10 +133,11 @@ function parseLedgerFields(text: string): {
 
   const block = ledgerMatch[1];
 
+  // Handle "behavioral_weakness_summary:" or "**behavioral_weakness_summary**:"
   const summaryMatch = block.match(
-    /behavioral_weakness_summary:\s*([\s\S]*?)(?:key_moment:|$)/
+    /\*?\*?behavioral_weakness_summary\*?\*?\s*:\s*([\s\S]*?)(?:\*?\*?key_moment\*?\*?\s*:|$)/i
   );
-  const momentMatch = block.match(/key_moment:\s*([\s\S]*?)$/);
+  const momentMatch = block.match(/\*?\*?key_moment\*?\*?\s*:\s*([\s\S]*?)$/i);
 
   return {
     behavioralWeaknessSummary: summaryMatch?.[1]?.trim() || "Unable to extract behavioural summary.",
@@ -202,10 +221,20 @@ async function handlePost(req: NextRequest, userId: string | null) {
         { status: 503, headers: { "Retry-After": "30" } }
       );
     }
-    log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "debrief" });
+    captureError(error, {
+      phase: "debrief",
+      source: "/api/debrief",
+      userId,
+      metadata: { concept: concept.name, turns: transcript.length },
+    });
 
     // Fallback: compute scores from transcript data
     const fallbackScores = computeFallbackScores(transcript, safeCommandsUsed);
+    trackEvent({
+      event: "debrief_fallback",
+      userId,
+      properties: { reason: error instanceof Error ? error.message : "unknown" },
+    });
     return NextResponse.json({
       debriefContent: "Debrief generation failed. Scores have been estimated from your session activity.",
       scores: fallbackScores,

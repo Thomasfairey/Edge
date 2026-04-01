@@ -158,10 +158,15 @@ export async function updateLastMissionOutcome(outcome: string, userId?: string 
 
   if (!data || data.length === 0) return;
 
-  const { error } = await supabase
+  let updateQuery = supabase
     .from("ledger")
     .update({ mission_outcome: outcome })
     .eq("id", data[0].id);
+
+  // Defence-in-depth: re-filter by user_id on updates, not just the initial SELECT
+  if (userId) updateQuery = updateQuery.eq("user_id", userId);
+
+  const { error } = await updateQuery;
 
   if (error) {
     logger.error(`Failed to update mission_outcome: ${error.message}`, { phase: "ledger" });

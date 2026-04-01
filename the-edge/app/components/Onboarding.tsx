@@ -25,27 +25,22 @@ const PHASES = [
   { label: "Deploy", color: "var(--phase-deploy)", tint: "var(--phase-deploy-tint)", desc: "Real-world mission for tomorrow" },
 ];
 
-const TRAINING_WINDOWS = [
-  { label: "Morning commute", emoji: "\u2600\uFE0F", desc: "Start the day sharp" },
-  { label: "Lunch break", emoji: "\uD83C\uDF5C", desc: "Midday reset" },
-  { label: "Evening wind-down", emoji: "\uD83C\uDF19", desc: "Reflect and prepare" },
+const COMMITMENTS = [
+  { label: "10 minutes a day", desc: "That\u2019s all it takes to build elite influence skills" },
+  { label: "30-day challenge", desc: "Commit to 30 consecutive days and track your growth" },
+  { label: "Real-world deployment", desc: "Every session ends with a mission for your actual conversations" },
 ];
 
 const TOTAL_SCREENS = 4;
-const SCREEN_LABELS = ["Introduction", "How it works", "Your five dimensions", "Training window"];
+const SCREEN_LABELS = ["Introduction", "How it works", "Your five dimensions", "Your commitment"];
 
 export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [screen, setScreen] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
-  const [selectedWindow, setSelectedWindow] = useState<string | null>(null);
-
   function goForward() {
     if (screen === TOTAL_SCREENS - 1) {
       try {
         localStorage.setItem("edge-onboarding-complete", "1");
-        if (selectedWindow) {
-          localStorage.setItem("edge-training-window", selectedWindow);
-        }
       } catch { /* ok */ }
       onComplete();
       return;
@@ -145,34 +140,34 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
         {screen === 3 && (
           <div className="card" style={{ padding: "28px 24px" }}>
-            <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>When will you train?</p>
+            <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>Your commitment</p>
             <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>
-              Pick your daily window &mdash; consistency beats intensity
+              Consistency beats intensity
             </p>
-            <div className="mt-6 space-y-3">
-              {TRAINING_WINDOWS.map((w) => (
-                <button
-                  key={w.label}
-                  onClick={() => setSelectedWindow(w.label)}
-                  className={`w-full flex items-center gap-3 rounded-[var(--radius-md)] p-4 text-left transition-all ${
-                    selectedWindow === w.label
-                      ? "ring-2 ring-[var(--accent)] scale-[1.01]"
-                      : "hover:opacity-80"
-                  }`}
-                  style={{
-                    backgroundColor: selectedWindow === w.label ? "var(--accent-soft)" : "var(--background)",
-                  }}
+            <div className="mt-6 space-y-3.5" role="list" aria-label="Commitment items">
+              {COMMITMENTS.map((c) => (
+                <div
+                  key={c.label}
+                  role="listitem"
+                  className="flex items-start gap-3.5 rounded-[var(--radius-md)] p-4"
+                  style={{ backgroundColor: "var(--accent-soft)" }}
                 >
-                  <span className="text-2xl">{w.emoji}</span>
-                  <div>
-                    <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>{w.label}</p>
-                    <p className="text-caption" style={{ color: "var(--text-secondary)" }}>{w.desc}</p>
+                  <div
+                    className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-caption font-bold"
+                    style={{ backgroundColor: "var(--accent)", color: "white" }}
+                    aria-hidden="true"
+                  >
+                    &#10003;
                   </div>
-                </button>
+                  <div>
+                    <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>{c.label}</p>
+                    <p className="text-caption" style={{ color: "var(--text-secondary)" }}>{c.desc}</p>
+                  </div>
+                </div>
               ))}
             </div>
             <p className="mt-5 text-center text-caption" style={{ color: "var(--text-tertiary)" }}>
-              You can change this anytime. This helps build your daily habit.
+              Every day you show up, The Edge adapts to make you sharper.
             </p>
           </div>
         )}
@@ -209,7 +204,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
         <button
           onClick={goForward}
-          disabled={screen === 3 && !selectedWindow}
+          disabled={false}
           className="btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
           style={{ width: "auto", minWidth: 100 }}
         >

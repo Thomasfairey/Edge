@@ -14,6 +14,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "@/lib/logger";
+import { captureError } from "@/lib/error-reporting";
 
 // ---------------------------------------------------------------------------
 // Client singleton (lazy init — avoids crashing at import/build time)
@@ -158,14 +159,18 @@ function cbOnSuccess(): void {
 }
 
 /** Record a failed API response. Opens the circuit after threshold. */
-function cbOnFailure(): void {
+function cbOnFailure(error?: unknown): void {
   cbConsecutiveFailures++;
   if (cbConsecutiveFailures >= CB_FAILURE_THRESHOLD) {
     cbOpenedAt = Date.now();
-    logger.warn(
-      `Circuit breaker OPEN after ${cbConsecutiveFailures} consecutive failures — blocking requests for ${CB_OPEN_DURATION_MS / 1000}s`,
-      { phase: "anthropic" }
-    );
+    captureError(error ?? new Error("Circuit breaker opened"), {
+      phase: "anthropic",
+      source: "circuit-breaker",
+      metadata: {
+        consecutive_failures: cbConsecutiveFailures,
+        open_duration_s: CB_OPEN_DURATION_MS / 1000,
+      },
+    });
   }
 }
 
@@ -241,7 +246,7 @@ async function callWithRetry(
         return attempt(true);
       }
 
-      cbOnFailure();
+      cbOnFailure(error);
       throw error;
     }
   };

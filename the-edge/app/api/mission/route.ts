@@ -29,6 +29,7 @@ import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateScores, validateText, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
 import { createRequestLogger } from "@/lib/logger";
+import { trackEvent } from "@/lib/analytics";
 
 async function handlePost(req: NextRequest, userId: string | null) {
   const log = createRequestLogger(req, userId);
@@ -121,6 +122,24 @@ async function handlePost(req: NextRequest, userId: string | null) {
     // Write to Supabase
     await appendEntry(ledgerEntry, userId);
     log.info(`Day ${day} ledger entry written. Mission assigned.`, { phase: "mission" });
+
+    // Track session completion
+    const avg = (scores.technique_application + scores.tactical_awareness +
+      scores.frame_control + scores.emotional_regulation + scores.strategic_outcome) / 5;
+    trackEvent({
+      event: "session_completed",
+      userId,
+      properties: {
+        day,
+        concept: concept.name,
+        character: character.name,
+        average_score: Math.round(avg * 10) / 10,
+        commands_used: commandsUsed.join(","),
+        used_coach: commandsUsed.includes("/coach"),
+        used_skip: commandsUsed.includes("/skip"),
+        used_reset: commandsUsed.includes("/reset"),
+      },
+    });
 
     // Update spaced repetition data
     try {

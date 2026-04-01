@@ -33,6 +33,40 @@ import {
 } from "./components/types";
 
 // ---------------------------------------------------------------------------
+// Session skeleton — shown during auth check and initial data load
+// ---------------------------------------------------------------------------
+
+function SessionSkeleton() {
+  return (
+    <div className="session-page flex flex-col h-dvh overflow-hidden" style={{ backgroundColor: "#EFF6FA" }}>
+      <div className="flex-shrink-0 px-10 pt-4 pb-3">
+        <div className="flex items-center justify-center gap-3">
+          {["Learn", "Sim", "Brief", "Deploy"].map((label) => (
+            <div key={label} className="flex flex-col items-center gap-1.5">
+              <div className="skeleton rounded-full" style={{ width: 10, height: 10 }} />
+              <div className="skeleton h-2.5 w-8" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6">
+        <div className="mx-auto max-w-lg py-5 sm:py-8 space-y-4">
+          <div className="skeleton h-5 w-40" />
+          <div className="skeleton h-3 w-64" />
+          <div className="card space-y-3" style={{ padding: "24px" }}>
+            <div className="skeleton h-4 w-full" />
+            <div className="skeleton h-4 w-5/6" />
+            <div className="skeleton h-4 w-4/6" />
+            <div className="skeleton h-4 w-full" />
+            <div className="skeleton h-4 w-3/4" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main session component
 // ---------------------------------------------------------------------------
 
@@ -42,6 +76,11 @@ export default function SessionPage() {
   const isRoleplay = s.currentPhase === "roleplay";
   const phaseBg = PHASE_BG[s.currentPhase] || "#FAF9F6";
   const phaseClass = s.phaseAnimation === "enter" ? "phase-enter" : s.phaseAnimation === "active" ? "phase-active" : "phase-exit";
+
+  // Show skeleton during initial load (lesson phase, loading, no content yet)
+  if (s.isLoading && s.currentPhase === "lesson" && !s.lessonContent && !s.onboardingNeeded) {
+    return <SessionSkeleton />;
+  }
 
   return (
     <div
@@ -86,18 +125,26 @@ export default function SessionPage() {
         </button>
       </div>
 
-      {/* Offline banner */}
-      {!s.online && (
-        <div className="flex-shrink-0 flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--coach-bg)", color: "var(--coach-muted)" }}>
-          Offline &mdash; reconnecting...
-        </div>
-      )}
+      {/* Status announcements (offline, restored, voice errors) */}
+      <div aria-live="polite" aria-atomic="true" className="flex-shrink-0">
+        {!s.online && (
+          <div className="flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--coach-bg)", color: "var(--coach-muted)" }}>
+            Offline &mdash; reconnecting...
+          </div>
+        )}
 
-      {s.restored && (
-        <div className="flex-shrink-0 flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
-          Session restored
-        </div>
-      )}
+        {s.restored && (
+          <div className="flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
+            Session restored
+          </div>
+        )}
+
+        {s.voice.micError && (
+          <div className="flex h-8 items-center justify-center text-caption font-medium" style={{ backgroundColor: "var(--score-low-bg)", color: "var(--score-low-text)" }}>
+            {s.voice.micError}
+          </div>
+        )}
+      </div>
 
       {/* Review session badge */}
       {s.isReviewSession && s.currentPhase === "lesson" && (
@@ -111,7 +158,7 @@ export default function SessionPage() {
         <div className={`mx-auto max-w-lg py-5 sm:py-8 ${phaseClass}`}>
 
           {s.error && (
-            <div className="mb-5 card text-center">
+            <div className="mb-5 card text-center" role="alert">
               <p className="text-body" style={{ color: "var(--score-low)" }}>{s.error}</p>
               <div className="mt-4 flex items-center justify-center gap-5">
                 <button onClick={s.retry} className="touch-target text-caption font-semibold underline" style={{ color: "var(--accent)" }}>
@@ -449,7 +496,7 @@ export default function SessionPage() {
           <div className="fixed inset-0 z-[60] backdrop-blur-overlay" style={{ backgroundColor: "rgba(0,0,0,0.2)" }} onClick={() => s.setShowExitModal(false)} />
           <div className="fixed inset-x-5 top-1/2 z-[70] mx-auto max-w-sm -translate-y-1/2 card" style={{ padding: "28px 24px", boxShadow: "var(--shadow-elevated)" }}>
             <p className="text-lead font-semibold" style={{ color: "var(--text-primary)" }}>Leave session?</p>
-            <p className="mt-2 mb-6 text-body" style={{ color: "var(--text-secondary)" }}>Your progress will be saved. You can resume within 30 minutes.</p>
+            <p className="mt-2 mb-6 text-body" style={{ color: "var(--text-secondary)" }}>Your progress is saved. You can resume within 4 hours.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => {

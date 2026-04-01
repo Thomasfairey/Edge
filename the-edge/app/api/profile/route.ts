@@ -5,17 +5,18 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { createUserClient } from "@/lib/supabase";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { createRequestLogger } from "@/lib/logger";
 
-async function handleGet(_req: NextRequest, userId: string | null) {
+async function handleGet(req: NextRequest, userId: string | null) {
   if (!userId) {
     return NextResponse.json({ profileData: null, displayName: "" });
   }
 
-  const { data, error } = await supabaseAdmin
+  const supabase = createUserClient(req);
+  const { data, error } = await supabase
     .from("profiles")
     .select("profile_data, display_name")
     .eq("id", userId)
@@ -55,7 +56,8 @@ async function handlePost(req: NextRequest, userId: string | null) {
     return NextResponse.json({ error: "Invalid feedbackStyle" }, { status: 400 });
   }
 
-  const { error } = await supabaseAdmin
+  const supabase = createUserClient(req);
+  const { error } = await supabase
     .from("profiles")
     .update({ profile_data: profileData })
     .eq("id", userId);

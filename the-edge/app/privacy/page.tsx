@@ -3,6 +3,10 @@
  * This is a public route (added to middleware PUBLIC_PATHS).
  */
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Privacy Policy" };
+
 export default function PrivacyPolicy() {
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">

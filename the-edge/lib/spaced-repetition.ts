@@ -83,14 +83,18 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   const today = new Date().toISOString().split("T")[0];
 
-  // Check if entry exists
-  let existingQuery = supabase
+  // Check if entry exists — always scope by user_id to prevent cross-user access
+  if (!userId) {
+    logger.warn("updateSREntry called without userId — skipping", { phase: "sr" });
+    return;
+  }
+
+  const existingQuery = supabase
     .from("spaced_repetition")
     .select("*")
     .eq("concept_id", conceptId)
+    .eq("user_id", userId)
     .limit(1);
-
-  if (userId) existingQuery = existingQuery.eq("user_id", userId);
 
   const { data: existing } = await existingQuery;
 
@@ -112,7 +116,7 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
     // Ensure interval is at least 1 and reasonable
     interval = Math.max(1, Math.min(interval, 365));
 
-    const { error } = await supabase
+    let updateQuery = supabase
       .from("spaced_repetition")
       .update({
         last_practiced: today,
@@ -124,6 +128,11 @@ export async function updateSREntry(conceptId: string, scores: { [key: string]: 
         updated_at: new Date().toISOString(),
       })
       .eq("id", row.id);
+
+    // Defence-in-depth: re-filter by user_id on updates
+    if (userId) updateQuery = updateQuery.eq("user_id", userId);
+
+    const { error } = await updateQuery;
 
     if (error) logger.error("Failed to update SR entry", { phase: "sr", error: error.message });
   } else {

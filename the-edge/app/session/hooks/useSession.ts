@@ -18,6 +18,7 @@ import { useVoice } from "@/app/hooks/useVoice";
 import { haptic, cleanForSpeech, splitLessonSections } from "../components/types";
 import type { VoiceProps } from "../components/types";
 import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
+import { trackClientEvent } from "@/lib/analytics";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -25,6 +26,7 @@ import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
 
 const SESSION_STORAGE_KEY = "edge-session-state";
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
+const SESSION_VERSION = 2; // Bump when session shape changes to invalidate stale sessions
 const MENTOR_VOICE_ID = "__mentor__";
 
 // ---------------------------------------------------------------------------
@@ -49,21 +51,24 @@ function normaliseScores(scores: Record<string, number> | null): SessionScores |
 async function fetchWithRetry(
   url: string,
   options: RequestInit,
-  maxRetries = 5,
-  delay = 3000,
-  onAttempt?: (attempt: number) => void
+  maxRetries = 3,
+  baseDelay = 2000,
+  onAttempt?: (attempt: number, maxRetries: number) => void
 ): Promise<Response> {
   const { fetchWithRequestId: fetchR } = await import("@/lib/fetch-with-request-id");
   let lastError: Error | null = null;
   for (let i = 1; i <= maxRetries; i++) {
     try {
-      onAttempt?.(i);
+      onAttempt?.(i, maxRetries);
       const res = await fetchR(url, options);
       if (res.ok) return res;
       throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       lastError = e as Error;
-      if (i < maxRetries) await new Promise((r) => setTimeout(r, delay));
+      if (i < maxRetries) {
+        // Exponential backoff: 2s, 4s
+        await new Promise((r) => setTimeout(r, baseDelay * Math.pow(2, i - 1)));
+      }
     }
   }
   throw lastError;
@@ -271,6 +276,7 @@ export function useSession() {
   function saveSession() {
     try {
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+        _v: SESSION_VERSION,
         phase: currentPhase, concept, character, lessonContent,
         transcript: roleplayTranscript, turnCount,
         completedPhases: Array.from(completedPhases), commandsUsed,
@@ -310,9 +316,9 @@ export function useSession() {
   function advancePhase(from: SessionPhase, to: SessionPhase) {
     const allowed = VALID_TRANSITIONS[from];
     if (allowed && !allowed.includes(to)) {
-      console.warn(`[session] Invalid phase transition: ${from} → ${to}`);
       return; // Block invalid transition
     }
+    trackClientEvent("phase_completed", { from, to, day: dayNumber });
     voice.stopSpeaking();
     setPhaseAnimation("exit");
     setInputValue("");
@@ -404,6 +410,7 @@ export function useSession() {
 
       setLessonContent(fullText);
       setLessonStreaming(false);
+      trackClientEvent("session_started", { day: dayNumber });
 
       // Detect truncated or error responses
       if (fullText.length < 50 || fullText.includes("[System:")) {
@@ -457,7 +464,7 @@ export function useSession() {
         "/api/retrieval-bridge",
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concept }),
           signal: AbortSignal.timeout(30000) },
-        5, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/5)`); }
+        3, 2000, (a, max) => { if (a > 1) setError(`Reconnecting\u2026 attempt ${a} of ${max}`); }
       );
       const data = await res.json();
       setRetrievalQuestion(data.response);
@@ -621,6 +628,7 @@ export function useSession() {
 
   function handleSkip() {
     setCommandsUsed((p) => [...p, "/skip"]); haptic();
+    trackClientEvent("command_used", { command: "/skip", day: dayNumber });
     advancePhase("roleplay", "debrief"); fetchDebrief();
   }
 
@@ -658,7 +666,7 @@ export function useSession() {
             checkinContext: checkinUserText || undefined,
           }),
           signal: AbortSignal.timeout(55000) },
-        3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
+        3, 3000, (a, max) => { if (a > 1) setError(`Analysing your session\u2026 attempt ${a} of ${max}`); }
       );
       const data = await res.json();
       let display = data.debriefContent;
@@ -744,7 +752,7 @@ export function useSession() {
         { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }),
           signal: AbortSignal.timeout(30000) },
-        3, 3000, (a) => { if (a > 1) setError(`Reconnecting... (attempt ${a}/3)`); }
+        3, 2000, (a, max) => { if (a > 1) setError(`Generating mission\u2026 attempt ${a} of ${max}`); }
       );
       const data = await res.json();
       setMission(data.mission); setRationale(data.rationale);
@@ -807,7 +815,13 @@ export function useSession() {
     sessionCompletedRef.current = true;
     setCompletedPhases((p) => new Set([...p, "mission"]));
     setShowConfetti(true);
-    clearSession(); haptic();
+    clearSession();
+    // Success haptic for completion (stronger than phase transition)
+    import("@/lib/haptics").then((h) => h.hapticSuccess()).catch(() => {
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate([10, 50, 10]); // double-tap pattern
+      }
+    });
     pregenerateTomorrowsLesson();
   }
 
@@ -1064,14 +1078,27 @@ export function useSession() {
       const raw = localStorage.getItem(SESSION_STORAGE_KEY);
       if (raw) {
         const s = JSON.parse(raw);
-        if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) {
-          setCurrentPhase(s.phase); setConcept(s.concept); setCharacter(s.character);
-          setLessonContent(s.lessonContent); setRoleplayTranscript(s.transcript || []);
-          setTurnCount(s.turnCount || 0); setCompletedPhases(new Set(s.completedPhases || []));
-          setCommandsUsed(s.commandsUsed || []); setCheckinOutcome(s.checkinOutcome);
+
+        // Validate session shape: version, timestamp, required fields
+        const isValid =
+          s &&
+          typeof s === "object" &&
+          s._v === SESSION_VERSION &&
+          typeof s.timestamp === "number" &&
+          typeof s.phase === "string" &&
+          ["lesson", "retrieval", "roleplay", "debrief", "mission"].includes(s.phase);
+
+        if (!isValid) {
+          // Corrupt or outdated session — discard silently
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+        } else if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) {
+          setCurrentPhase(s.phase); setConcept(s.concept ?? null); setCharacter(s.character ?? null);
+          setLessonContent(s.lessonContent ?? null); setRoleplayTranscript(Array.isArray(s.transcript) ? s.transcript : []);
+          setTurnCount(typeof s.turnCount === "number" ? s.turnCount : 0); setCompletedPhases(new Set(Array.isArray(s.completedPhases) ? s.completedPhases : []));
+          setCommandsUsed(Array.isArray(s.commandsUsed) ? s.commandsUsed : []); setCheckinOutcome(s.checkinOutcome ?? null);
           setCheckinNeeded(s.checkinNeeded ?? false); setCheckinDone(s.checkinDone ?? false);
           setCheckinUserText(s.checkinUserText ?? null);
-          setDayNumber(s.dayNumber || 1); setScenarioContext(s.scenarioContext || null);
+          setDayNumber(typeof s.dayNumber === "number" ? s.dayNumber : 1); setScenarioContext(s.scenarioContext ?? null);
           if (s.debriefContent) setDebriefContent(s.debriefContent);
           if (s.scores) setScores(normaliseScores(s.scores));
           if (s.behavioralWeaknessSummary) setBehavioralWeaknessSummary(s.behavioralWeaknessSummary);
@@ -1082,10 +1109,15 @@ export function useSession() {
           if (s.coachAdvice) setCoachAdvice(s.coachAdvice);
           if (s.isReviewSession) setIsReviewSession(s.isReviewSession);
           if (s.previousScores) setPreviousScores(normaliseScores(s.previousScores));
-          setIsLoading(false); setRestored(true); return;
+          setIsLoading(false); setRestored(true);
+          trackClientEvent("session_resumed", { phase: s.phase, day: s.dayNumber || 1 });
+          return;
         } else { localStorage.removeItem(SESSION_STORAGE_KEY); }
       }
-    } catch {}
+    } catch {
+      // Corrupt JSON — remove and start fresh
+      try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
+    }
 
     Promise.all([
       fetchWithRequestId("/api/status", { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
