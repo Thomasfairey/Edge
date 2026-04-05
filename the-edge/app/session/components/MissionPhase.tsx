@@ -142,6 +142,20 @@ export default function MissionPhase({
         </button>
       ) : (
         <div className="animate-fade-in-up space-y-5 relative">
+          {/* Confetti burst */}
+          <div className="pointer-events-none absolute inset-x-0 -top-4 flex justify-center gap-2 overflow-hidden" aria-hidden="true">
+            {Array.from({ length: 12 }, (_, i) => (
+              <span
+                key={i}
+                className="confetti-dot"
+                style={{
+                  backgroundColor: ["var(--accent)", "var(--score-high)", "var(--score-mid)", "var(--phase-learn)", "var(--phase-simulate)", "var(--phase-deploy)"][i % 6],
+                  left: `${8 + (i * 7.5)}%`,
+                  animationDelay: `${i * 0.06}s`,
+                }}
+              />
+            ))}
+          </div>
           <div className="card-tinted animate-celebrate" style={{ backgroundColor: "var(--score-high-bg)", padding: "28px 24px" }}>
             <p className="mb-1 text-center text-heading font-semibold" style={{ color: "var(--text-primary)" }}>
               Session complete

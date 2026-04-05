@@ -410,7 +410,7 @@ export default function SessionPage() {
           <div className="mx-auto max-w-lg">
             {s.lessonCardPos.current < s.lessonCardPos.total - 1 ? (
               <p className="py-3 text-center text-body" style={{ color: "var(--text-secondary)" }}>
-                {s.lessonCardPos.current + 1} of {s.lessonCardPos.total} &mdash; swipe to continue
+                {s.lessonCardPos.current + 1} of {s.lessonCardPos.total} &mdash; tap to continue
               </p>
             ) : (
               <button onClick={() => s.startRetrieval()} className="btn-primary animate-fade-in-up">
