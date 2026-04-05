@@ -21,7 +21,10 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self'",
+      // unsafe-inline is required: Next.js 16 injects inline <script> tags for
+      // RSC payload hydration (self.__next_f.push). There is no way to avoid this
+      // without nonce-based CSP, which Next.js does not yet support in production.
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self'",
       "img-src 'self' data: blob:",
