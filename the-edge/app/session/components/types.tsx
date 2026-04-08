@@ -13,6 +13,7 @@ export type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message 
 // ---------------------------------------------------------------------------
 
 export const PHASES: { key: SessionPhase; label: string; color: string }[] = [
+  { key: "checkin", label: "Gate", color: "#B8E0C8" },
   { key: "lesson", label: "Learn", color: "#B8D4E3" },
   { key: "roleplay", label: "Sim", color: "#F2C4C4" },
   { key: "debrief", label: "Brief", color: "#C5B8E8" },
@@ -20,6 +21,7 @@ export const PHASES: { key: SessionPhase; label: string; color: string }[] = [
 ];
 
 export const PHASE_BG: Record<string, string> = {
+  checkin: "#F0FAF4",
   lesson: "#EFF6FA",
   retrieval: "#EFF6FA",
   roleplay: "#FDF2F2",

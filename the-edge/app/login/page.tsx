@@ -92,7 +92,7 @@ export default function LoginPage() {
 
       if (signInError) {
         // Might need email confirmation
-        setError("Account created. Check your email to confirm, then log in.");
+        setSuccess("Account created! Check your email to confirm, then log in.");
         setMode("login");
         setLoading(false);
         return;
@@ -209,7 +209,7 @@ export default function LoginPage() {
                 <input
                   type="text"
                   value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
+                  onChange={(e) => { setInviteCode(e.target.value); setError(null); }}
                   required
                   className={inputClassName}
                   style={{
@@ -233,7 +233,7 @@ export default function LoginPage() {
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); setError(null); }}
               required
               className={inputClassName}
               style={{
@@ -256,7 +256,7 @@ export default function LoginPage() {
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => { setPassword(e.target.value); setError(null); }}
                 required
                 minLength={6}
                 className={inputClassName}

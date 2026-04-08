@@ -65,12 +65,16 @@ async function handleGet(_req: NextRequest, userId: string | null) {
 
     const streakCount = calculateStreak(entries);
 
-    // All scores for trend dashboard
+    // All scores for trend dashboard + session history
     const allScores = entries.map((e) => ({
       day: e.day,
       date: e.date,
       scores: e.scores,
       concept: e.concept,
+      character: e.character,
+      keyMoment: e.key_moment,
+      mission: e.mission,
+      weakness: e.behavioral_weakness_summary,
     }));
 
     return NextResponse.json({

@@ -50,8 +50,13 @@ export default function RetrievalPhase({
 
           {retrievalResponse && (
             <div className="animate-fade-in-up card-tinted text-center" style={{ backgroundColor: "var(--accent-soft)", padding: "24px" }}>
-              <p className="mb-1 text-body font-semibold" style={{ color: "var(--accent)" }}>Solid recall</p>
+              <p className="mb-1 text-body font-semibold" style={{ color: "var(--accent)" }}>
+                {retrievalReady ? "Solid recall" : "Keep building"}
+              </p>
               <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{retrievalResponse}</p>
+              {retrievalReady && (
+                <p className="mt-3 text-caption" style={{ color: "var(--text-tertiary)" }}>Moving to practice...</p>
+              )}
             </div>
           )}
 

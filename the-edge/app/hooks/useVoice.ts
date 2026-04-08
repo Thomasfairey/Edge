@@ -125,7 +125,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
   const [state, setState] = useState<VoiceState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
 
   // Hydration-safe feature detection (avoids SSR mismatch)
@@ -165,11 +165,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     setSttSupported(native || mic);
   }, []);
 
-  // Restore preference from localStorage (default: enabled)
+  // Restore preference from localStorage (default: disabled)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(VOICE_PREF_KEY);
-      if (saved === "false") setVoiceEnabled(false);
+      if (saved === "true") setVoiceEnabled(true);
     } catch {}
   }, []);
 

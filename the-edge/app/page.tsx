@@ -18,6 +18,10 @@ interface ScoreEntry {
   date: string;
   scores: SessionScores;
   concept: string;
+  character?: string;
+  keyMoment?: string;
+  mission?: string;
+  weakness?: string;
 }
 
 interface StatusData {
@@ -29,12 +33,12 @@ interface StatusData {
   allScores?: ScoreEntry[];
 }
 
-const DIMENSIONS: { key: keyof SessionScores; label: string; fullName: string; description: string }[] = [
-  { key: "technique_application", label: "Technique", fullName: "Technique Application", description: "How effectively you deployed the day\u2019s concept during the roleplay." },
-  { key: "tactical_awareness", label: "Tactical", fullName: "Tactical Awareness", description: "Your ability to recognise the character\u2019s tactics and adapt in real time." },
-  { key: "frame_control", label: "Frame", fullName: "Frame Control", description: "Who owned the conversation frame and whether you maintained or lost it." },
-  { key: "emotional_regulation", label: "Regulation", fullName: "Emotional Regulation", description: "Whether you stayed strategic under pressure or became reactive." },
-  { key: "strategic_outcome", label: "Outcome", fullName: "Strategic Outcome", description: "Whether you achieved your objective and moved the character from their position." },
+const DIMENSIONS: { key: keyof SessionScores; label: string; shortLabel: string; fullName: string; description: string }[] = [
+  { key: "technique_application", label: "Technique", shortLabel: "Tech", fullName: "Technique Application", description: "How effectively you deployed the day\u2019s concept during the roleplay." },
+  { key: "tactical_awareness", label: "Tactical", shortLabel: "Tact", fullName: "Tactical Awareness", description: "Your ability to recognise the character\u2019s tactics and adapt in real time." },
+  { key: "frame_control", label: "Frame", shortLabel: "Frame", fullName: "Frame Control", description: "Who owned the conversation frame and whether you maintained or lost it." },
+  { key: "emotional_regulation", label: "Regulation", shortLabel: "Reg", fullName: "Emotional Regulation", description: "Whether you stayed strategic under pressure or became reactive." },
+  { key: "strategic_outcome", label: "Outcome", shortLabel: "Out", fullName: "Strategic Outcome", description: "Whether you achieved your objective and moved the character from their position." },
 ];
 
 function scoreCircleColor(score: number): string {
@@ -191,6 +195,7 @@ export default function Home() {
   });
   const [expandedDim, setExpandedDim] = useState<string | null>(null);
   const expandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [expandedSession, setExpandedSession] = useState<number | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -350,7 +355,18 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-[480px] px-5 pb-10">
-      <div className="flex min-h-[90dvh] flex-col items-center justify-center gap-7">
+      {/* Offline banner */}
+      {!online && (
+        <div
+          className="sticky top-0 z-50 flex h-10 items-center justify-center text-sm font-medium rounded-b-2xl"
+          style={{ backgroundColor: "var(--coach-bg)", color: "var(--coach-muted)" }}
+          role="alert"
+        >
+          You&apos;re offline &mdash; check your connection
+        </div>
+      )}
+
+      <div className="flex min-h-[90dvh] flex-col items-center justify-center gap-5 sm:gap-7">
 
         {/* Header */}
         <div className="relative text-center w-full">
@@ -385,6 +401,20 @@ export default function Home() {
                 }}
                 role="menu"
               >
+                <a
+                  href="/profile"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2.5 text-left text-body font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  style={{ color: "var(--text-secondary)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--background)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 14s1 0 1-1-1-4-5-4-5 3-5 4 1 1 1 1h8z" />
+                    <circle cx="7" cy="5" r="2.5" />
+                  </svg>
+                  Edit Profile
+                </a>
                 <a
                   href="/privacy"
                   role="menuitem"
@@ -440,6 +470,30 @@ export default function Home() {
           </p>
         </div>
 
+        {/* 30-day progress bar */}
+        {dayNumber <= 30 && (
+          <div className="w-full max-w-xs">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-caption font-medium" style={{ color: "var(--text-tertiary)" }}>30-day challenge</span>
+              <span className="text-caption font-bold" style={{ color: "var(--accent)" }}>{Math.min(dayNumber - 1, 30)}/30</span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
+              <div
+                className="h-full rounded-full transition-all duration-700"
+                style={{
+                  width: `${Math.min(((dayNumber - 1) / 30) * 100, 100)}%`,
+                  backgroundColor: "var(--accent)",
+                }}
+              />
+            </div>
+            {dayNumber > 1 && dayNumber <= 30 && (
+              <p className="mt-1 text-center text-caption" style={{ color: "var(--text-tertiary)" }}>
+                {30 - (dayNumber - 1)} days remaining
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Progress ring */}
         <ProgressRing average={average} hasData={hasData} />
 
@@ -449,7 +503,7 @@ export default function Home() {
           role="group"
           aria-label="Score dimensions"
         >
-          {DIMENSIONS.map(({ key, label, fullName, description }) => {
+          {DIMENSIONS.map(({ key, label, shortLabel, fullName, description }) => {
             const score = latestScores ? latestScores[key] : null;
             const isExpanded = expandedDim === key;
             return (
@@ -475,7 +529,8 @@ export default function Home() {
                 >
                   {score !== null ? score : "\u2013"}
                 </button>
-                <span className="text-caption" style={{ color: "var(--text-tertiary)", fontSize: 12 }}>{label}</span>
+                <span className="text-caption sm:hidden" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>{shortLabel}</span>
+                <span className="text-caption hidden sm:inline" style={{ color: "var(--text-tertiary)", fontSize: 12 }}>{label}</span>
                 {isExpanded && (
                   <div
                     className="animate-fade-in-up w-40 rounded-[var(--radius-lg)] p-3.5 text-center"
@@ -566,46 +621,76 @@ export default function Home() {
                 day: "numeric",
                 month: "short",
               });
+              const isOpen = expandedSession === entry.day;
               return (
                 <div
                   key={`${entry.day}-${entry.date}`}
-                  className="flex items-center justify-between rounded-[var(--radius-md)] px-4 py-3"
+                  className="rounded-[var(--radius-md)] overflow-hidden transition-all"
                   style={{
                     backgroundColor: "var(--surface)",
                     boxShadow: "var(--shadow-sm)",
                   }}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className="text-caption font-bold shrink-0"
-                      style={{
-                        color: "var(--accent)",
-                        width: 36,
-                      }}
-                    >
-                      D{entry.day}
-                    </span>
-                    <div className="min-w-0">
-                      <p
-                        className="text-body font-medium truncate"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {entry.concept}
-                      </p>
-                      <p
-                        className="text-caption"
-                        style={{ color: "var(--text-tertiary)" }}
-                      >
-                        {formattedDate}
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className="text-body font-bold shrink-0 ml-3"
-                    style={{ color: scoreTextColor(Math.round(avg)) }}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSession(isOpen ? null : entry.day)}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left"
                   >
-                    {avg.toFixed(1)}
-                  </span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span
+                        className="text-caption font-bold shrink-0"
+                        style={{
+                          color: "var(--accent)",
+                          width: 36,
+                        }}
+                      >
+                        D{entry.day}
+                      </span>
+                      <div className="min-w-0">
+                        <p
+                          className="text-body font-medium truncate"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {entry.concept}
+                        </p>
+                        <p
+                          className="text-caption"
+                          style={{ color: "var(--text-tertiary)" }}
+                        >
+                          {formattedDate}{entry.character ? ` \u00b7 ${entry.character}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className="text-body font-bold shrink-0 ml-3"
+                      style={{ color: scoreTextColor(Math.round(avg)) }}
+                    >
+                      {avg.toFixed(1)}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="animate-fade-in-up px-4 pb-4 space-y-3">
+                      <div className="h-px" style={{ backgroundColor: "var(--border-subtle)" }} />
+                      {entry.keyMoment && (
+                        <div>
+                          <p className="text-caption font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-tertiary)" }}>Key moment</p>
+                          <p className="text-caption leading-relaxed" style={{ color: "var(--text-secondary)" }}>{entry.keyMoment}</p>
+                        </div>
+                      )}
+                      {entry.weakness && (
+                        <div>
+                          <p className="text-caption font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-tertiary)" }}>Area to improve</p>
+                          <p className="text-caption leading-relaxed" style={{ color: "var(--text-secondary)" }}>{entry.weakness}</p>
+                        </div>
+                      )}
+                      {entry.mission && (
+                        <div>
+                          <p className="text-caption font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-tertiary)" }}>Mission</p>
+                          <p className="text-caption leading-relaxed italic" style={{ color: "var(--text-secondary)" }}>&ldquo;{entry.mission}&rdquo;</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

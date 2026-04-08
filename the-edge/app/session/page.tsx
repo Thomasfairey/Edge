@@ -99,7 +99,7 @@ export default function SessionPage() {
             <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
           </svg>
         </button>
-        <PhaseIndicator current={s.currentPhase} completed={s.completedPhases} />
+        <PhaseIndicator current={s.currentPhase} completed={s.completedPhases} checkinNeeded={s.checkinNeeded} />
 
         {/* Global voice toggle */}
         <button
@@ -297,6 +297,26 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
+          {/* GATE (Phase 0 — check-in, Day 2+ only)                         */}
+          {/* ============================================================== */}
+          {s.currentPhase === "checkin" && (
+            <CheckinPhase
+              checkinNeeded={s.checkinNeeded}
+              checkinDone={s.checkinDone}
+              checkinPillSelected={s.checkinPillSelected}
+              setCheckinPillSelected={s.setCheckinPillSelected}
+              checkinResponse={s.checkinResponse}
+              lastMission={s.lastMission}
+              isLoading={s.isLoading}
+              mission={null}
+              inputValue={s.inputValue}
+              setInputValue={s.setInputValue}
+              submitCheckin={s.submitCheckin}
+              voice={s.voiceProps}
+            />
+          )}
+
+          {/* ============================================================== */}
           {/* LEARN                                                           */}
           {/* ============================================================== */}
           {s.currentPhase === "lesson" && !s.onboardingNeeded && (
@@ -362,26 +382,11 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
-          {/* DEPLOY (check-in + mission)                                    */}
+          {/* DEPLOY (mission only — check-in is now Phase 0)               */}
           {/* ============================================================== */}
           {s.currentPhase === "mission" && (
             <>
-              <CheckinPhase
-                checkinNeeded={s.checkinNeeded}
-                checkinDone={s.checkinDone}
-                checkinPillSelected={s.checkinPillSelected}
-                setCheckinPillSelected={s.setCheckinPillSelected}
-                checkinResponse={s.checkinResponse}
-                lastMission={s.lastMission}
-                isLoading={s.isLoading}
-                mission={s.mission}
-                inputValue={s.inputValue}
-                setInputValue={s.setInputValue}
-                submitCheckin={s.submitCheckin}
-                voice={s.voiceProps}
-              />
-
-              {s.mission && !s.isLoading && !s.checkinResponse && (
+              {s.mission && !s.isLoading && (
                 <MissionPhase
                   isLoading={s.isLoading}
                   mission={s.mission}

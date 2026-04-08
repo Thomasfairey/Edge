@@ -490,7 +490,7 @@ export function useSession() {
       setRetrievalResponse(data.response);
       setRetrievalReady(data.ready);
       setIsLoading(false);
-      if (data.ready) setTimeout(() => startRoleplay(), 1500);
+      if (data.ready) setTimeout(() => startRoleplay(), 3000);
     } catch {
       setError("Failed to evaluate response. Try again.");
       setIsLoading(false);
@@ -706,11 +706,7 @@ export function useSession() {
 
   function enterDeploy() {
     advancePhase("debrief", "mission");
-    if (checkinNeeded && !checkinDone) {
-      setIsLoading(false);
-    } else {
-      fetchMission();
-    }
+    fetchMission();
   }
 
   async function submitCheckin(outcomeType: "completed" | "tried" | "skipped", userOutcome?: string) {
@@ -732,7 +728,11 @@ export function useSession() {
       setCheckinOutcome(data.type);
       setCheckinDone(true);
       setIsLoading(false);
-      setTimeout(() => { setCheckinResponse(null); fetchMission(); }, 3500);
+      setTimeout(() => {
+        setCheckinResponse(null);
+        advancePhase("checkin", "lesson");
+        fetchLesson();
+      }, 5000);
     } catch {
       setError("Failed to submit. Try again.");
       setIsLoading(false);
@@ -827,7 +827,8 @@ export function useSession() {
 
   function retry() {
     setError(null);
-    if (currentPhase === "lesson") fetchLesson();
+    if (currentPhase === "checkin") { setIsLoading(false); }
+    else if (currentPhase === "lesson") fetchLesson();
     else if (currentPhase === "retrieval") startRetrieval();
     else if (currentPhase === "roleplay") startRoleplayFresh();
     else if (currentPhase === "debrief") fetchDebrief();
@@ -879,7 +880,7 @@ export function useSession() {
       } else if (currentPhase === "retrieval" && retrievalQuestion && !retrievalResponse) {
         submitRetrievalResponse(text);
         setInputValue("");
-      } else if (currentPhase === "mission" && checkinPillSelected && !checkinDone) {
+      } else if (currentPhase === "checkin" && checkinPillSelected && !checkinDone) {
         submitCheckin(checkinPillSelected, text);
         setInputValue("");
       }
@@ -977,7 +978,7 @@ export function useSession() {
   // Auto-speak check-in response
   const checkinResponseSpokenRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!voice.voiceEnabled || currentPhase !== "mission") return;
+    if (!voice.voiceEnabled || currentPhase !== "checkin") return;
     if (!checkinResponse || checkinResponseSpokenRef.current === checkinResponse) return;
     checkinResponseSpokenRef.current = checkinResponse;
     voiceSpeakRef.current(checkinResponse, MENTOR_VOICE_ID);
@@ -1141,7 +1142,13 @@ export function useSession() {
           return;
         }
 
-        fetchLesson();
+        // Start at checkin phase if Day 2+ (has previous mission), otherwise go straight to lesson
+        if (statusData?.lastEntry) {
+          setCurrentPhase("checkin");
+          setIsLoading(false);
+        } else {
+          fetchLesson();
+        }
       })
       .catch(() => { fetchLesson(); });
      

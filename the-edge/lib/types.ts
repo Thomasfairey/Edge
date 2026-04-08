@@ -84,7 +84,7 @@ export interface CharacterArchetype {
 // Session state (PRD Section 3.1)
 // ---------------------------------------------------------------------------
 
-export type SessionPhase = "lesson" | "retrieval" | "roleplay" | "debrief" | "mission";
+export type SessionPhase = "checkin" | "lesson" | "retrieval" | "roleplay" | "debrief" | "mission";
 
 export interface Message {
   role: "user" | "assistant";

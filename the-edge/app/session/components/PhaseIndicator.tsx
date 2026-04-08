@@ -6,16 +6,18 @@ import type { SessionPhase } from "./types";
 interface PhaseIndicatorProps {
   current: SessionPhase;
   completed: Set<SessionPhase>;
+  checkinNeeded?: boolean;
 }
 
-export default function PhaseIndicator({ current, completed }: PhaseIndicatorProps) {
+export default function PhaseIndicator({ current, completed, checkinNeeded }: PhaseIndicatorProps) {
+  const visiblePhases = checkinNeeded ? PHASES : PHASES.filter(p => p.key !== "checkin");
   return (
     <nav aria-label="Session progress" className="flex-shrink-0 z-50 pt-safe" style={{ backgroundColor: "var(--background)" }}>
       <div className="flex items-center justify-center gap-3 pt-3 pb-3" role="list" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-        {PHASES.map((p, idx) => {
+        {visiblePhases.map((p, idx) => {
           const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
           const isDone = completed.has(p.key);
-          const isPast = idx < PHASES.findIndex(pp => pp.key === current || (current === "retrieval" && pp.key === "lesson"));
+          const isPast = idx < visiblePhases.findIndex(pp => pp.key === current || (current === "retrieval" && pp.key === "lesson"));
 
           return (
             <div key={p.key} className="flex items-center gap-3" role="listitem" aria-current={isActive ? "step" : undefined}>
@@ -44,7 +46,7 @@ export default function PhaseIndicator({ current, completed }: PhaseIndicatorPro
                   {p.label}
                 </span>
               </div>
-              {idx < PHASES.length - 1 && (
+              {idx < visiblePhases.length - 1 && (
                 <div
                   className="h-[2px] w-5 rounded-full -mt-4"
                   style={{

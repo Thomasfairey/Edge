@@ -172,8 +172,9 @@ export default function CheckinPhase({
 
       {/* Check-in response */}
       {checkinResponse && (
-        <div className="animate-fade-in-up card text-center">
-          <p className="text-body leading-relaxed italic" style={{ color: "var(--text-secondary)" }}>{checkinResponse}</p>
+        <div className="animate-fade-in-up card text-center" style={{ padding: "24px" }}>
+          <p className="mb-2 text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>Mentor</p>
+          <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{checkinResponse}</p>
         </div>
       )}
 
