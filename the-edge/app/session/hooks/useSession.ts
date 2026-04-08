@@ -490,7 +490,8 @@ export function useSession() {
       setRetrievalResponse(data.response);
       setRetrievalReady(data.ready);
       setIsLoading(false);
-      if (data.ready) setTimeout(() => startRoleplay(), 3000);
+      // Give user time to read the feedback before auto-advancing
+      if (data.ready) setTimeout(() => startRoleplay(), 5000);
     } catch {
       setError("Failed to evaluate response. Try again.");
       setIsLoading(false);
@@ -510,21 +511,31 @@ export function useSession() {
     setCharacter(char);
     advancePhase("retrieval", "roleplay");
     setIsLoading(true);
-    try {
-      const res = await fetchWithRequestId("/api/roleplay", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concept, character: char, transcript: [], userMessage: null }),
-        signal: AbortSignal.timeout(30000),
-      });
-      if (!res.ok) throw new Error("API failed");
-      const sc = res.headers.get("X-Scenario-Context");
-      if (sc) {
-        try { setScenarioContext(decodeURIComponent(sc)); } catch { /* malformed header */ }
+
+    // Attempt with one automatic retry on failure
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetchWithRequestId("/api/roleplay", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ concept, character: char, transcript: [], userMessage: null }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!res.ok) throw new Error("API failed");
+        const sc = res.headers.get("X-Scenario-Context");
+        if (sc) {
+          try { setScenarioContext(decodeURIComponent(sc)); } catch { /* malformed header */ }
+        }
+        await streamRoleplayResponse(res, []);
+        return; // Success — exit
+      } catch {
+        if (attempt < 2) {
+          // Auto-retry once after a short delay
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        setError("Failed to start roleplay. Try again.");
+        setIsLoading(false);
       }
-      await streamRoleplayResponse(res, []);
-    } catch {
-      setError("Failed to start roleplay. Try again.");
-      setIsLoading(false);
     }
   }
 

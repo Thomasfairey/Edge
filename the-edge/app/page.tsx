@@ -366,10 +366,10 @@ export default function Home() {
         </div>
       )}
 
-      <div className="flex min-h-[90dvh] flex-col items-center justify-center gap-5 sm:gap-7">
+      <div className="flex flex-col items-center gap-5 sm:gap-7 pt-8 pb-4">
 
         {/* Header */}
-        <div className="relative text-center w-full">
+        <div className="relative text-center w-full px-12 sm:px-0">
           {/* Settings button */}
           <div ref={settingsRef} className="absolute right-0 top-0" style={{ zIndex: 10 }}>
             <button
@@ -499,7 +499,7 @@ export default function Home() {
 
         {/* Score circles row */}
         <div
-          className="flex w-full items-start justify-center gap-3 sm:gap-5 overflow-x-auto px-2"
+          className="flex w-full items-start justify-between sm:justify-center gap-1 sm:gap-5 px-2"
           role="group"
           aria-label="Score dimensions"
         >
@@ -507,7 +507,7 @@ export default function Home() {
             const score = latestScores ? latestScores[key] : null;
             const isExpanded = expandedDim === key;
             return (
-              <div key={key} className="flex flex-col items-center gap-2 min-w-0">
+              <div key={key} className="relative flex flex-col items-center gap-2 min-w-0 w-[56px] sm:w-auto">
                 <button
                   type="button"
                   onClick={() => handleScoreCircleClick(key)}
@@ -529,11 +529,11 @@ export default function Home() {
                 >
                   {score !== null ? score : "\u2013"}
                 </button>
-                <span className="text-caption sm:hidden" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>{shortLabel}</span>
-                <span className="text-caption hidden sm:inline" style={{ color: "var(--text-tertiary)", fontSize: 12 }}>{label}</span>
+                <span className="text-caption sm:hidden text-center truncate w-full" style={{ color: "var(--text-tertiary)", fontSize: 10 }}>{shortLabel}</span>
+                <span className="text-caption hidden sm:inline text-center" style={{ color: "var(--text-tertiary)", fontSize: 12 }}>{label}</span>
                 {isExpanded && (
                   <div
-                    className="animate-fade-in-up w-40 rounded-[var(--radius-lg)] p-3.5 text-center"
+                    className="animate-fade-in-up absolute top-full mt-2 w-40 rounded-[var(--radius-lg)] p-3.5 text-center z-10 left-1/2 -translate-x-1/2"
                     style={{ backgroundColor: "var(--surface)", boxShadow: "var(--shadow-elevated)" }}
                     role="tooltip"
                   >

@@ -13,21 +13,21 @@ export default function PhaseIndicator({ current, completed, checkinNeeded }: Ph
   const visiblePhases = checkinNeeded ? PHASES : PHASES.filter(p => p.key !== "checkin");
   return (
     <nav aria-label="Session progress" className="flex-shrink-0 z-50 pt-safe" style={{ backgroundColor: "var(--background)" }}>
-      <div className="flex items-center justify-center gap-3 pt-3 pb-3" role="list" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+      <div className="flex items-center justify-center gap-1.5 sm:gap-3 pt-3 pb-3 px-3" role="list" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
         {visiblePhases.map((p, idx) => {
           const isActive = p.key === current || (current === "retrieval" && p.key === "lesson");
           const isDone = completed.has(p.key);
           const isPast = idx < visiblePhases.findIndex(pp => pp.key === current || (current === "retrieval" && pp.key === "lesson"));
 
           return (
-            <div key={p.key} className="flex items-center gap-3" role="listitem" aria-current={isActive ? "step" : undefined}>
-              <div className="flex flex-col items-center gap-1.5" style={{ minWidth: 48 }}>
+            <div key={p.key} className="flex items-center gap-1.5 sm:gap-3" role="listitem" aria-current={isActive ? "step" : undefined}>
+              <div className="flex flex-col items-center gap-1 sm:gap-1.5 shrink-0" style={{ minWidth: 36 }}>
                 <div
                   aria-hidden="true"
                   className={`rounded-full transition-all ${isActive ? "phase-dot-active" : ""}`}
                   style={{
-                    width: isActive ? 16 : isDone ? 12 : 10,
-                    height: isActive ? 16 : isDone ? 12 : 10,
+                    width: isActive ? 14 : isDone ? 10 : 8,
+                    height: isActive ? 14 : isDone ? 10 : 8,
                     backgroundColor: isDone || isActive ? p.color : "transparent",
                     border: isDone || isActive ? "none" : `2px solid ${p.color}40`,
                     boxShadow: isActive ? `0 0 10px ${p.color}50` : "none",
@@ -35,10 +35,10 @@ export default function PhaseIndicator({ current, completed, checkinNeeded }: Ph
                   }}
                 />
                 <span
-                  className="text-caption font-medium transition-colors"
+                  className="text-caption font-medium transition-colors text-center"
                   style={{
                     color: isActive ? "var(--text-primary)" : isDone ? "var(--text-secondary)" : "var(--text-tertiary)",
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: isActive ? 600 : 500,
                     transition: "color 300ms ease",
                   }}
@@ -48,7 +48,7 @@ export default function PhaseIndicator({ current, completed, checkinNeeded }: Ph
               </div>
               {idx < visiblePhases.length - 1 && (
                 <div
-                  className="h-[2px] w-5 rounded-full -mt-4"
+                  className="h-[2px] w-3 sm:w-5 rounded-full -mt-4"
                   style={{
                     backgroundColor: isPast || isDone ? `${p.color}80` : "var(--border-subtle)",
                     transition: "background-color 400ms ease",
