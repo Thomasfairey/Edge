@@ -155,6 +155,17 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const recognitionRef = useRef<any>(null);
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
+  // Remembers if the Web Speech API has failed with an unrecoverable
+  // service-side error (e.g. "service-not-allowed" on iOS Safari). When true,
+  // subsequent startListening() calls skip the native path and go straight to
+  // the MediaRecorder / Web Audio fallback that uses /api/stt.
+  const nativeSTTBrokenRef = useRef(false);
+
+  // Ref-based fallback trigger so the native error handler can invoke the
+  // MediaRecorder / Web Audio fallback without creating a circular useCallback
+  // dependency between the native and fallback start functions.
+  const fallbackSTTRef = useRef<() => void>(() => {});
+
   const ttsSupported = true;
 
   // Run feature detection on client only (after hydration) — prevents SSR mismatch
@@ -330,15 +341,52 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     };
 
     recognition.onerror = (event: any) => {
-      if (event.error === "not-allowed") {
-        setMicError("Microphone access denied. Check your browser settings.");
-      } else if (event.error !== "no-speech" && event.error !== "aborted") {
-        console.warn("[useVoice] recognition error:", event.error);
-        setMicError(`Speech recognition error: ${event.error}`);
+      const errorType: string = event.error;
+
+      // Benign — user didn't speak or we aborted on purpose
+      if (errorType === "no-speech" || errorType === "aborted") {
+        setState("idle");
+        return;
       }
+
+      // Hard permission denial — nothing we can fall back to
+      if (errorType === "not-allowed") {
+        setMicError("Microphone access denied. Check your browser settings.");
+        setState("idle");
+        return;
+      }
+
+      // iOS Safari / some Chromium builds expose webkitSpeechRecognition but
+      // the underlying Google speech service is unavailable, producing
+      // "service-not-allowed". Also "network" and "audio-capture" indicate the
+      // Web Speech API pipeline is broken. In all these cases we have a
+      // perfectly good MediaRecorder + ElevenLabs Scribe fallback — use it
+      // transparently instead of surfacing a raw error to the user.
+      if (
+        errorType === "service-not-allowed" ||
+        errorType === "network" ||
+        errorType === "audio-capture"
+      ) {
+        console.warn(
+          "[useVoice] Web Speech API unavailable (",
+          errorType,
+          ") — falling back to MediaRecorder STT"
+        );
+        nativeSTTBrokenRef.current = true;
+        setInterimTranscript("");
+        setState("idle");
+        // Tear down the broken recognition instance before the fallback
+        // touches the mic, otherwise Safari may refuse getUserMedia.
+        try { recognition.abort?.(); } catch {}
+        recognitionRef.current = null;
+        fallbackSTTRef.current();
+        return;
+      }
+
+      console.warn("[useVoice] recognition error:", errorType);
+      setMicError("Couldn\u2019t hear that \u2014 try again");
       /* eslint-enable @typescript-eslint/no-explicit-any */
       setState("idle");
-
     };
 
     recognition.onend = () => {
@@ -668,6 +716,19 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // Unified start/stop listening
   // -------------------------------------------------------------------------
 
+  // Keep fallbackSTTRef up to date so the native recognition error handler
+  // (defined above) can invoke the MediaRecorder / Web Audio fallback without
+  // creating a circular useCallback dependency.
+  fallbackSTTRef.current = () => {
+    if (typeof MediaRecorder !== "undefined" && detectMicAccess()) {
+      startMediaRecorderListening();
+    } else if (detectMicAccess()) {
+      startFallbackListening();
+    } else {
+      setMicError("Microphone not available on this browser.");
+    }
+  };
+
   const startListening = useCallback(() => {
     // Clear any previous error
     setMicError(null);
@@ -679,7 +740,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     if (isNative) {
       // Capacitor native speech recognition
       startNativeCapacitorListening();
-    } else if (nativeSTT) {
+    } else if (nativeSTT && !nativeSTTBrokenRef.current) {
       startNativeListening();
     } else if (typeof MediaRecorder !== "undefined" && detectMicAccess()) {
       startMediaRecorderListening();
