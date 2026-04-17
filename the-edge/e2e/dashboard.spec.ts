@@ -8,218 +8,162 @@ import { login } from "./helpers/auth";
 
 test.describe("Dashboard / Home Page", () => {
   test.beforeEach(async ({ page }) => {
-    // Login and navigate to home page
+    // Ensure the 4-screen intro onboarding is skipped so fresh test users
+    // land on the dashboard rather than the marketing flow.
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("edge-onboarding-complete", "1");
+      } catch {
+        // localStorage unavailable in this context — non-fatal.
+      }
+    });
+
     await page.goto("/login");
-    await login(page, "test@example.com", "password123");
+    await login(page);
   });
 
   test("6.1: Dashboard renders with progress ring", async ({ page }) => {
-    // Should be on home page after login
-    expect(page.url()).toBe("http://localhost:3000/");
+    expect(new URL(page.url()).pathname).toBe("/");
 
-    // Wait for content to load
-    await page.waitForSelector("svg[role='img']");
+    // Progress ring SVG
+    const progressRing = page.locator("svg[role='img']").first();
+    await expect(progressRing).toBeVisible();
 
-    // Verify progress ring SVG exists
-    const progressRing = page.locator("svg[role='img']");
-    expect(progressRing).toBeDefined();
-
-    // Verify progress ring has accessible label
     const ariaLabel = await progressRing.getAttribute("aria-label");
     expect(ariaLabel).toBeTruthy();
   });
 
   test("6.2: Progress ring displays score or placeholder", async ({ page }) => {
-    // Wait for page to load
     await page.waitForSelector("svg[role='img']");
 
-    // Get progress ring
-    const _progressRing = page.locator("svg[role='img']");
+    // The score label inside the ring uses the `.text-display` typography class.
+    const displayText = page.locator("span.text-display").first();
+    await expect(displayText).toBeVisible();
 
-    // Verify it contains either a number or dash (no data state)
-    const displayText = page.locator(".display");
-    expect(displayText).toBeDefined();
-
-    // Get the text content (either score or "–")
     const content = await displayText.textContent();
-    expect(content).toBeTruthy();
+    expect(content?.trim()).toBeTruthy();
   });
 
-  test("6.3: New user shows zero state message", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("text=/Complete your first session/");
+  test("6.3: Zero state or populated data is rendered for the user", async ({ page }) => {
+    // Wait until the dashboard has finished loading — either the progress ring
+    // (data path) or the begin-session button is rendered.
+    await page.waitForSelector("svg[role='img'], button:has-text('Begin today')");
 
-    // If user has no session data, should see zero state message
     const zeroState = page.locator("text=/Complete your first session to unlock/");
 
-    // Check if zero state is visible (might not be if user has sessions)
-    const isVisible = await zeroState.isVisible().catch(() => false);
+    const isZeroStateVisible = await zeroState.isVisible().catch(() => false);
+    const firstDimensionContent = await page
+      .locator("[role='group'][aria-label='Score dimensions'] button")
+      .first()
+      .textContent()
+      .catch(() => null);
 
-    if (isVisible) {
-      expect(zeroState).toBeDefined();
-    }
-    // If zero state not visible, user has data, which is also fine
+    // Either the new-user zero state is shown, or the first dimension circle
+    // holds a real score (not the "–" en-dash placeholder).
+    const hasScoreData =
+      firstDimensionContent !== null && !firstDimensionContent.trim().startsWith("\u2013");
+    expect(isZeroStateVisible || hasScoreData).toBeTruthy();
   });
 
   test("6.4: Day counter displays current day number", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("text=/Day/");
+    const dayText = page.locator("text=/Day \\d+/").first();
+    await expect(dayText).toBeVisible();
 
-    // Verify day number is displayed
-    const dayText = page.locator("text=/Day \\d+/");
-    expect(dayText).toBeDefined();
-
-    // Verify it's a number
     const content = await dayText.textContent();
     const match = content?.match(/Day (\d+)/);
     expect(match?.[1]).toBeTruthy();
-    expect(parseInt(match?.[1] || "0")).toBeGreaterThanOrEqual(1);
+    expect(parseInt(match?.[1] ?? "0", 10)).toBeGreaterThanOrEqual(1);
   });
 
-  test("6.5: Streak counter displays when streak > 0", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("text=/Day/");
+  test("6.5: Streak counter renders a number when visible", async ({ page }) => {
+    await page.waitForSelector("text=/Day \\d+/");
 
-    // Streak may or may not be visible depending on user data
-    const streakText = page.locator("text=/day streak/");
+    const streakText = page.locator("text=/day streak/").first();
 
-    // Check if visible
-    const isVisible = await streakText.isVisible().catch(() => false);
-
-    if (isVisible) {
-      // If visible, verify it shows a number
+    if (await streakText.isVisible().catch(() => false)) {
       const content = await streakText.textContent();
       const match = content?.match(/(\d+)-day streak/);
       expect(match?.[1]).toBeTruthy();
     }
+    // Streak may be 0 for new users — absence of the pill is valid.
   });
 
   test("6.6: Settings menu is accessible from dashboard", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("button[aria-label='Settings']");
-
-    // Click settings button
     const settingsButton = page.locator("button[aria-label='Settings']");
+    await expect(settingsButton).toBeVisible();
     await settingsButton.click();
 
-    // Wait for menu to appear
-    await page.waitForSelector("text=Sign Out");
-
-    // Verify sign out option is visible
-    const signOutButton = page.locator("button[role='menuitem']:has-text('Sign Out')");
-    expect(signOutButton).toBeDefined();
+    const signOut = page.locator("button[role='menuitem']:has-text('Sign Out')");
+    await expect(signOut).toBeVisible();
   });
 
   test("6.7: Score dimensions row is visible", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("[role='group'][aria-label='Score dimensions']");
+    const scoreDimensions = page.locator("[role='group'][aria-label='Score dimensions']");
+    await expect(scoreDimensions).toBeVisible();
 
-    // Verify score dimensions row exists
-    const scoreDimensionsRow = page.locator("[role='group'][aria-label='Score dimensions']");
-    expect(scoreDimensionsRow).toBeDefined();
-
-    // Verify at least one dimension circle is visible
-    const dimensionButtons = scoreDimensionsRow.locator("button");
-    const count = await dimensionButtons.count();
-    expect(count).toBeGreaterThanOrEqual(5); // Should have 5 dimensions
+    // Should have exactly 5 dimension buttons.
+    await expect(scoreDimensions.locator("button")).toHaveCount(5);
   });
 
   test("6.8: Begin session button is functional", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("button:has-text('Begin today')");
-
-    // Verify button exists
     const beginButton = page.locator("button:has-text('Begin today')");
-    expect(beginButton).toBeDefined();
+    await expect(beginButton).toBeVisible();
+    await expect(beginButton).toBeEnabled();
 
-    // Verify button is enabled (not offline)
-    const isDisabled = await beginButton.evaluate((el: HTMLElement) =>
-      (el as HTMLButtonElement).disabled
-    );
-    expect(isDisabled).toBeFalsy();
-
-    // Click it
     await beginButton.click();
 
-    // Should navigate to session page
     await page.waitForURL(/\/session/, { timeout: 10000 });
     expect(page.url()).toContain("/session");
   });
 
-  test("6.9: Dimension score circles are clickable and show tooltips", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("[role='group'][aria-label='Score dimensions']");
+  test("6.9: Dimension score circles open a tooltip when clicked", async ({ page }) => {
+    const scoreDimensions = page.locator("[role='group'][aria-label='Score dimensions']");
+    await expect(scoreDimensions).toBeVisible();
 
-    // Get first dimension button
-    const scoreDimensionsRow = page.locator("[role='group'][aria-label='Score dimensions']");
-    const firstDimension = scoreDimensionsRow.locator("button").first();
-
-    // Click it
+    const firstDimension = scoreDimensions.locator("button").first();
     await firstDimension.click();
 
-    // Wait for tooltip
-    await page.waitForSelector("[role='tooltip']").catch(() => {
-      // Tooltip might not appear if no data, that's ok
-    });
+    // The aria-expanded attribute flips to "true" regardless of whether there
+    // is a score value — the tooltip itself is rendered conditionally on that.
+    await expect(firstDimension).toHaveAttribute("aria-expanded", "true");
 
-    // Verify tooltip is visible (if there's data)
-    const tooltip = page.locator("[role='tooltip']");
-    const isVisible = await tooltip.isVisible().catch(() => false);
-
-    if (isVisible) {
-      expect(tooltip).toBeDefined();
-    }
+    const tooltip = page.locator("[role='tooltip']").first();
+    await expect(tooltip).toBeVisible();
   });
 
-  test("6.10: Resume session card appears if session in progress", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("body");
-
-    // Check if resume card is visible
+  test("6.10: Resume session card surfaces when a session is in progress", async ({ page }) => {
     const resumeCard = page.locator("[role='region'][aria-label='Resume session']");
-    const isVisible = await resumeCard.isVisible().catch(() => false);
 
-    if (isVisible) {
-      // Verify it has buttons
-      const resumeButton = resumeCard.locator("button:has-text('Resume')");
-      const startFreshButton = resumeCard.locator("button:has-text('Start fresh')");
-
-      expect(resumeButton).toBeDefined();
-      expect(startFreshButton).toBeDefined();
+    if (await resumeCard.isVisible().catch(() => false)) {
+      await expect(resumeCard.locator("button:has-text('Resume')")).toBeVisible();
+      await expect(resumeCard.locator("button:has-text('Start fresh')")).toBeVisible();
     }
+    // For most users there is no in-progress session — absence is valid.
   });
 
-  test("6.11: Recent sessions are listed", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("body");
-
-    // Check if session history section exists
+  test("6.11: Recent sessions list renders entries when history exists", async ({ page }) => {
     const historySection = page.locator("[aria-label='Session history']");
-    const isVisible = await historySection.isVisible().catch(() => false);
 
-    if (isVisible) {
-      // Should have session entries
-      const sessionEntries = historySection.locator("[class*='rounded']");
-      const count = await sessionEntries.count();
-      expect(count).toBeGreaterThan(0);
+    if (await historySection.isVisible().catch(() => false)) {
+      // The heading is "Recent sessions"
+      await expect(historySection.locator("h2")).toContainText(/recent sessions/i);
+
+      // Each session is a collapsible row (button followed by a details panel).
+      const sessionButtons = historySection.locator("button");
+      expect(await sessionButtons.count()).toBeGreaterThan(0);
     }
   });
 
   test("6.12: Logout from settings menu works", async ({ page }) => {
-    // Wait for page to load
-    await page.waitForSelector("button[aria-label='Settings']");
-
-    // Click settings
     const settingsButton = page.locator("button[aria-label='Settings']");
+    await expect(settingsButton).toBeVisible();
     await settingsButton.click();
 
-    // Click sign out
-    await page.waitForSelector("button[role='menuitem']:has-text('Sign Out')");
-    const signOutButton = page.locator("button[role='menuitem']:has-text('Sign Out')");
-    await signOutButton.click();
+    const signOut = page.locator("button[role='menuitem']:has-text('Sign Out')");
+    await expect(signOut).toBeVisible();
+    await signOut.click();
 
-    // Should redirect to login
-    await page.waitForURL("/login", { timeout: 10000 });
+    await page.waitForURL(/\/login$/, { timeout: 10000 });
     expect(page.url()).toContain("/login");
   });
 });
