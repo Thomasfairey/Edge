@@ -112,13 +112,15 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
 
     log.info(`voice=${voice.voiceName} | character=${characterId ?? "default"} | chars=${cleaned.length}`, { phase: "tts" });
 
-    // Stream the audio directly to the client
+    // Stream the audio directly to the client.
+    // Note: do NOT set Transfer-Encoding: chunked manually — that header is
+    // invalid on HTTP/2 (which Vercel uses) and causes some clients to choke.
+    // Letting the runtime decide transfer encoding is the safe default.
     return new Response(response.body, {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
-        "Transfer-Encoding": "chunked",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
         "X-Voice-Name": voice.voiceName,
       },
     });
@@ -130,5 +132,7 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
   }
 }
 
-// Rate limit: 30 requests per minute (narration across all phases + roleplay)
-export const POST = withRateLimit(withAuth(handler), 30);
+// Rate limit: 60 requests per minute. Voice-mode sessions narrate lesson cards
+// (up to ~7), debrief, mission, retrieval Q+A, scenario intro, and every
+// roleplay turn (~8). A 30-req/min cap was hitting users mid-lesson.
+export const POST = withRateLimit(withAuth(handler), 60);

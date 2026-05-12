@@ -50,8 +50,26 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
   }
 
   try {
-    // Preserve the original filename/extension from the client (e.g. recording.wav, recording.mp4)
-    const originalName = audioBlob instanceof File ? audioBlob.name : "recording.webm";
+    // Preserve the original filename/extension from the client. The extension
+    // is the only signal ElevenLabs Scribe uses to pick a decoder for some
+    // formats, so we MUST keep .wav/.webm/.mp4/.ogg/etc. on the file name.
+    let originalName = audioBlob instanceof File ? audioBlob.name : "";
+    if (!originalName || !/\.[a-z0-9]{2,4}$/i.test(originalName)) {
+      // Fall back to MIME-derived extension
+      const type = audioBlob.type || "";
+      const ext = type.includes("wav")
+        ? "wav"
+        : type.includes("webm")
+          ? "webm"
+          : type.includes("ogg")
+            ? "ogg"
+            : type.includes("mp4") || type.includes("aac")
+              ? "mp4"
+              : type.includes("mpeg")
+                ? "mp3"
+                : "webm";
+      originalName = `recording.${ext}`;
+    }
 
     // Use ElevenLabs Speech-to-Text (Scribe)
     const form = new FormData();
