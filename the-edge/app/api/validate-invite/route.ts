@@ -30,7 +30,10 @@ async function handler(req: NextRequest) {
     return NextResponse.json({ valid: true });
   }
 
-  if (!safeCompare(body.code.trim(), validCode.trim())) {
+  // Trim only the user input (handles paste with trailing spaces). The env
+  // value is operator-controlled and shouldn't have stray whitespace; trimming
+  // it would create a tiny oracle for whitespace inside the secret.
+  if (!safeCompare(body.code.trim(), validCode)) {
     return NextResponse.json({ error: "Invalid invite code" }, { status: 403 });
   }
 

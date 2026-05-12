@@ -20,15 +20,26 @@ import { captureError } from "@/lib/error-reporting";
 // Client singleton (lazy init — avoids crashing at import/build time)
 // ---------------------------------------------------------------------------
 
-if (!process.env.ANTHROPIC_API_KEY) {
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? "";
+if (!ANTHROPIC_KEY) {
   logger.error("ANTHROPIC_API_KEY is not set. Add it to .env.local before starting the server.", { phase: "anthropic" });
 }
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY ?? "",
-});
+const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
 
 export default anthropic;
+
+/**
+ * Throw a clear error if the SDK is invoked without an API key. The SDK
+ * itself fails with a confusing 401-from-Anthropic message; failing here
+ * means the route handler can return a clean "service not configured"
+ * instead of a leaky upstream error.
+ */
+function ensureKeyConfigured(): void {
+  if (!ANTHROPIC_KEY) {
+    throw new Error("ANTHROPIC_API_KEY is not configured");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Token cost tracking — module-level counters (reset on cold start)
@@ -304,6 +315,7 @@ export function streamResponse(
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
+        ensureKeyConfigured();
         const stream = await withTimeout(
           callWithRetry(systemPrompt, messages, config, true, abortController.signal) as Promise<
             AsyncIterable<Anthropic.MessageStreamEvent>
@@ -452,6 +464,7 @@ export async function generateResponse(
   config: PhaseConfig,
   timeoutMs: number = 25_000
 ): Promise<string> {
+  ensureKeyConfigured();
   const phaseName = getPhaseLabel(config);
 
   try {

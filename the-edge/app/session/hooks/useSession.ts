@@ -396,16 +396,23 @@ export function useSession() {
       setLessonStreaming(true);
       setIsLoading(false);
 
+      // Always release the reader, even on throw, to free the stream.
+      // Without `releaseLock()` the underlying body stays locked and cannot be
+      // GC'd until the response itself is collected.
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          fullText += decoder.decode(value, { stream: true });
-          setLessonContent(fullText);
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            fullText += decoder.decode(value, { stream: true });
+            setLessonContent(fullText);
+          }
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          throw e;
         }
-      } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
-        throw e;
+      } finally {
+        try { reader.releaseLock(); } catch {}
       }
 
       setLessonContent(fullText);
@@ -424,31 +431,42 @@ export function useSession() {
     }
   }
 
+  // Track in-flight pregeneration so unmount can cancel it (saves backend
+  // tokens when the user navigates away mid-fetch).
+  const pregenAbortRef = useRef<AbortController | null>(null);
+
   function pregenerateTomorrowsLesson() {
-    try {
-      fetch("/api/lesson", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stream: false }),
+    pregenAbortRef.current?.abort();
+    const controller = new AbortController();
+    pregenAbortRef.current = controller;
+    fetch("/api/lesson", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stream: false }),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data || !data.concept || !data.lessonContent) return;
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        try {
+          localStorage.setItem(
+            "edge-pregenerated-lesson",
+            JSON.stringify({
+              date: tomorrow.toISOString().slice(0, 10),
+              concept: data.concept,
+              lessonContent: data.lessonContent,
+              isReview: data.isReview ?? false,
+            }),
+          );
+        } catch {}
       })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.concept && data.lessonContent) {
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            localStorage.setItem(
-              "edge-pregenerated-lesson",
-              JSON.stringify({
-                date: tomorrow.toISOString().slice(0, 10),
-                concept: data.concept,
-                lessonContent: data.lessonContent,
-                isReview: data.isReview ?? false,
-              })
-            );
-          }
-        })
-        .catch(() => {});
-    } catch {}
+      .catch((err: Error) => {
+        if (err.name !== "AbortError" && err.name !== "TimeoutError") {
+          console.warn("[session] pregenerate failed:", err.message);
+        }
+      });
   }
 
   // =========================================================================
@@ -569,23 +587,34 @@ export function useSession() {
   async function streamRoleplayResponse(res: Response, currentTranscript: Message[]) {
     setIsStreaming(true); setStreamingText(""); setIsLoading(false);
     const reader = res.body?.getReader();
-    if (!reader) return;
+    if (!reader) {
+      setIsStreaming(false);
+      return;
+    }
     const decoder = new TextDecoder();
     let fullText = "";
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        fullText += decoder.decode(value, { stream: true });
-        setStreamingText(fullText);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fullText += decoder.decode(value, { stream: true });
+          setStreamingText(fullText);
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        throw e;
       }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      throw e;
+      setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
+      setStreamingText("");
+      setTurnCount((p) => p + 1);
+    } finally {
+      // Always release the lock so the response body can be GC'd, even on
+      // error or early return. Clearing isStreaming here too prevents the UI
+      // from being stuck in "streaming" state if a throw bubbles up.
+      try { reader.releaseLock(); } catch {}
+      setIsStreaming(false);
     }
-    setRoleplayTranscript([...currentTranscript, { role: "assistant", content: fullText }]);
-    setStreamingText(""); setIsStreaming(false);
-    setTurnCount((p) => p + 1);
   }
 
   async function handleCoach() {
@@ -1131,10 +1160,20 @@ export function useSession() {
       try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
     }
 
+    // Init fetch with unmount-safe state updates. Without this, navigating
+    // away during the initial /api/status + /api/profile fetch would call
+    // setState on an unmounted component (React warning + memory waste).
+    let mounted = true;
+    const initController = new AbortController();
+    const initSignal = AbortSignal.any
+      ? AbortSignal.any([initController.signal, AbortSignal.timeout(10_000)])
+      : initController.signal;
+
     Promise.all([
-      fetchWithRequestId("/api/status", { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
-      fetchWithRequestId("/api/profile", { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetchWithRequestId("/api/status", { signal: initSignal }).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetchWithRequestId("/api/profile", { signal: initSignal }).then((r) => r.ok ? r.json() : null).catch(() => null),
     ]).then(([statusData, profileData]) => {
+        if (!mounted) return;
         if (statusData) {
           setDayNumber(statusData.dayNumber);
           if (statusData.lastEntry) {
@@ -1161,8 +1200,17 @@ export function useSession() {
           fetchLesson();
         }
       })
-      .catch(() => { fetchLesson(); });
-     
+      .catch(() => { if (mounted) fetchLesson(); });
+
+    return () => {
+      mounted = false;
+      initController.abort();
+      pregenAbortRef.current?.abort();
+    };
+    // fetchLesson reads many state values but is invoked imperatively here
+    // for one-shot init. Adding it would require a useCallback wrapper that
+    // changes every render, defeating the empty-deps intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // =========================================================================

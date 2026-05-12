@@ -38,17 +38,29 @@ try {
 export async function GET() {
   const uptimeS = Math.floor((Date.now() - startedAt) / 1000);
 
-  // Check Supabase connectivity
+  // Check Supabase connectivity (3s timeout — health checks must fail fast).
   let supabaseStatus: "ok" | "error" = "error";
+  let supabaseError: string | undefined;
   try {
-    // Lightweight query — just check the connection works
-    const { error } = await supabaseAdmin
+    const probe = supabaseAdmin
       .from("profiles")
       .select("id")
-      .limit(1);
-    supabaseStatus = error ? "error" : "ok";
-  } catch {
-    supabaseStatus = "error";
+      .limit(1)
+      .abortSignal(AbortSignal.timeout(3_000));
+    const { error } = await probe;
+    if (error) {
+      supabaseError = error.message;
+    } else {
+      supabaseStatus = "ok";
+    }
+  } catch (err) {
+    supabaseError = err instanceof Error ? err.message : String(err);
+  }
+  if (supabaseStatus !== "ok") {
+    logger.error("Supabase health probe failed", {
+      phase: "health",
+      error: supabaseError ?? "unknown",
+    });
   }
 
   // Check Anthropic API key presence
@@ -68,16 +80,26 @@ export async function GET() {
     });
   }
 
-  return NextResponse.json({
-    status: overallStatus,
-    version: appVersion,
-    uptime_s: uptimeS,
-    environment: process.env.NODE_ENV ?? "unknown",
-    timestamp: new Date().toISOString(),
-    dependencies: {
-      supabase: supabaseStatus,
-      anthropic: anthropicStatus,
+  return NextResponse.json(
+    {
+      status: overallStatus,
+      version: appVersion,
+      uptime_s: uptimeS,
+      environment: process.env.NODE_ENV ?? "unknown",
+      timestamp: new Date().toISOString(),
+      dependencies: {
+        supabase: supabaseStatus,
+        anthropic: anthropicStatus,
+      },
+      tokenStats: getTokenStats(),
     },
-    tokenStats: getTokenStats(),
-  });
+    {
+      // Return 503 when degraded so uptime monitors / load balancers /
+      // Vercel health checks detect the failure. 200 hides outages.
+      status: overallStatus === "ok" ? 200 : 503,
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    },
+  );
 }

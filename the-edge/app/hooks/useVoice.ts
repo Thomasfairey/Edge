@@ -210,6 +210,8 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // TTS request state
   const ttsAbortRef = useRef<AbortController | null>(null);
   const speakSeqRef = useRef(0);
+  // Tracked safety timer (cleared on stopSpeaking, toggleVoice off, unmount).
+  const speakSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stable callback refs
   const onTranscriptRef = useRef(onTranscript);
@@ -311,6 +313,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         // Disabling: stop everything
         ttsAbortRef.current?.abort();
         ttsAbortRef.current = null;
+        if (speakSafetyTimerRef.current) {
+          clearTimeout(speakSafetyTimerRef.current);
+          speakSafetyTimerRef.current = null;
+        }
         stopSharedAudio();
         if (isNative) {
           try {
@@ -848,7 +854,9 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
           // Safety: if we never get unlocked (e.g. user never interacts),
           // clear the state after a generous timeout so the UI isn't stuck.
-          window.setTimeout(() => {
+          if (speakSafetyTimerRef.current) clearTimeout(speakSafetyTimerRef.current);
+          speakSafetyTimerRef.current = setTimeout(() => {
+            speakSafetyTimerRef.current = null;
             if (!isAudioUnlocked() && mySeq === speakSeqRef.current) {
               finishIdle();
             }
@@ -885,6 +893,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const stopSpeaking = useCallback(() => {
     ttsAbortRef.current?.abort();
     ttsAbortRef.current = null;
+    if (speakSafetyTimerRef.current) {
+      clearTimeout(speakSafetyTimerRef.current);
+      speakSafetyTimerRef.current = null;
+    }
     stopSharedAudio();
     // Bump sequence so any late-resolving fetch is ignored.
     speakSeqRef.current += 1;
@@ -899,6 +911,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     return () => {
       ttsAbortRef.current?.abort();
       ttsAbortRef.current = null;
+      if (speakSafetyTimerRef.current) {
+        clearTimeout(speakSafetyTimerRef.current);
+        speakSafetyTimerRef.current = null;
+      }
       stopSharedAudio();
       if (isNative) {
         try {

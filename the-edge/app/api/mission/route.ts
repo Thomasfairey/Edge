@@ -119,9 +119,20 @@ async function handlePost(req: NextRequest, userId: string | null) {
       session_completed: true,
     };
 
-    // Write to Supabase
-    await appendEntry(ledgerEntry, userId);
-    log.info(`Day ${day} ledger entry written. Mission assigned.`, { phase: "mission" });
+    // Write to Supabase. Wrap separately so a generation success isn't masked
+    // by a persistence failure (and vice versa) — the user has earned the
+    // mission, so we still return it even if the ledger write fails.
+    let persisted = true;
+    try {
+      await appendEntry(ledgerEntry, userId);
+      log.info(`Day ${day} ledger entry written. Mission assigned.`, { phase: "mission" });
+    } catch (e) {
+      persisted = false;
+      log.error(
+        `Mission ledger write failed: ${e instanceof Error ? e.message : "Unknown error"}`,
+        { phase: "mission", day, concept: concept.id },
+      );
+    }
 
     // Track session completion
     const avg = (scores.technique_application + scores.tactical_awareness +
@@ -150,7 +161,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
       log.warn(`Failed to update SR entry: ${e instanceof Error ? e.message : "Unknown error"}`, { phase: "mission" });
     }
 
-    return NextResponse.json({ mission, rationale, ledgerEntry });
+    return NextResponse.json({ mission, rationale, ledgerEntry, persisted });
   } catch (error) {
     if (error instanceof CircuitBreakerOpenError) {
       return NextResponse.json(

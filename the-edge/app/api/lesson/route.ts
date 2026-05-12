@@ -74,8 +74,8 @@ async function handlePost(req: NextRequest, userId: string | null) {
       return new Response(stream, {
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
-          "Transfer-Encoding": "chunked",
-          "Cache-Control": "no-cache",
+          // Don't manually set Transfer-Encoding: chunked — invalid on HTTP/2.
+          "Cache-Control": "no-store, no-cache, must-revalidate",
           "X-Concept": encodeURIComponent(JSON.stringify(concept)),
           "X-Is-Review": isReview ? "true" : "false",
         },

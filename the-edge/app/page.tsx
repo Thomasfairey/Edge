@@ -271,13 +271,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
     const controller = new AbortController();
-    fetch("/api/status", { signal: controller.signal })
+    // 10s timeout — server should respond fast or fall back to cache.
+    const signal = AbortSignal.any
+      ? AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)])
+      : controller.signal;
+    fetch("/api/status", { signal })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then((data) => {
+        if (!mounted) return;
         if (data.error) throw new Error(data.error);
         setStatus(data);
         try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
@@ -292,14 +298,20 @@ export default function Home() {
         }
       })
       .catch(() => {
+        if (!mounted) return;
         try {
           const cached = localStorage.getItem(CACHE_KEY);
           if (cached) setStatus(JSON.parse(cached));
         } catch { /* localStorage unavailable */ }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
-    return () => controller.abort();
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, []);
 
   // Score circle expand handler — clears previous timeout to prevent leaks
