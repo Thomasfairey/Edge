@@ -143,7 +143,7 @@ export default function MissionPhase({
       ) : (
         <div className="animate-fade-in-up space-y-5 relative">
           {/* Confetti burst */}
-          <div className="pointer-events-none absolute inset-x-0 -top-4 flex justify-center gap-2 overflow-hidden" aria-hidden="true">
+          <div className="pointer-events-none absolute inset-x-0 -top-4 flex justify-center gap-2" aria-hidden="true">
             {Array.from({ length: 12 }, (_, i) => (
               <span
                 key={i}

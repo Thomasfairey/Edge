@@ -19,7 +19,7 @@ const DIMENSIONS = [
 ];
 
 const PHASES = [
-  { label: "Learn", color: "var(--phase-learn)", tint: "var(--phase-learn-tint)", desc: "Micro-lesson on today\u2019s concept" },
+  { label: "Learn", color: "var(--phase-learn)", tint: "var(--phase-learn-tint)", desc: "Micro-lesson on today\u2019s concept, then a quick recall check" },
   { label: "Simulate", color: "var(--phase-simulate)", tint: "var(--phase-simulate-tint)", desc: "Roleplay against a challenging character" },
   { label: "Debrief", color: "var(--phase-debrief)", tint: "var(--phase-debrief-tint)", desc: "Blunt scoring across five dimensions" },
   { label: "Deploy", color: "var(--phase-deploy)", tint: "var(--phase-deploy-tint)", desc: "Real-world mission for your next conversation" },

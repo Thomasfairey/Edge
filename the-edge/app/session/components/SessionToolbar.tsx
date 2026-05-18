@@ -118,9 +118,11 @@ export default function SessionToolbar({
               e.target.style.height = Math.min(e.target.scrollHeight, 96) + "px";
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && inputValue.trim() && !isStreaming) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                handleRoleplayInput(inputValue);
+                if (inputValue.trim() && !isStreaming) {
+                  handleRoleplayInput(inputValue);
+                }
               }
             }}
             disabled={isStreaming || isLoading}

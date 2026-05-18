@@ -28,9 +28,14 @@ function LessonCards({
   const [currentCard, setCurrentCard] = useState(0);
   const [showSwipeHint, setShowSwipeHint] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
   const autoPlaySpokenCard = useRef(-1);
+
+  useEffect(() => {
+    setIsTouchDevice("ontouchstart" in window || navigator.maxTouchPoints > 0);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setShowSwipeHint(false), 3000);
@@ -220,7 +225,7 @@ function LessonCards({
             className="mt-4 text-center text-xs text-[var(--accent)] transition-opacity duration-1000"
             style={{ opacity: showSwipeHint ? 0.8 : 0 }}
           >
-            Swipe to continue &rarr;
+            {isTouchDevice ? "Swipe to continue" : "Click the dots to continue"} &rarr;
           </div>
         )}
 
