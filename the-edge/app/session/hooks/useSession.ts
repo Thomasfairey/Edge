@@ -18,7 +18,7 @@ import { useVoice } from "@/app/hooks/useVoice";
 import { haptic, cleanForSpeech, splitLessonSections } from "../components/types";
 import type { VoiceProps } from "../components/types";
 import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
-import { trackClientEvent } from "@/lib/analytics";
+import { trackClientEvent } from "@/lib/analytics-client";
 
 // ---------------------------------------------------------------------------
 // Constants

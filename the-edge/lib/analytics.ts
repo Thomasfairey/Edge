@@ -36,10 +36,12 @@ interface EventPayload {
 }
 
 /**
- * Track an analytics event. Fire-and-forget — never throws.
+ * Track an analytics event. Server-only — imports the service-role Supabase client.
+ * Browser code must use trackClientEvent from "@/lib/analytics-client" instead;
+ * importing this module in a client bundle pulls supabaseAdmin and its env check
+ * into the browser.
  */
 export function trackEvent({ event, userId, properties }: EventPayload): void {
-  // Don't await — this must never block the request
   Promise.resolve(
     supabaseAdmin
       .from("analytics_events")
@@ -54,24 +56,5 @@ export function trackEvent({ event, userId, properties }: EventPayload): void {
           logger.warn(`Analytics write failed: ${error.message}`, { phase: "analytics" });
         }
       })
-  ).catch(() => {
-    // Silently swallow — analytics must never break the app
-  });
-}
-
-/**
- * Track from client-side via API. Sends to /api/track endpoint.
- * Fire-and-forget.
- */
-export function trackClientEvent(
-  event: AnalyticsEvent,
-  properties?: Record<string, string | number | boolean>
-): void {
-  if (typeof window === "undefined") return;
-  fetch("/api/track", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ event, properties }),
-    keepalive: true, // survives page unload
-  }).catch(() => {});
+  ).catch(() => {});
 }

@@ -13,6 +13,7 @@
  */
 
 import { useSession } from "./hooks/useSession";
+import { useIsTouchDevice } from "@/app/hooks/useIsTouchDevice";
 
 // Components
 import PhaseIndicator from "./components/PhaseIndicator";
@@ -72,6 +73,7 @@ function SessionSkeleton() {
 
 export default function SessionPage() {
   const s = useSession();
+  const isTouch = useIsTouchDevice();
 
   const isRoleplay = s.currentPhase === "roleplay";
   const phaseBg = PHASE_BG[s.currentPhase] || "#FAF9F6";
@@ -415,7 +417,7 @@ export default function SessionPage() {
           <div className="mx-auto max-w-lg">
             {s.lessonCardPos.current < s.lessonCardPos.total - 1 ? (
               <p className="py-3 text-center text-body" style={{ color: "var(--text-secondary)" }}>
-                {s.lessonCardPos.current + 1} of {s.lessonCardPos.total} &mdash; tap to continue
+                {s.lessonCardPos.current + 1} of {s.lessonCardPos.total} &mdash; {isTouch ? "tap" : "click"} to continue
               </p>
             ) : (
               <button onClick={() => s.startRetrieval()} className="btn-primary animate-fade-in-up">

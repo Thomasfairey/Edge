@@ -26,21 +26,10 @@ function LessonCards({
   isSpeaking?: boolean;
 }) {
   const [currentCard, setCurrentCard] = useState(0);
-  const [showSwipeHint, setShowSwipeHint] = useState(true);
   const [autoPlay, setAutoPlay] = useState(false);
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
   const autoPlaySpokenCard = useRef(-1);
-
-  useEffect(() => {
-    setIsTouchDevice("ontouchstart" in window || navigator.maxTouchPoints > 0);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => setShowSwipeHint(false), 3000);
-    return () => clearTimeout(t);
-  }, []);
 
   useEffect(() => {
     onCardChange?.(currentCard, sections.length);
@@ -219,15 +208,6 @@ function LessonCards({
             <span className="inline-block animate-pulse text-[var(--accent)]">|</span>
           )}
         </div>
-
-        {currentCard === 0 && showSwipeHint && sections.length > 1 && (
-          <div
-            className="mt-4 text-center text-xs text-[var(--accent)] transition-opacity duration-1000"
-            style={{ opacity: showSwipeHint ? 0.8 : 0 }}
-          >
-            {isTouchDevice ? "Swipe to continue" : "Click the dots to continue"} &rarr;
-          </div>
-        )}
 
         <div className="sticky bottom-0 pt-3 pb-1" style={{ background: "linear-gradient(transparent, var(--phase-learn-tint) 40%)" }}>
           <div className="flex items-center justify-center gap-2">
