@@ -36,11 +36,6 @@ export const metadata: Metadata = {
   },
 };
 
-/** Register service worker via external script (avoids unsafe-inline CSP). */
-function SwRegisterScript() {
-  return <script src="/sw-register.js" async />;
-}
-
 export default function RootLayout({
   children,
 }: {
@@ -60,7 +55,6 @@ export default function RootLayout({
         <div id="main-content">
           {children}
         </div>
-        <SwRegisterScript />
         <ServiceWorkerRegistrar />
       </body>
     </html>

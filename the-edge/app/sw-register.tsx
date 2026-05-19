@@ -2,10 +2,13 @@
 
 import { useEffect } from "react";
 
-/** Build ID used to force SW updates on each deploy. */
+/**
+ * Build ID used to force SW updates on each deploy. Must be stable across
+ * navigations within a single deploy or every page load registers a new SW
+ * URL and the "App updated" toast fires on every nav.
+ */
 const BUILD_ID =
-  process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 8) ??
-  String(Date.now());
+  process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 8) ?? "local";
 
 /**
  * Show a brief "App updated" toast that auto-dismisses after 3 seconds.

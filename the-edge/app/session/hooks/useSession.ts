@@ -557,6 +557,10 @@ export function useSession() {
       });
       if (!res.ok) throw new Error("API failed");
       await streamRoleplayResponse(res, updated);
+      trackClientEvent("roleplay_turn", {
+        turn: Math.ceil(updated.length / 2),
+        day: dayNumber,
+      });
     } catch {
       setRoleplayTranscript(roleplayTranscript);
       setTurnCount((p) => p - 1);

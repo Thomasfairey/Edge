@@ -39,6 +39,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
+  env: {
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA,
+  },
   compiler: {
     // Strip console.log/warn in production builds (keep console.error for debugging)
     removeConsole: process.env.NODE_ENV === "production"
