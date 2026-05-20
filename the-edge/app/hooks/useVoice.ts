@@ -66,8 +66,22 @@ const VOICE_PREF_KEY = "edge-voice-enabled";
 // Helpers
 // ---------------------------------------------------------------------------
 
+function detectIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  // iPadOS 13+ reports as MacIntel; distinguish by multi-touch capability.
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
 function detectNativeSpeechRecognition(): boolean {
   if (typeof window === "undefined") return false;
+  // iOS WebKit advertises webkitSpeechRecognition but the underlying service
+  // is blocked by Apple — calling .start() always errors with
+  // "service-not-allowed". Force the MediaRecorder → /api/stt fallback path
+  // so iPhone/iPad users get working transcription via ElevenLabs Scribe.
+  if (detectIOS()) return false;
   return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
 }
 
@@ -332,13 +346,18 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     recognition.onerror = (event: any) => {
       if (event.error === "not-allowed") {
         setMicError("Microphone access denied. Check your browser settings.");
+      } else if (event.error === "service-not-allowed") {
+        // Should not reach here on iOS (detectIOS gate routes around native
+        // STT) but handle defensively for any browser that blocks the speech
+        // service at the platform level.
+        console.warn("[useVoice] recognition service blocked by platform");
+        setMicError("Voice input not available on this browser. Try typing instead.");
       } else if (event.error !== "no-speech" && event.error !== "aborted") {
         console.warn("[useVoice] recognition error:", event.error);
-        setMicError(`Speech recognition error: ${event.error}`);
+        setMicError("Voice input failed. Try again or type instead.");
       }
       /* eslint-enable @typescript-eslint/no-explicit-any */
       setState("idle");
-
     };
 
     recognition.onend = () => {
