@@ -775,8 +775,12 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         })
         .catch((err) => {
           if (err.name === "AbortError") return;
+          // TTS is best-effort — the text always renders, so don't surface a
+          // user-facing banner. Auto-fired triggers (scenario narration,
+          // checkin response, mission narration) can race the auth cookie or
+          // the audio-unlock and produce transient errors that look broken to
+          // the user even though playback recovers on the next call.
           console.warn("[useVoice] TTS fetch error:", err.message);
-          setMicError("Voice synthesis failed. Check your connection.");
           setState("idle");
         });
     },
