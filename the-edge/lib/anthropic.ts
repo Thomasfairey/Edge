@@ -2,7 +2,8 @@
  * Anthropic client singleton, model constants, phase configs, and helpers.
  *
  * Provides both streaming and non-streaming generation functions with:
- * - Single retry on 429 (rate limit) with 2s delay
+ * - Retry on 429 (rate limit) and 5xx (transient upstream) with exponential
+ *   backoff + jitter, up to 3 attempts
  * - Configurable timeout with graceful error message
  * - Client disconnect detection (AbortController) for streaming
  * - Circuit breaker (3 consecutive failures → 30s open state)
@@ -210,8 +211,13 @@ async function callWithRetry(
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
   };
 
+  // Exponential backoff with jitter: 500ms * 2^n + random(0, 500ms).
+  // Attempts 0..MAX_RETRIES means up to MAX_RETRIES + 1 calls total.
+  // Total worst-case wait ≈ 500 + 1000 + 2000 + 3×500 jitter ≈ 5s.
+  const MAX_RETRIES = 3;
+
   const attempt = async (
-    isRetry: boolean
+    retryCount: number
   ): Promise<
     Anthropic.Message | AsyncIterable<Anthropic.MessageStreamEvent>
   > => {
@@ -239,11 +245,20 @@ async function callWithRetry(
       const isRateLimit =
         error instanceof Anthropic.RateLimitError ||
         (error instanceof Error && error.message.includes("429"));
+      const isUpstream5xx =
+        error instanceof Anthropic.InternalServerError ||
+        (error instanceof Error && /\b5\d\d\b/.test(error.message));
+      const isTransient = isRateLimit || isUpstream5xx;
 
-      if (isRateLimit && !isRetry) {
-        logger.warn("Rate limited — retrying in 2s...", { phase: "anthropic" });
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        return attempt(true);
+      if (isTransient && retryCount < MAX_RETRIES) {
+        const delayMs = 500 * Math.pow(2, retryCount) + Math.random() * 500;
+        const reason = isRateLimit ? "rate limited" : "upstream 5xx";
+        logger.warn(
+          `${reason} — retry ${retryCount + 1}/${MAX_RETRIES} in ${Math.round(delayMs)}ms`,
+          { phase: "anthropic" }
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return attempt(retryCount + 1);
       }
 
       cbOnFailure(error);
@@ -251,7 +266,7 @@ async function callWithRetry(
     }
   };
 
-  return attempt(false);
+  return attempt(0);
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, extractClientIp } from "./rate-limit";
+import { peekUserId } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { randomUUID } from "crypto";
 
@@ -65,11 +66,15 @@ export function withRateLimit(handler: RouteHandler, limit: number = 10): RouteH
       return originResult;
     }
 
-    const key = `${ip}:${routeKey}`;
+    // Scope rate limit per-user when an authenticated session is present,
+    // fall back to IP for anonymous traffic. Prevents users on shared NAT
+    // (corporate, school, mobile carrier) from DoS-ing each other.
+    const userId = await peekUserId(req);
+    const key = userId ? `u:${userId}:${routeKey}` : `ip:${ip}:${routeKey}`;
     const result = await checkRateLimit(key, limit);
 
     if (!result.success) {
-      reqLogger.warn(`Rate limited ${ip} (retry in ${result.retryAfter}s)`, { phase: "rate-limit" });
+      reqLogger.warn(`Rate limited ${userId ? "user " + userId : ip} (retry in ${result.retryAfter}s)`, { phase: "rate-limit" });
       return NextResponse.json(
         { error: "Too many requests. Please wait before trying again." },
         {

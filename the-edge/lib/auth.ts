@@ -16,6 +16,33 @@ export type AuthRouteHandler = (req: NextRequest, userId: string | null) => Prom
 type RouteHandler = (req: NextRequest) => Promise<Response | NextResponse>;
 
 /**
+ * Best-effort peek at the userId from Supabase session cookies.
+ * Returns null on any failure — does NOT reject the request.
+ * Used by withRateLimit to scope rate-limit keys per-user instead of per-IP
+ * when an authenticated session is present, so users on a shared NAT can't
+ * exhaust each other's quota.
+ */
+export async function peekUserId(req: NextRequest): Promise<string | null> {
+  try {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return req.cookies.getAll(); },
+          setAll() { /* no-op */ },
+        },
+      }
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Constant-time string comparison to prevent timing attacks.
  */
 function safeCompare(a: string, b: string): boolean {
