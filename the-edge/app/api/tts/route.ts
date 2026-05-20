@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
-import { getVoiceForCharacter, CHARACTER_VOICE_MAP, ELEVENLABS_MODEL } from "@/lib/voice-map";
+import { getVoiceForCharacter, isValidVoiceId, ELEVENLABS_MODEL } from "@/lib/voice-map";
 import { createRequestLogger } from "@/lib/logger";
 
 const MAX_TTS_LENGTH = 5000; // ElevenLabs has a 5000 char limit per request
@@ -48,8 +48,8 @@ async function handler(req: NextRequest, _userId: string | null): Promise<Respon
     return NextResponse.json({ error: "text exceeds maximum length" }, { status: 400 });
   }
 
-  // Validate characterId against known characters
-  if (characterId && !(characterId in CHARACTER_VOICE_MAP)) {
+  // Validate characterId against known characters + the __mentor__ sentinel.
+  if (characterId && !isValidVoiceId(characterId)) {
     return NextResponse.json({ error: "Invalid characterId" }, { status: 400 });
   }
 

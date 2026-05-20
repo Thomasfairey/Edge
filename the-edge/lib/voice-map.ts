@@ -67,7 +67,17 @@ export const DEFAULT_VOICE: VoiceMapping = {
   voiceName: "George",
 };
 
+/** Sentinel used by the client to request the mentor/narrator voice for
+ *  non-character phases (lesson, retrieval, debrief, mission, checkin,
+ *  scenario intro). Kept out of CHARACTER_VOICE_MAP so it stays an explicit
+ *  marker rather than masquerading as an archetype. */
+export const MENTOR_VOICE_ID = "__mentor__";
+
+export function isValidVoiceId(id: string): boolean {
+  return id === MENTOR_VOICE_ID || id in CHARACTER_VOICE_MAP;
+}
+
 export function getVoiceForCharacter(characterId: string): VoiceMapping {
-  if (characterId === "__mentor__") return MENTOR_VOICE;
+  if (characterId === MENTOR_VOICE_ID) return MENTOR_VOICE;
   return CHARACTER_VOICE_MAP[characterId] ?? DEFAULT_VOICE;
 }

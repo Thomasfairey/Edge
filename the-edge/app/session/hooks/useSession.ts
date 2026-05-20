@@ -19,6 +19,7 @@ import { haptic, cleanForSpeech, splitLessonSections } from "../components/types
 import type { VoiceProps } from "../components/types";
 import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
 import { trackClientEvent } from "@/lib/analytics-client";
+import { MENTOR_VOICE_ID } from "@/lib/voice-map";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -27,7 +28,6 @@ import { trackClientEvent } from "@/lib/analytics-client";
 const SESSION_STORAGE_KEY = "edge-session-state";
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
 const SESSION_VERSION = 2; // Bump when session shape changes to invalidate stale sessions
-const MENTOR_VOICE_ID = "__mentor__";
 
 // ---------------------------------------------------------------------------
 // Helpers
