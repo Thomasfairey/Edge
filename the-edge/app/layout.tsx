@@ -8,6 +8,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import AudioUnlock from "@/app/components/AudioUnlock";
+import VoiceDebug from "@/app/components/VoiceDebug";
 import "./globals.css";
 import { ServiceWorkerRegistrar } from "./sw-register";
 
@@ -52,6 +53,7 @@ export default function RootLayout({
           Skip to content
         </a>
         <AudioUnlock />
+        <VoiceDebug />
         <div id="main-content">
           {children}
         </div>
