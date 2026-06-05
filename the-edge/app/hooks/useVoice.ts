@@ -6,14 +6,26 @@ import {
   playOnSharedAudio,
   stopSharedAudio,
 } from "@/app/components/AudioUnlock";
-import { Capacitor } from "@capacitor/core";
-import { SpeechRecognition } from "@capacitor-community/speech-recognition";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import type { TextToSpeechPlugin } from "@capacitor-community/text-to-speech";
 
 // ---------------------------------------------------------------------------
 // Capacitor detection
 // ---------------------------------------------------------------------------
 
 const isNative = Capacitor.isNativePlatform();
+
+// Register the native TTS plugin directly rather than importing the package
+// index, whose top-level `window.speechSynthesis` warm-up throws during the
+// Next.js SSR prerender. registerPlugin is lazy and SSR-safe; the web impl
+// (which touches window) is only instantiated in the browser, never on the
+// server and never on native.
+const TextToSpeech = registerPlugin<TextToSpeechPlugin>("TextToSpeech", {
+  web: () =>
+    import("@capacitor-community/text-to-speech/dist/esm/web").then(
+      (m) => new m.TextToSpeechWeb()
+    ),
+});
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,14 +181,22 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const recognitionRef = useRef<any>(null);
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
+  // Generation counter for native TTS — lets a newer speak()/stop() cancel the
+  // callbacks of an earlier native speak that is still resolving.
+  const nativeSpeakGenRef = useRef(0);
+
   const ttsSupported = true;
 
   // Run feature detection on client only (after hydration) — prevents SSR mismatch
   useEffect(() => {
-    const native = isNative || detectNativeSpeechRecognition();
+    // Web Speech API is desktop-only here (detectNativeSpeechRecognition is
+    // false on iOS). The Capacitor community speech-recognition plugin is NOT
+    // SPM-compatible, so the native app uses the same server STT path
+    // (MediaRecorder -> /api/stt) as mobile Safari.
+    const webSpeech = detectNativeSpeechRecognition();
     const mic = detectMicAccess();
-    setNativeSTT(native);
-    setSttSupported(native || mic);
+    setNativeSTT(webSpeech);
+    setSttSupported(webSpeech || mic);
   }, []);
 
   // Restore preference from localStorage (default: disabled)
@@ -232,6 +252,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         recognitionRef.current?.stop();
         cleanupRecording();
         abortRef.current?.abort();
+        if (isNative) {
+          nativeSpeakGenRef.current++;
+          TextToSpeech.stop().catch(() => {});
+        }
         stopSharedAudio();
         setState("idle");
         setInterimTranscript("");
@@ -240,65 +264,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       return next;
     });
   }, [cleanupRecording]);
-
-  // -------------------------------------------------------------------------
-  // Speech Recognition (STT) — Capacitor native
-  // -------------------------------------------------------------------------
-
-  const startNativeCapacitorListening = useCallback(async () => {
-    // Stop any current audio playback
-    abortRef.current?.abort();
-    stopSharedAudio();
-
-    // Request permission if needed
-    const { speechRecognition } = await SpeechRecognition.requestPermissions();
-    if (speechRecognition !== "granted") {
-      setMicError("Microphone permission denied. Please allow it in Settings.");
-      return;
-    }
-
-    setState("listening");
-    setInterimTranscript("");
-    setMicError(null);
-
-    // Listen for partial results
-    SpeechRecognition.addListener("partialResults", (data: { matches: string[] }) => {
-      if (data.matches?.[0]) {
-        setInterimTranscript(data.matches[0]);
-      }
-    });
-
-    try {
-      const result = await SpeechRecognition.start({
-        language: lang,
-        partialResults: true,
-        popup: false,
-      });
-
-      setInterimTranscript("");
-      if (result.matches?.[0]) {
-        setState("processing");
-        onTranscriptRef.current?.(result.matches[0].trim());
-      } else {
-        setState("idle");
-      }
-    } catch (err) {
-      console.warn("[useVoice] Native recognition error:", err);
-      setMicError("Speech recognition failed. Please try again.");
-      setState("idle");
-    } finally {
-      SpeechRecognition.removeAllListeners();
-    }
-  }, [lang]);
-
-  const stopNativeCapacitorListening = useCallback(async () => {
-    try {
-      await SpeechRecognition.stop();
-    } catch {}
-    SpeechRecognition.removeAllListeners();
-    setState("idle");
-    setInterimTranscript("");
-  }, []);
 
   // -------------------------------------------------------------------------
   // Speech Recognition (STT) — native Web Speech API
@@ -695,26 +660,21 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     abortRef.current?.abort();
     stopSharedAudio();
 
-    if (isNative) {
-      // Capacitor native speech recognition
-      startNativeCapacitorListening();
-    } else if (nativeSTT) {
+    if (nativeSTT) {
+      // Desktop browser Web Speech API (Chrome/Edge)
       startNativeListening();
     } else if (typeof MediaRecorder !== "undefined" && detectMicAccess()) {
+      // Native app + modern mobile Safari → server STT (ElevenLabs Scribe)
       startMediaRecorderListening();
     } else if (detectMicAccess()) {
-      // iOS Safari fallback — no MediaRecorder, use Web Audio API
+      // Older iOS Safari fallback — no MediaRecorder, use Web Audio API
       startFallbackListening();
     } else {
-      setMicError("Microphone not available on this browser.");
+      setMicError("Microphone not available on this device.");
     }
-  }, [nativeSTT, startNativeListening, startMediaRecorderListening, startFallbackListening, startNativeCapacitorListening]);
+  }, [nativeSTT, startNativeListening, startMediaRecorderListening, startFallbackListening]);
 
   const stopListening = useCallback(() => {
-    if (isNative) {
-      stopNativeCapacitorListening();
-      return;
-    }
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       setState("idle");
@@ -731,7 +691,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     if (isRecordingRef.current) {
       stopFallbackListening();
     }
-  }, [stopFallbackListening, stopNativeCapacitorListening]);
+  }, [stopFallbackListening]);
 
   // -------------------------------------------------------------------------
   // Speech Synthesis (TTS) — ElevenLabs via /api/tts
@@ -744,10 +704,39 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       // Cancel any in-flight fetch (but don't touch the audio element yet —
       // it may still be finishing its unlock play)
       abortRef.current?.abort();
+      setState("speaking");
+
+      // Native app: use the OS speech synthesiser (AVSpeechSynthesizer on iOS).
+      // Bypasses the web audio-unlock dance entirely — no user gesture, no
+      // singleton Audio element, no network round-trip. Reliable read-back on
+      // device. Trade-off: OS voice instead of the ElevenLabs character voices
+      // (which still play on the web build).
+      if (isNative) {
+        const gen = ++nativeSpeakGenRef.current;
+        TextToSpeech.stop().catch(() => {});
+        TextToSpeech.speak({
+          text,
+          lang,
+          rate: 1.0,
+          pitch: 1.0,
+          volume: 1.0,
+          category: "playback",
+        })
+          .then(() => {
+            if (gen !== nativeSpeakGenRef.current) return;
+            setState("idle");
+            onSpeakEndRef.current?.();
+          })
+          .catch((err) => {
+            if (gen !== nativeSpeakGenRef.current) return;
+            console.warn("[useVoice] native TTS error:", err?.message ?? err);
+            setState("idle");
+          });
+        return;
+      }
 
       const controller = new AbortController();
       abortRef.current = controller;
-      setState("speaking");
 
       // Fetch TTS audio first — runs in parallel with any pending unlock
       fetch("/api/tts", {
@@ -803,7 +792,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           setState("idle");
         });
     },
-    []
+    [lang]
   );
 
   const speak = useCallback(
@@ -825,6 +814,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
   const stopSpeaking = useCallback(() => {
     abortRef.current?.abort();
+    if (isNative) {
+      nativeSpeakGenRef.current++;
+      TextToSpeech.stop().catch(() => {});
+    }
     stopSharedAudio();
     setState((prev) => (prev === "speaking" ? "idle" : prev));
   }, []);
@@ -838,6 +831,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       isRecordingRef.current = false;
       cleanupRecording();
       abortRef.current?.abort();
+      if (isNative) TextToSpeech.stop().catch(() => {});
       stopSharedAudio();
     };
   }, [cleanupRecording]);
