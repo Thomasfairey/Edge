@@ -3,10 +3,13 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   appId: "com.theedge.app",
   appName: "The Edge",
-  // Live URL mode: point at your Vercel deployment
-  // Update this to your production URL when ready
+  // Live URL mode: point at your Vercel deployment.
+  // NOTE: the bare "the-edge.vercel.app" alias does NOT exist on this project
+  // (returns 404); the canonical public production domain is
+  // "the-edge-xi.vercel.app". If you add a stable custom domain later, update
+  // this and rebuild the native app (a Vercel deploy alone won't change it).
   server: {
-    url: "https://the-edge.vercel.app",
+    url: "https://the-edge-xi.vercel.app",
     cleartext: false,
   },
   ios: {
