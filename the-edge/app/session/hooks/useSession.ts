@@ -482,7 +482,8 @@ export function useSession() {
     try {
       const res = await fetchWithRequestId("/api/retrieval-bridge", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concept, userResponse }),
+        // question: lets the examiner grade against the question actually asked
+        body: JSON.stringify({ concept, userResponse, question: retrievalQuestion ?? undefined }),
         signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("API failed");
@@ -602,7 +603,8 @@ export function useSession() {
     try {
       const res = await fetchWithRequestId("/api/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: roleplayTranscript, concept }),
+        // character: lets the coach counter the specific opponent's tactics
+        body: JSON.stringify({ transcript: roleplayTranscript, concept, character: character ?? undefined }),
         signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("API failed");

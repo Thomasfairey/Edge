@@ -12,9 +12,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildCoachPrompt } from "@/lib/prompts/coach";
-import { Concept, Message } from "@/lib/types";
+import { Concept, CharacterArchetype, Message } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
-import { validateTranscript, validateConcept, ValidationError } from "@/lib/validate";
+import { validateTranscript, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
 import { createRequestLogger } from "@/lib/logger";
 
@@ -29,9 +29,12 @@ async function handlePost(req: NextRequest, _userId: string | null) {
   }
 
   let concept: Concept;
+  let character: CharacterArchetype | undefined;
   try {
     body.transcript = validateTranscript(body.transcript);
     concept = validateConcept(body.concept);
+    // Optional — older clients don't send it; advice still works without
+    if (body.character) character = validateCharacter(body.character);
   } catch (e) {
     if (e instanceof ValidationError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -42,7 +45,7 @@ async function handlePost(req: NextRequest, _userId: string | null) {
   const transcript: Message[] = body.transcript;
 
   try {
-    const systemPrompt = buildCoachPrompt(transcript, concept);
+    const systemPrompt = buildCoachPrompt(transcript, concept, character);
 
     const advice = await generateResponse(
       systemPrompt,

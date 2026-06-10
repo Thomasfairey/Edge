@@ -313,11 +313,20 @@ export const CONCEPTS: Concept[] = [
 // Concept selection
 // ---------------------------------------------------------------------------
 
+/** A due review this many days overdue is no longer left to chance. */
+const FORCED_REVIEW_OVERDUE_DAYS = 7;
+
 /**
  * Select the next concept for today's session.
- * Returns { concept, isReview } — when reviews are due, 30% chance of review session.
+ * Returns { concept, isReview }.
  *
- * Rules:
+ * Review scheduling: when reviews are due there is a 30% chance of a review
+ * session (keeps most days fresh), BUT a review more than
+ * FORCED_REVIEW_OVERDUE_DAYS overdue is forced — otherwise the coin flip can
+ * starve the spaced-repetition schedule indefinitely and the memory the
+ * schedule was protecting decays past recovery.
+ *
+ * New-concept rules:
  * 1. Never repeat a concept already in completedIds.
  * 2. Prefer a different domain than the most recently completed concept
  *    (enforces breadth before depth).
@@ -325,14 +334,19 @@ export const CONCEPTS: Concept[] = [
  * 4. If ALL concepts are exhausted, reset the pool and pick randomly.
  */
 export async function selectConcept(completedIds: string[], userId?: string | null): Promise<{ concept: Concept; isReview: boolean }> {
-  // Check for due reviews — 30% chance of review session
   try {
     const dueReviews = await getDueReviews(userId);
-    if (dueReviews.length > 0 && Math.random() < 0.3) {
-      const mostOverdue = dueReviews[0];
-      const reviewConcept = CONCEPTS.find((c) => c.id === mostOverdue.conceptId);
-      if (reviewConcept) {
-        return { concept: reviewConcept, isReview: true };
+    if (dueReviews.length > 0) {
+      const mostOverdue = dueReviews[0]; // ordered by next_review ascending
+      const overdueDays = Math.floor(
+        (Date.now() - new Date(mostOverdue.nextReview + "T00:00:00Z").getTime()) / 86_400_000
+      );
+      const forced = overdueDays >= FORCED_REVIEW_OVERDUE_DAYS;
+      if (forced || Math.random() < 0.3) {
+        const reviewConcept = CONCEPTS.find((c) => c.id === mostOverdue.conceptId);
+        if (reviewConcept) {
+          return { concept: reviewConcept, isReview: true };
+        }
       }
     }
   } catch {

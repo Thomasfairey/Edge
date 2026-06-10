@@ -1,5 +1,6 @@
 /**
- * Check-in — mission accountability, called at end of session before new mission (Day 2+).
+ * Check-in — mission accountability, Phase 0 at the START of a session (Day 2+),
+ * before today's lesson. Closes the loop on yesterday's mission.
  * POST { previousMission: string, outcomeType: 'completed' | 'tried' | 'skipped', userOutcome?: string }
  * Returns { response: string, type: string, insight?: string }
  */

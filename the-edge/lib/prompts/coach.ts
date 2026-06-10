@@ -1,17 +1,25 @@
-import { Concept } from '../types';
+import { Concept, CharacterArchetype } from '../types';
 
 export function buildCoachPrompt(
   transcript: { role: string; content: string }[],
-  concept: Concept
+  concept: Concept,
+  character?: CharacterArchetype
 ): string {
   const formattedTranscript = transcript
     .map((t) => `${t.role === 'assistant' ? 'CHARACTER' : 'USER'}: ${t.content}`)
     .join('\n\n');
 
+  const characterSection = character
+    ? `\nWHO THEY'RE UP AGAINST: ${character.name}
+- Tactics being used on the user: ${(character.tactics ?? []).join('; ')}
+- Pressure points (what moves this person): ${(character.pressure_points ?? []).join('; ')}
+Your advice must counter THIS opponent's actual tactics — read the transcript for which one is in play right now.\n`
+    : '';
+
   return `You are an elite tactical advisor. A spymaster watching a live operation through a one-way mirror.
 
 The user is in a roleplay practising: ${concept.name} (${concept.description})
-
+${characterSection}
 Here is the conversation so far:
 
 ${formattedTranscript}

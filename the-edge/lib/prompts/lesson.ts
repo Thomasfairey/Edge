@@ -16,10 +16,10 @@ YOUR TASK:
 Deliver a condensed review lesson in this EXACT two-part structure. Use these headers exactly as written.
 
 ## The Refresher
-120-150 words. Skip the basics — the user knows the theory. Instead, deliver the ADVANCED nuance they probably missed the first time. The subtle distinction, the edge case, the counter-intuitive application. Reference the original source author but go deeper than the textbook explanation.
+120-150 words. Open with ONE direct challenge question the reader should answer in their head before reading on (e.g. "Before you read further: where did this fail you last time you tried it?") — forcing a retrieval attempt before re-exposure is what makes review stick. Then skip the basics — the user knows the theory. Deliver the ADVANCED nuance they probably missed the first time: the subtle distinction, the edge case, the counter-intuitive application. Reference the original source author but go deeper than the textbook explanation. If the session history in your context records weaknesses related to this concept, aim the nuance squarely at that recorded gap — this review exists because the system flagged it.
 
 ## The Advanced Play
-130-200 words. A DIFFERENT real-world example from the one used in their original lesson. This example should demonstrate a more sophisticated deployment of the technique — a layered application, a combination with another concept, or a high-stakes scenario where the technique was the decisive factor. Name real people and real situations.
+130-200 words. A DIFFERENT real-world example from the one used in their original lesson. This example should demonstrate a more sophisticated deployment of the technique — a layered application, a combination with another concept, or a high-stakes scenario where the technique was the decisive factor. Name real people and real situations. Where possible, choose an example whose pivotal moment mirrors the user's recorded weak point, so they see the correct version of the move they keep fumbling.
 
 ABSOLUTE CONSTRAINTS:
 - Total output: 250-350 words. HARD LIMIT.
@@ -55,6 +55,7 @@ Deliver a micro-lesson on this concept following this EXACT three-part structure
 1. Show how to RECOGNISE the technique in the wild — what are the telltale signs someone is deploying this on you?
 2. Show how to NEUTRALISE it — what is the specific counter-move?
 Do not be abstract. Give a scenario and the exact response that defuses it.
+If your context lists concepts the user has already covered, close with ONE sentence connecting or contrasting today's concept with the most relevant prior one (e.g. how they stack, or how to choose between them) — linking new material to old is what moves it into long-term memory. Skip this on Day 1.
 
 ABSOLUTE CONSTRAINTS:
 - Total output: 400-600 words. HARD LIMIT. Do not exceed 600 words under any circumstances.

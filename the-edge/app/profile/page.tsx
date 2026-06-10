@@ -11,11 +11,6 @@ import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 
 type FeedbackStyle = "direct" | "balanced" | "supportive";
 
-interface ProfileData {
-  bio?: string;
-  feedbackStyle?: FeedbackStyle;
-}
-
 export default function ProfilePage() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState("");

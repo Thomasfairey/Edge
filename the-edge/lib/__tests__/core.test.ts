@@ -1033,3 +1033,62 @@ describe("SM-2 date math", () => {
     });
   });
 });
+
+// ===========================================================================
+// 5. Retrieval bridge question rotation
+// ===========================================================================
+
+import {
+  buildRetrievalQuestion,
+  pickRetrievalQuestionType,
+  buildRetrievalBridgePrompt,
+  RETRIEVAL_QUESTION_TYPES,
+} from "../prompts/retrieval-bridge";
+
+describe("retrieval bridge", () => {
+  const concept = {
+    id: "mirroring",
+    name: "Mirroring",
+    domain: "Negotiation" as const,
+    source: "Voss",
+    description: "Repeating the last 1-3 words triggers elaboration.",
+  };
+
+  describe("buildRetrievalQuestion", () => {
+    it("every question type names the concept", () => {
+      for (const type of RETRIEVAL_QUESTION_TYPES) {
+        const q = buildRetrievalQuestion(concept, type);
+        assert.ok(q.includes("Mirroring"), `${type} question must name the concept`);
+      }
+    });
+
+    it("question types produce distinct questions", () => {
+      const questions = RETRIEVAL_QUESTION_TYPES.map((t) => buildRetrievalQuestion(concept, t));
+      assert.equal(new Set(questions).size, RETRIEVAL_QUESTION_TYPES.length);
+    });
+  });
+
+  describe("pickRetrievalQuestionType", () => {
+    it("always returns a valid type", () => {
+      for (let i = 0; i < 50; i++) {
+        const type = pickRetrievalQuestionType();
+        assert.ok((RETRIEVAL_QUESTION_TYPES as readonly string[]).includes(type));
+      }
+    });
+  });
+
+  describe("buildRetrievalBridgePrompt", () => {
+    it("includes the asked question when provided", () => {
+      const question = buildRetrievalQuestion(concept, "discrimination");
+      const prompt = buildRetrievalBridgePrompt(concept, question);
+      assert.ok(prompt.includes(question));
+      assert.ok(prompt.includes("AGAINST THAT QUESTION"));
+    });
+
+    it("falls back to generic recall criteria without a question", () => {
+      const prompt = buildRetrievalBridgePrompt(concept);
+      assert.ok(prompt.includes("recall what the concept is"));
+      assert.ok(prompt.includes("Let's go."));
+    });
+  });
+});

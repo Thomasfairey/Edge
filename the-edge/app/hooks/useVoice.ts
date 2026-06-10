@@ -77,6 +77,9 @@ interface UseVoiceReturn {
 
 const VOICE_PREF_KEY = "edge-voice-enabled";
 
+/** Banner shown when iOS blocks playback — cleared as soon as a retry plays */
+const AUDIO_BLOCKED_MSG = "Tap the screen to turn on audio, then continue.";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -754,6 +757,10 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         signal: controller.signal,
       })
         .then((res) => {
+          // Genuine API errors (400/429/502) come back as JSON — they must NOT
+          // fall through to the auth-redirect check below, or a transient
+          // ElevenLabs hiccup shows a bogus "Session expired" banner.
+          if (!res.ok) throw new Error(`TTS API error: ${res.status}`);
           // An expired Supabase session makes the middleware redirect
           // POST /api/tts -> 307 /login -> 200 HTML. res.ok would be true and
           // res.blob() would hand back an HTML document that we'd silently try
@@ -762,7 +769,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
           if (res.redirected || !contentType.includes("audio")) {
             throw new Error("tts-auth-redirect");
           }
-          if (!res.ok) throw new Error(`TTS API error: ${res.status}`);
           return res.blob();
         })
         .then((blob) => {
@@ -779,6 +785,12 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
             }
 
             const { audio, played } = playOnSharedAudio(url);
+
+            // If this is the retry after a blocked playback, the "tap the
+            // screen" banner is now stale — drop it as soon as audio starts.
+            played.then(() => {
+              setMicError((prev) => (prev === AUDIO_BLOCKED_MSG ? null : prev));
+            }).catch(() => {});
 
             audio.onended = () => {
               setState("idle");
@@ -799,7 +811,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
               // tell the user how to recover, instead of failing silently.
               console.warn("[useVoice] playback blocked:", err?.message);
               setState("idle");
-              setMicError("Tap the screen to turn on audio, then continue.");
+              setMicError(AUDIO_BLOCKED_MSG);
               notifyAudioBlocked(playUrl);
             });
           };

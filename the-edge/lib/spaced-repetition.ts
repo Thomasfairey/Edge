@@ -191,6 +191,9 @@ export async function getSRSummary(userId?: string | null): Promise<{
   return {
     totalConcepts: data.length,
     dueForReview: data.filter((e) => e.nextReview <= today).length,
-    masteredCount: data.filter((e) => e.easeFactor >= 3.5 && e.practiceCount >= 3).length,
+    // Ease starts at 2.5, gains +0.15 per high-scoring review, capped at 3.0 —
+    // so the threshold must be reachable: 2.8 ≈ two strong reviews after the
+    // initial session. (A 3.5 threshold here was impossible to ever hit.)
+    masteredCount: data.filter((e) => e.easeFactor >= 2.8 && e.practiceCount >= 3).length,
   };
 }

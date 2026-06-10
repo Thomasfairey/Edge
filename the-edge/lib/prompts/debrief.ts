@@ -59,6 +59,9 @@ YOUR TASK — deliver your analysis in this exact structure:
 **STRATEGIC OUTCOME**
 1-2 sentences. Did the user achieve their objective? Was the character moved from their opening position?
 
+**THE KEEPER**
+The single strongest move in the transcript. State the turn, quote what they said, and name the mechanism that made it work — so they can reproduce it deliberately instead of by accident. This is not encouragement; it is reinforcement. One moment only. If genuinely nothing worked, say so in one sentence — do not invent a keeper.
+
 **THE REPLAY**
 Identify 1-2 specific moments where a different choice would have changed the outcome. For each:
 - State the exact turn and what was said

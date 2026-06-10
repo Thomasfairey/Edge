@@ -22,15 +22,17 @@ ${serialisedLedger}
 YOUR TASK:
 Generate ONE real-world micro-mission for the user to execute within the next 24 hours.
 
-THE MISSION MUST BE:
-1. CONCRETE — not "try using mirroring" but "In your next investor call, mirror the investor's exact phrasing when they state their concern, then pause for 3 full seconds before responding."
-2. TIED TO A SPECIFIC INTERACTION TYPE — reference the kind of meeting, call, or conversation the user is likely to have (investor call, team 1:1, partnership meeting, networking event, board prep).
-3. OBSERVABLE — define what success looks like in terms of the OTHER PERSON'S reaction. "Watch if they pause and rephrase" or "Notice if the energy in the room shifts" or "See if they lean forward."
-4. LOW-RISK — the mission must be executable without damaging a real professional relationship. No provocations, no experiments on close colleagues that could backfire.
-5. TARGETED — if the user scored low on ${weakestDimension[0].replace(/_/g, ' ')}, the mission should specifically exercise that dimension.
+STRUCTURE THE MISSION AS AN IMPLEMENTATION INTENTION — a when-then plan. Behavioural research is unambiguous: "I'll try mirroring today" gets forgotten; "WHEN the investor states their first objection, I will repeat their last three words and go silent" gets executed, because the trigger does the remembering. The mission must contain all three parts:
+1. THE TRIGGER — a specific, recognisable moment in a conversation they're likely to have in the next 24 hours (an investor stating a concern, a report making an excuse, the first number landing in a negotiation, a colleague interrupting). Anchor it to the interaction types in their week: investor call, team 1:1, partnership meeting, networking event, board prep.
+2. THE MOVE — the exact behaviour to execute at that moment. Concrete enough to quote.
+3. THE TELL — what to watch for in the OTHER PERSON'S reaction that signals it landed: "Watch if they pause and rephrase" or "Notice if they lean forward" or "See if they fill the silence with a concession."
+
+THE MISSION MUST ALSO BE:
+- LOW-RISK — executable without damaging a real professional relationship. No provocations, no experiments on close colleagues that could backfire.
+- TARGETED — it must specifically exercise ${weakestDimension[0].replace(/_/g, ' ')}, today's weakest dimension. If the session history shows a recurring weakness, design the trigger to fire at exactly the kind of moment where that weakness keeps appearing.
 
 CONSTRAINTS:
-- Maximum 80 words for the mission.
+- Maximum 80 words for the mission. Phrase the core as "When [trigger], [move]" — then the tell.
 - Then write "RATIONALE:" on a new line.
 - Maximum 30 words for the rationale, connecting the mission to today's concept and the user's development need.
 - No preamble. No "Here's your mission." Just the mission text, then RATIONALE: and the rationale.`;

@@ -10,7 +10,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, PHASE_CONFIG } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
-import { buildRetrievalBridgePrompt } from "@/lib/prompts/retrieval-bridge";
+import {
+  buildRetrievalBridgePrompt,
+  buildRetrievalQuestion,
+  pickRetrievalQuestionType,
+} from "@/lib/prompts/retrieval-bridge";
 import { Concept, truncate } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateText, validateConcept, ValidationError } from "@/lib/validate";
@@ -38,9 +42,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
   }
   const userResponse = body.userResponse ? truncate(body.userResponse, 5000) : undefined;
 
-  // First call — return the question without an LLM call
+  // First call — return the question without an LLM call. Question type
+  // rotates (application/mechanism/discrimination) so the gate tests usable
+  // understanding, not verbatim definition recall seconds after reading.
   if (!userResponse) {
-    const question = `Before we begin — in one sentence, what is ${concept.name} and when would you deploy it?`;
+    const question = buildRetrievalQuestion(concept, pickRetrievalQuestionType());
     return NextResponse.json({ response: question, ready: false });
   }
 
@@ -54,9 +60,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
     throw e;
   }
 
+  // The question the user was shown — passed back by the client so the
+  // evaluator grades the answer against the question actually asked.
+  const askedQuestion = body.question ? truncate(String(body.question), 500) : undefined;
+
   try {
     // Second call — evaluate the user's response via LLM
-    const retrievalPrompt = buildRetrievalBridgePrompt(concept);
+    const retrievalPrompt = buildRetrievalBridgePrompt(concept, askedQuestion);
     const systemPrompt = `${await buildPersistentContext(userId)}\n\n${retrievalPrompt}`;
 
     const rawResponse = await generateResponse(
