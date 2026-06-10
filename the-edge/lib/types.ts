@@ -63,6 +63,13 @@ export interface Concept {
   domain: ConceptDomain;
   source: string; // attribution, e.g., "Cialdini"
   description: string; // 1-2 sentence summary for prompt injection
+  /**
+   * Curriculum tier — 1 foundation, 2 core, 3 advanced.
+   * Selection serves lower tiers first so e.g. Baseline Reading precedes
+   * Deviation Detection and Tactical Empathy precedes the Accusation Audit.
+   * Missing tier is treated as 2.
+   */
+  tier?: 1 | 2 | 3;
 }
 
 // ---------------------------------------------------------------------------

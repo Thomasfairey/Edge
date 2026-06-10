@@ -6,8 +6,7 @@
  * Reference: PRD Section 3.3, Appendix A
  */
 
-import { Concept, ConceptDomain } from "@/lib/types";
-import { getDueReviews } from "@/lib/spaced-repetition";
+import { Concept, ConceptDomain } from "./types";
 
 // ---------------------------------------------------------------------------
 // Master concept library — 5 per domain, 35 total
@@ -17,6 +16,7 @@ export const CONCEPTS: Concept[] = [
   // ── Influence & Persuasion (Cialdini) ──────────────────────────────────
   {
     id: "reciprocity",
+    tier: 1,
     name: "Reciprocity",
     domain: "Influence & Persuasion",
     source: "Cialdini",
@@ -25,6 +25,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "commitment-consistency",
+    tier: 2,
     name: "Commitment & Consistency",
     domain: "Influence & Persuasion",
     source: "Cialdini",
@@ -33,6 +34,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "social-proof",
+    tier: 1,
     name: "Social Proof",
     domain: "Influence & Persuasion",
     source: "Cialdini",
@@ -41,6 +43,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "authority",
+    tier: 1,
     name: "Authority",
     domain: "Influence & Persuasion",
     source: "Cialdini",
@@ -49,6 +52,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "scarcity",
+    tier: 2,
     name: "Scarcity",
     domain: "Influence & Persuasion",
     source: "Cialdini",
@@ -59,6 +63,7 @@ export const CONCEPTS: Concept[] = [
   // ── Power Dynamics (Greene) ────────────────────────────────────────────
   {
     id: "never-outshine-master",
+    tier: 2,
     name: "Law 1 — Never Outshine the Master",
     domain: "Power Dynamics",
     source: "Greene",
@@ -67,6 +72,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "conceal-intentions",
+    tier: 2,
     name: "Law 3 — Conceal Your Intentions",
     domain: "Power Dynamics",
     source: "Greene",
@@ -75,6 +81,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "court-attention",
+    tier: 3,
     name: "Law 6 — Court Attention at All Costs",
     domain: "Power Dynamics",
     source: "Greene",
@@ -83,6 +90,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "crush-enemy",
+    tier: 3,
     name: "Law 15 — Crush Your Enemy Totally",
     domain: "Power Dynamics",
     source: "Greene",
@@ -91,6 +99,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "discover-thumbscrew",
+    tier: 3,
     name: "Law 33 — Discover Each Person's Thumbscrew",
     domain: "Power Dynamics",
     source: "Greene",
@@ -101,6 +110,7 @@ export const CONCEPTS: Concept[] = [
   // ── Negotiation (Voss) ─────────────────────────────────────────────────
   {
     id: "tactical-empathy",
+    tier: 1,
     name: "Tactical Empathy",
     domain: "Negotiation",
     source: "Voss",
@@ -109,6 +119,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "mirroring",
+    tier: 1,
     name: "Mirroring",
     domain: "Negotiation",
     source: "Voss",
@@ -117,6 +128,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "labelling",
+    tier: 2,
     name: "Labelling",
     domain: "Negotiation",
     source: "Voss",
@@ -125,6 +137,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "calibrated-questions",
+    tier: 2,
     name: "Calibrated Questions",
     domain: "Negotiation",
     source: "Voss",
@@ -133,6 +146,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "accusation-audit",
+    tier: 3,
     name: "The Accusation Audit",
     domain: "Negotiation",
     source: "Voss",
@@ -143,6 +157,7 @@ export const CONCEPTS: Concept[] = [
   // ── Behavioural Psychology & Cognitive Bias (Kahneman) ─────────────────
   {
     id: "anchoring",
+    tier: 1,
     name: "Anchoring Effect",
     domain: "Behavioural Psychology & Cognitive Bias",
     source: "Kahneman",
@@ -151,6 +166,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "framing",
+    tier: 1,
     name: "Framing Effect",
     domain: "Behavioural Psychology & Cognitive Bias",
     source: "Kahneman",
@@ -159,6 +175,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "loss-aversion",
+    tier: 2,
     name: "Loss Aversion",
     domain: "Behavioural Psychology & Cognitive Bias",
     source: "Kahneman",
@@ -167,6 +184,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "availability-heuristic",
+    tier: 2,
     name: "Availability Heuristic",
     domain: "Behavioural Psychology & Cognitive Bias",
     source: "Kahneman",
@@ -175,6 +193,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "sunk-cost",
+    tier: 2,
     name: "Sunk Cost Fallacy",
     domain: "Behavioural Psychology & Cognitive Bias",
     source: "Kahneman",
@@ -185,6 +204,7 @@ export const CONCEPTS: Concept[] = [
   // ── Nonverbal Intelligence & Behavioural Profiling (Chase Hughes) ──────
   {
     id: "baseline-reading",
+    tier: 1,
     name: "Baseline Behaviour Reading",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
     source: "Chase Hughes",
@@ -193,6 +213,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "deviation-detection",
+    tier: 2,
     name: "Deviation Detection",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
     source: "Chase Hughes",
@@ -201,6 +222,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "authority-posture",
+    tier: 2,
     name: "Authority Posture",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
     source: "Chase Hughes",
@@ -209,6 +231,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "microexpression-clusters",
+    tier: 3,
     name: "Microexpression Clusters",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
     source: "Chase Hughes",
@@ -217,6 +240,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "ellipsis-model",
+    tier: 3,
     name: "The Ellipsis Model",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
     source: "Chase Hughes",
@@ -227,6 +251,7 @@ export const CONCEPTS: Concept[] = [
   // ── Rapport & Relationship Engineering (Carnegie) ──────────────────────
   {
     id: "genuine-interest",
+    tier: 1,
     name: "Genuine Interest Principle",
     domain: "Rapport & Relationship Engineering",
     source: "Carnegie",
@@ -235,6 +260,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "name-recall",
+    tier: 1,
     name: "Name Recall",
     domain: "Rapport & Relationship Engineering",
     source: "Carnegie",
@@ -243,6 +269,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "avoid-criticism",
+    tier: 2,
     name: "Avoid Criticism",
     domain: "Rapport & Relationship Engineering",
     source: "Carnegie",
@@ -251,6 +278,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "talk-their-interests",
+    tier: 2,
     name: "Talk in Terms of Their Interests",
     domain: "Rapport & Relationship Engineering",
     source: "Carnegie",
@@ -259,6 +287,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "make-them-important",
+    tier: 2,
     name: "Make Them Feel Important",
     domain: "Rapport & Relationship Engineering",
     source: "Carnegie",
@@ -269,6 +298,7 @@ export const CONCEPTS: Concept[] = [
   // ── Dark Psychology & Coercive Technique Recognition ────────────────────
   {
     id: "gaslighting",
+    tier: 3,
     name: "Gaslighting Recognition",
     domain: "Dark Psychology & Coercive Technique Recognition",
     source: "Zimbardo",
@@ -277,6 +307,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "darvo",
+    tier: 3,
     name: "DARVO Pattern",
     domain: "Dark Psychology & Coercive Technique Recognition",
     source: "Zimbardo",
@@ -285,6 +316,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "manufactured-urgency",
+    tier: 2,
     name: "Manufactured Urgency",
     domain: "Dark Psychology & Coercive Technique Recognition",
     source: "Cialdini",
@@ -293,6 +325,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "information-asymmetry",
+    tier: 3,
     name: "Information Asymmetry Exploitation",
     domain: "Dark Psychology & Coercive Technique Recognition",
     source: "Greene",
@@ -301,6 +334,7 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "love-bombing-professional",
+    tier: 3,
     name: "Love-Bombing in Professional Contexts",
     domain: "Dark Psychology & Coercive Technique Recognition",
     source: "Zimbardo",
@@ -328,13 +362,18 @@ const FORCED_REVIEW_OVERDUE_DAYS = 7;
  *
  * New-concept rules:
  * 1. Never repeat a concept already in completedIds.
- * 2. Prefer a different domain than the most recently completed concept
- *    (enforces breadth before depth).
- * 3. If all concepts in other domains are exhausted, allow same-domain.
- * 4. If ALL concepts are exhausted, reset the pool and pick randomly.
+ * 2. Serve the lowest curriculum tier still available (foundation → core →
+ *    advanced), so prerequisites land before the material that builds on them.
+ * 3. Within that tier, prefer a different domain than the most recently
+ *    completed concept (enforces breadth before depth).
+ * 4. If all concepts in other domains are exhausted, allow same-domain.
+ * 5. If ALL concepts are exhausted, reset the pool and pick randomly.
  */
 export async function selectConcept(completedIds: string[], userId?: string | null): Promise<{ concept: Concept; isReview: boolean }> {
   try {
+    // Lazy import: keeps this module free of the Supabase/next-server
+    // dependency chain so pure selection logic stays unit-testable.
+    const { getDueReviews } = await import("./spaced-repetition");
     const dueReviews = await getDueReviews(userId);
     if (dueReviews.length > 0) {
       const mostOverdue = dueReviews[0]; // ordered by next_review ascending
@@ -356,11 +395,11 @@ export async function selectConcept(completedIds: string[], userId?: string | nu
   return { concept: selectNewConcept(completedIds), isReview: false };
 }
 
-function selectNewConcept(completedIds: string[]): Concept {
+export function selectNewConcept(completedIds: string[]): Concept {
   // completedIds may contain either concept IDs (e.g. "mirroring") or
   // formatted ledger names (e.g. "Mirroring (Voss)"). Match against both.
   const completedSet = new Set(completedIds);
-  const available = CONCEPTS.filter(
+  let available = CONCEPTS.filter(
     (c) => !completedSet.has(c.id) && !completedSet.has(`${c.name} (${c.source})`)
   );
 
@@ -368,6 +407,12 @@ function selectNewConcept(completedIds: string[]): Concept {
   if (available.length === 0) {
     return CONCEPTS[Math.floor(Math.random() * CONCEPTS.length)];
   }
+
+  // Curriculum scaffolding: serve the lowest tier still available, so
+  // foundations (mirroring, baseline reading, anchoring...) land before
+  // advanced material (accusation audit, ellipsis model, DARVO...).
+  const lowestTier = Math.min(...available.map((c) => c.tier ?? 2));
+  available = available.filter((c) => (c.tier ?? 2) === lowestTier);
 
   // Determine the domain of the most recently completed concept
   let lastDomain: ConceptDomain | null = null;

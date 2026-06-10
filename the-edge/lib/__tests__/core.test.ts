@@ -1092,3 +1092,77 @@ describe("retrieval bridge", () => {
     });
   });
 });
+
+// ===========================================================================
+// 6. Curriculum tiering & concept selection
+// ===========================================================================
+
+import { CONCEPTS, selectNewConcept } from "../concepts";
+
+describe("concept selection", () => {
+  it("every concept has a valid tier", () => {
+    for (const c of CONCEPTS) {
+      assert.ok([1, 2, 3].includes(c.tier ?? 2), `${c.id} has invalid tier`);
+    }
+  });
+
+  it("each tier is populated (foundation, core, advanced)", () => {
+    for (const tier of [1, 2, 3]) {
+      assert.ok(
+        CONCEPTS.some((c) => (c.tier ?? 2) === tier),
+        `tier ${tier} is empty`
+      );
+    }
+  });
+
+  it("Day 1 always serves a foundation (tier 1) concept", () => {
+    for (let i = 0; i < 25; i++) {
+      const concept = selectNewConcept([]);
+      assert.equal(concept.tier ?? 2, 1, `Day 1 served ${concept.id} (tier ${concept.tier})`);
+    }
+  });
+
+  it("never repeats a completed concept", () => {
+    const tier1Ids = CONCEPTS.filter((c) => (c.tier ?? 2) === 1).map((c) => c.id);
+    for (let i = 0; i < 25; i++) {
+      const concept = selectNewConcept(tier1Ids.slice(0, -1));
+      assert.ok(
+        !tier1Ids.slice(0, -1).includes(concept.id),
+        `repeated completed concept ${concept.id}`
+      );
+    }
+  });
+
+  it("advances to tier 2 only when tier 1 is exhausted", () => {
+    const tier1Ids = CONCEPTS.filter((c) => (c.tier ?? 2) === 1).map((c) => c.id);
+    for (let i = 0; i < 25; i++) {
+      const concept = selectNewConcept(tier1Ids);
+      assert.equal(concept.tier ?? 2, 2, `expected tier 2, got ${concept.id} (tier ${concept.tier})`);
+    }
+  });
+
+  it("prefers a different domain from the last completed concept", () => {
+    // Complete one tier-1 concept; while other tier-1 domains remain,
+    // the next pick must come from a different domain.
+    const first = CONCEPTS.find((c) => (c.tier ?? 2) === 1)!;
+    for (let i = 0; i < 25; i++) {
+      const next = selectNewConcept([first.id]);
+      assert.notEqual(next.domain, first.domain);
+    }
+  });
+
+  it("resets the pool when all concepts are exhausted", () => {
+    const allIds = CONCEPTS.map((c) => c.id);
+    const concept = selectNewConcept(allIds);
+    assert.ok(CONCEPTS.some((c) => c.id === concept.id));
+  });
+
+  it("explicit prerequisites are tiered below their dependents", () => {
+    const tierOf = (id: string) => CONCEPTS.find((c) => c.id === id)!.tier ?? 2;
+    // Baseline reading is the stated prerequisite for deviation detection.
+    assert.ok(tierOf("baseline-reading") < tierOf("deviation-detection"));
+    // Tactical empathy/mirroring gate the advanced Voss moves.
+    assert.ok(tierOf("tactical-empathy") < tierOf("accusation-audit"));
+    assert.ok(tierOf("mirroring") < tierOf("accusation-audit"));
+  });
+});
