@@ -958,9 +958,12 @@ export function useSession() {
     if (!voice.voiceEnabled || currentPhase !== "retrieval") return;
     if (!retrievalQuestion || retrievalSpokenRef.current === retrievalQuestion) return;
     retrievalSpokenRef.current = retrievalQuestion;
-    voiceSpeakEndActionRef.current = () => voiceStartListeningRef.current();
+    // iOS can't start the mic without a gesture — let the user tap to answer.
+    if (!voice.isIOS) {
+      voiceSpeakEndActionRef.current = () => voiceStartListeningRef.current();
+    }
     voiceSpeakRef.current(retrievalQuestion, MENTOR_VOICE_ID);
-  }, [retrievalQuestion, currentPhase, voice.voiceEnabled]);
+  }, [retrievalQuestion, currentPhase, voice.voiceEnabled, voice.isIOS]);
 
   // Auto-speak retrieval response (feedback)
   const retrievalFeedbackSpokenRef = useRef<string | null>(null);
@@ -999,11 +1002,16 @@ export function useSession() {
     voiceSpeakRef.current(checkinResponse, MENTOR_VOICE_ID);
   }, [checkinResponse, currentPhase, voice.voiceEnabled]);
 
-  // Auto-start listening after TTS finishes (conversational phases)
+  // Auto-start listening after TTS finishes (conversational phases).
+  // NOT on iOS: Safari blocks getUserMedia / AudioContext.resume() outside a
+  // user gesture, so a timer-driven startListening() fails silently and the
+  // mic appears broken. On iOS the user taps the mic button (a real gesture)
+  // to reply instead.
   const prevVoiceState = useRef(voice.state);
   useEffect(() => {
     const isConversationalPhase = currentPhase === "roleplay" || currentPhase === "retrieval";
     if (
+      !voice.isIOS &&
       prevVoiceState.current === "speaking" &&
       voice.state === "idle" &&
       voice.voiceEnabled &&
@@ -1016,7 +1024,7 @@ export function useSession() {
       return () => clearTimeout(t);
     }
     prevVoiceState.current = voice.state;
-  }, [voice.state, voice.voiceEnabled, currentPhase, isStreaming, isLoading]);
+  }, [voice.state, voice.voiceEnabled, voice.isIOS, currentPhase, isStreaming, isLoading]);
 
   // Auto-narrate scenario context when entering roleplay
   const scenarioSpokenRef = useRef(false);

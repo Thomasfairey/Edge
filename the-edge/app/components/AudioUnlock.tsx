@@ -31,6 +31,7 @@ let _audio: HTMLAudioElement | null = null;
 let _unlocked = false;
 let _unlocking = false;
 let _pendingFn: (() => void) | null = null;
+let _silentUrl: string | null = null;
 
 function getOrCreateAudio(): HTMLAudioElement {
   if (!_audio) {
@@ -41,9 +42,52 @@ function getOrCreateAudio(): HTMLAudioElement {
   return _audio;
 }
 
-// Tiny silent MP3 — valid MPEG frame, plays in <10ms
-const SILENT_MP3 =
-  "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAABhkVFcSoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/+0DEAAAHAAGSAAAAIAAANIAAAARMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/7QMQKAAAMAS0AAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==";
+/**
+ * Build (once) a blob: URL for a short silent WAV — the clip we play to unlock
+ * the shared element on the first user gesture.
+ *
+ * Why a synthesised blob: and not a data: URI? The app's CSP is
+ * `media-src 'self' blob:` — it does NOT allow data:, so a data: source is
+ * blocked, audio.play() rejects, the element never unlocks, and TTS never plays
+ * (the "no read-back on iOS" bug). blob: is allowed and matches how the real
+ * TTS audio is delivered. We build the WAV bytes directly (no base64/atob,
+ * which is stricter than the data: decoder and silently failed here).
+ */
+function getSilentUrl(): string {
+  if (_silentUrl) return _silentUrl;
+  const sampleRate = 8000;
+  const samples = Math.floor(sampleRate * 0.12); // 120ms of silence
+  const dataLen = samples * 2; // 16-bit mono
+  const buf = new ArrayBuffer(44 + dataLen);
+  const view = new DataView(buf);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataLen, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, dataLen, true);
+  // sample bytes are already zero (silence)
+  _silentUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  return _silentUrl;
+}
+
+function flushPending() {
+  if (_pendingFn) {
+    const fn = _pendingFn;
+    _pendingFn = null;
+    fn();
+  }
+}
 
 /**
  * Attempt to unlock. Called from user gesture handlers.
@@ -53,18 +97,12 @@ async function unlock() {
   _unlocking = true;
 
   const audio = getOrCreateAudio();
-  audio.src = SILENT_MP3;
+  audio.src = getSilentUrl();
 
   try {
     await audio.play();
     _unlocked = true;
-
-    // Flush queued speak
-    if (_pendingFn) {
-      const fn = _pendingFn;
-      _pendingFn = null;
-      fn();
-    }
+    flushPending();
   } catch {
     // Will retry on next gesture
   } finally {
@@ -91,15 +129,28 @@ export function whenAudioUnlocked(fn: () => void): void {
 
 /**
  * Play a blob URL on the shared (unlocked) Audio element.
- * Returns the element so caller can attach onended/onerror.
+ * Returns the element (attach onended/onerror) plus the play() promise so the
+ * caller can detect a blocked/failed playback and recover — previously the
+ * rejection was swallowed here, leaving the UI stuck in "speaking" with no
+ * audio and no feedback (the classic iOS failure).
  */
-export function playOnSharedAudio(blobUrl: string): HTMLAudioElement {
+export function playOnSharedAudio(
+  blobUrl: string
+): { audio: HTMLAudioElement; played: Promise<void> } {
   const audio = getOrCreateAudio();
   audio.src = blobUrl;
-  audio.play().catch((err) => {
-    console.warn("[AudioUnlock] play() rejected:", err.message);
-  });
-  return audio;
+  const played = audio.play();
+  return { audio, played: played ?? Promise.resolve() };
+}
+
+/**
+ * Called when a real playback attempt was blocked by the browser (e.g. iOS
+ * refused play() despite the silent-MP3 unlock). Re-locks so the next user
+ * gesture re-runs unlock(), and queues `retry` to fire once that succeeds.
+ */
+export function notifyAudioBlocked(retry: () => void): void {
+  _unlocked = false;
+  _pendingFn = retry;
 }
 
 /**
@@ -124,16 +175,14 @@ export function isAudioUnlocked(): boolean {
 
 export default function AudioUnlock() {
   useEffect(() => {
-    if (_unlocked) return;
-
+    // Keep the listeners attached for the component's whole lifetime (not just
+    // until the first unlock). unlock() is a cheap no-op once unlocked, and
+    // keeping them means we recover after notifyAudioBlocked() re-locks: the
+    // next gesture re-runs unlock() and flushes the queued retry.
     const events = ["touchstart", "touchend", "click", "keydown"] as const;
     const handler = () => {
-      unlock();
-      if (_unlocked) {
-        events.forEach((e) =>
-          document.removeEventListener(e, handler, true)
-        );
-      }
+      if (!_unlocked) unlock();
+      else flushPending();
     };
 
     events.forEach((e) =>
