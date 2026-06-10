@@ -5,6 +5,7 @@ import {
   whenAudioUnlocked,
   playOnSharedAudio,
   stopSharedAudio,
+  notifyAudioBlocked,
 } from "@/app/components/AudioUnlock";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { TextToSpeechPlugin } from "@capacitor-community/text-to-speech";
@@ -66,6 +67,8 @@ interface UseVoiceReturn {
   micError: string | null;
   /** Clear the mic error */
   clearMicError: () => void;
+  /** True on iPhone/iPad — callers must drive listening from a user gesture */
+  isIOS: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +160,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // Hydration-safe feature detection (avoids SSR mismatch)
   const [sttSupported, setSttSupported] = useState(false);
   const [nativeSTT, setNativeSTT] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -197,6 +201,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     const mic = detectMicAccess();
     setNativeSTT(webSpeech);
     setSttSupported(webSpeech || mic);
+    setIsIOS(detectIOS());
   }, []);
 
   // Restore preference from localStorage (default: disabled)
@@ -749,6 +754,14 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         signal: controller.signal,
       })
         .then((res) => {
+          // An expired Supabase session makes the middleware redirect
+          // POST /api/tts -> 307 /login -> 200 HTML. res.ok would be true and
+          // res.blob() would hand back an HTML document that we'd silently try
+          // to "play" as audio. Detect the redirect / non-audio body instead.
+          const contentType = res.headers.get("content-type") ?? "";
+          if (res.redirected || !contentType.includes("audio")) {
+            throw new Error("tts-auth-redirect");
+          }
           if (!res.ok) throw new Error(`TTS API error: ${res.status}`);
           return res.blob();
         })
@@ -757,16 +770,15 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
           const url = URL.createObjectURL(blob);
 
-          // Schedule playback — runs immediately if audio is unlocked,
-          // or queues until the AudioUnlock component's silent play resolves
-          whenAudioUnlocked(() => {
+          // Play on the SAME element unlocked by the gesture. Defined as a
+          // named fn so we can re-run it as the retry after a blocked playback.
+          const playUrl = () => {
             if (controller.signal.aborted) {
               URL.revokeObjectURL(url);
               return;
             }
 
-            // Play on the SAME element that was unlocked by the gesture
-            const audio = playOnSharedAudio(url);
+            const { audio, played } = playOnSharedAudio(url);
 
             audio.onended = () => {
               setState("idle");
@@ -779,17 +791,35 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
               setState("idle");
               URL.revokeObjectURL(url);
             };
-          });
+
+            played.catch((err: Error & { name?: string }) => {
+              // A newer speak() superseded this one — not an error.
+              if (err?.name === "AbortError") return;
+              // iOS refused playback despite the unlock. Re-arm the unlock and
+              // tell the user how to recover, instead of failing silently.
+              console.warn("[useVoice] playback blocked:", err?.message);
+              setState("idle");
+              setMicError("Tap the screen to turn on audio, then continue.");
+              notifyAudioBlocked(playUrl);
+            });
+          };
+
+          // Runs immediately if unlocked, else queues until the next gesture.
+          whenAudioUnlocked(playUrl);
         })
         .catch((err) => {
           if (err.name === "AbortError") return;
-          // TTS is best-effort — the text always renders, so don't surface a
-          // user-facing banner. Auto-fired triggers (scenario narration,
-          // checkin response, mission narration) can race the auth cookie or
-          // the audio-unlock and produce transient errors that look broken to
-          // the user even though playback recovers on the next call.
-          console.warn("[useVoice] TTS fetch error:", err.message);
           setState("idle");
+          if (err.message === "tts-auth-redirect") {
+            // Actionable: the session lapsed. Surface it rather than swallow.
+            console.warn("[useVoice] TTS auth redirect — session likely expired");
+            setMicError("Session expired — refresh the page to restore audio.");
+            return;
+          }
+          // Other fetch errors are best-effort: the text always renders, and
+          // auto-fired triggers can race the auth cookie / audio-unlock and
+          // recover on the next call, so don't surface a banner for those.
+          console.warn("[useVoice] TTS fetch error:", err.message);
         });
     },
     [lang]
@@ -850,5 +880,6 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     interimTranscript,
     micError,
     clearMicError,
+    isIOS,
   };
 }
