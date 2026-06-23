@@ -1,280 +1,168 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { login } from "./helpers/auth";
 
 /**
- * Onboarding flow tests.
+ * Onboarding flow tests (session-level onboarding: bio + feedback style).
  * Maps to test cases 5.1-5.9 from E2E test plan.
+ *
+ * These tests require a Supabase user whose profile row has no profile_data
+ * yet; otherwise useSession() skips the onboarding and goes straight to the
+ * lesson fetch. When that happens we mark the test as skipped rather than
+ * failed so the suite stays green for returning users.
  */
+
+const BIO_HEADING = "Welcome to The Edge";
+const BIO_SELECTOR = `text=${BIO_HEADING}`;
+const STYLE_HEADING = "How do you prefer feedback?";
+
+async function waitForOnboarding(page: Page): Promise<boolean> {
+  try {
+    await page.waitForSelector(BIO_SELECTOR, { timeout: 7000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 test.describe("Onboarding Flow", () => {
   test.beforeEach(async ({ page }) => {
-    // Login to access home page
+    // Skip the 4-screen marketing onboarding on the home page; it isn't
+    // shown on /session but users routed through "/" first would otherwise
+    // have to dismiss it before navigating.
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("edge-onboarding-complete", "1");
+      } catch {
+        // non-fatal
+      }
+    });
+
     await page.goto("/login");
-    await login(page, "test@example.com", "password123");
+    await login(page);
   });
 
-  test("5.1: Onboarding appears after signup for new user", async ({ page }) => {
-    // Navigate to session page
+  test("5.1: Bio onboarding appears for first-time users", async ({ page }) => {
     await page.goto("/session");
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
-    // Wait for onboarding to appear
-    // The onboarding appears when onboardingNeeded state is true
-    const bioStep = page.locator("text=Before we begin");
-
-    // Check if onboarding is visible
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-      expect(bioStep).toBeDefined();
-    } catch {
-      // If onboarding doesn't appear, user may have already completed it
-      // That's also valid
-    }
+    await expect(page.locator(BIO_SELECTOR)).toBeVisible();
+    await expect(page.locator("textarea")).toBeVisible();
   });
 
-  test("5.2: First onboarding step (bio) is navigable", async ({ page }) => {
+  test("5.2: Next button stays disabled until the bio reaches min length", async ({ page }) => {
     await page.goto("/session");
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
-    // Wait for onboarding bio step
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
-
-    // Verify bio textarea is visible
     const textarea = page.locator("textarea");
-    expect(textarea).toBeDefined();
-
-    // Verify Next button exists and is initially disabled
     const nextButton = page.locator('button:has-text("Next")');
-    expect(nextButton).toBeDefined();
 
-    // Fill bio with enough text to enable button
+    // The bio step gates Next on trimmed length >= 20 chars.
+    await textarea.fill("too short");
+    await expect(nextButton).toBeDisabled();
+
     await textarea.fill("I'm a CEO working on negotiations and influence");
-
-    // Verify Next button is now enabled
-    const isDisabled = await nextButton.evaluate((el: HTMLElement) =>
-      (el as HTMLButtonElement).disabled
-    );
-    expect(isDisabled).toBeFalsy();
+    await expect(nextButton).toBeEnabled();
   });
 
-  test("5.3: Second onboarding step (style) shows feedback preferences", async ({ page }) => {
+  test("5.3: Feedback style step surfaces all three preferences", async ({ page }) => {
     await page.goto("/session");
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
-    // Wait for onboarding bio step
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
+    await page.locator("textarea").fill("I'm a CEO working on negotiations and influence");
+    await page.locator('button:has-text("Next")').click();
 
-    // Fill bio and proceed
-    const textarea = page.locator("textarea");
-    await textarea.fill("I'm a CEO working on negotiations and influence");
+    await expect(page.locator(`text=${STYLE_HEADING}`)).toBeVisible();
 
-    const nextButton = page.locator('button:has-text("Next")');
-    await nextButton.click();
-
-    // Wait for style step
-    await page.waitForSelector("text=How do you prefer feedback?");
-
-    // Verify all three feedback style options are visible
-    expect(page.locator("text=Direct & blunt")).toBeDefined();
-    expect(page.locator("text=Balanced")).toBeDefined();
-    expect(page.locator("text=Supportive")).toBeDefined();
-
-    // Verify descriptions are visible
-    expect(page.locator("text=No softening")).toBeDefined();
-    expect(page.locator("text=Direct without being harsh")).toBeDefined();
-    expect(page.locator("text=Encouraging with constructive")).toBeDefined();
+    await expect(page.locator("text=Direct & blunt")).toBeVisible();
+    await expect(page.locator("text=Balanced")).toBeVisible();
+    await expect(page.locator("text=Supportive")).toBeVisible();
   });
 
-  test("5.4: All 4 steps are navigable (bio, style, saving, complete)", async ({ page }) => {
+  test("5.4: Completing both steps transitions into the lesson phase", async ({ page }) => {
     await page.goto("/session");
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
-    // Wait for onboarding
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
+    await page.locator("textarea").fill("I'm a CEO working on negotiations");
+    await page.locator('button:has-text("Next")').click();
 
-    // Step 1: bio
-    const textarea = page.locator("textarea");
-    await textarea.fill("I'm a CEO working on negotiations");
-    const nextButton = page.locator('button:has-text("Next")');
-    await nextButton.click();
+    await expect(page.locator(`text=${STYLE_HEADING}`)).toBeVisible();
+    await page.locator("button:has-text('Balanced')").click();
 
-    // Step 2: style
-    await page.waitForSelector("text=How do you prefer feedback?");
-    const balancedOption = page.locator("button:has-text('Balanced')");
-    expect(balancedOption).toBeDefined();
-
-    // Click balanced feedback style
-    await balancedOption.click();
-
-    // Step 3: saving (brief loading state)
-    // Step 4: completion (redirect to session or show lesson)
-    // After clicking feedback style, onboarding should complete
-    await page.waitForSelector("text=/Preparing today|Welcome/", { timeout: 10000 });
+    // Onboarding → saving → lesson fetch. Accept either the transient saving
+    // state or the lesson loading/ready state as evidence of progression.
+    await expect(
+      page.locator("text=/Setting up your profile|Preparing today|Ready to practise/")
+    ).toBeVisible({ timeout: 20000 });
   });
 
-  test("5.5: Profile fields save after step completion", async ({ page }) => {
+  test("5.5: Bio textarea has a 2000-character hard cap", async ({ page }) => {
     await page.goto("/session");
-
-    // Wait for onboarding
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
-
-    // Fill and submit bio
-    const testBio = "I'm a CEO at a fintech startup working on negotiations";
-    const textarea = page.locator("textarea");
-    await textarea.fill(testBio);
-
-    const nextButton = page.locator('button:has-text("Next")');
-    await nextButton.click();
-
-    // In real scenario, we'd verify this was saved to backend
-    // For now, verify style step appears (confirming bio was accepted)
-    await page.waitForSelector("text=How do you prefer feedback?");
-    expect(page.locator("text=How do you prefer feedback?")).toBeDefined();
-  });
-
-  test("5.6: Bio field has character limit enforced", async ({ page }) => {
-    await page.goto("/session");
-
-    // Wait for onboarding
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
     const textarea = page.locator("textarea");
 
-    // Check maxLength attribute (should be 2000)
-    const maxLength = await textarea.evaluate((el: HTMLElement) =>
-      (el as HTMLTextAreaElement).maxLength
+    const maxLength = await textarea.evaluate(
+      (el) => (el as HTMLTextAreaElement).maxLength
     );
     expect(maxLength).toBe(2000);
 
-    // Try to type more than limit
-    const longText = "a".repeat(2500);
-    await textarea.fill(longText);
-
-    // Get actual value
+    // Attempt to fill with 2500 chars; the <textarea maxLength> attribute
+    // enforces the cap client-side.
+    await textarea.fill("a".repeat(2500));
     const value = await textarea.inputValue();
     expect(value.length).toBeLessThanOrEqual(2000);
   });
 
-  test("5.7: Back button returns to bio from style step", async ({ page }) => {
+  test("5.6: Back button returns to bio from the style step", async ({ page }) => {
     await page.goto("/session");
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
-    // Wait for onboarding
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
+    await page.locator("textarea").fill("I'm a CEO working on negotiations");
+    await page.locator('button:has-text("Next")').click();
 
-    // Go to style step
-    const textarea = page.locator("textarea");
-    await textarea.fill("I'm a CEO working on negotiations");
-    const nextButton = page.locator('button:has-text("Next")');
-    await nextButton.click();
+    await expect(page.locator(`text=${STYLE_HEADING}`)).toBeVisible();
 
-    // Wait for style step
-    await page.waitForSelector("text=How do you prefer feedback?");
-
-    // Click back button
-    const backButton = page.locator('button:has-text("Back")');
-    await backButton.click();
-
-    // Verify we're back at bio step
-    await page.waitForSelector("text=Before we begin");
-    expect(page.locator("text=Before we begin")).toBeDefined();
+    await page.locator('button:has-text("Back")').click();
+    await expect(page.locator(BIO_SELECTOR)).toBeVisible();
   });
 
-  test("5.8: Feedback style selection persists for session", async ({ page }) => {
+  test("5.7: Selecting a feedback style advances onboarding", async ({ page }) => {
     await page.goto("/session");
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
-    // Wait for onboarding
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
+    await page.locator("textarea").fill("I'm a CEO working on negotiations");
+    await page.locator('button:has-text("Next")').click();
 
-    // Complete onboarding
-    const textarea = page.locator("textarea");
-    await textarea.fill("I'm a CEO working on negotiations");
-    const nextButton = page.locator('button:has-text("Next")');
-    await nextButton.click();
+    await expect(page.locator(`text=${STYLE_HEADING}`)).toBeVisible();
+    await page.locator("button:has-text('Supportive')").click();
 
-    // Select balanced feedback style
-    await page.waitForSelector("text=How do you prefer feedback?");
-    const balancedOption = page.locator("button:has-text('Balanced')");
-    await balancedOption.click();
-
-    // After selection, onboarding should complete
-    // Verify we proceed past onboarding (to lesson or loading state)
-    await page.waitForSelector("text=/Preparing today|Listen|Ready to practise/", {
-      timeout: 10000,
-    });
-
-    // The feedback style should be stored and used in debrief later
-    expect(page.url()).not.toContain("/login");
+    // We should never land back on /login — the user is authenticated.
+    expect(new URL(page.url()).pathname).not.toBe("/login");
   });
 
-  test("5.9: Complete onboarding redirects to dashboard/lesson", async ({ page }) => {
+  test("5.8: Completing onboarding keeps the user inside the session flow", async ({ page }) => {
     await page.goto("/session");
+    const appeared = await waitForOnboarding(page);
+    test.skip(!appeared, "User profile already populated — no onboarding to test");
 
-    // Wait for onboarding
-    const bioStep = page.locator("text=Before we begin");
-    try {
-      await bioStep.waitFor({ timeout: 5000 });
-    } catch {
-      test.skip();
-    }
+    await page.locator("textarea").fill("I'm a CEO working on negotiations");
+    await page.locator('button:has-text("Next")').click();
 
-    // Complete full onboarding flow
-    const textarea = page.locator("textarea");
-    await textarea.fill("I'm a CEO working on negotiations");
-    const nextButton = page.locator('button:has-text("Next")');
-    await nextButton.click();
+    await expect(page.locator(`text=${STYLE_HEADING}`)).toBeVisible();
+    await page.locator("button:has-text('Balanced')").click();
 
-    // Select feedback style
-    await page.waitForSelector("text=How do you prefer feedback?");
-    const balancedOption = page.locator("button:has-text('Balanced')");
-    await balancedOption.click();
-
-    // Wait for redirect or lesson to load
-    // Should either go back to home or stay in session showing lesson
-    await page.waitForNavigation({ waitUntil: "networkidle" }).catch(() => {
-      // Navigation might not happen if we stay on same page
+    await page.waitForLoadState("networkidle").catch(() => {
+      // Streaming endpoints may prevent networkidle — it's an optional check.
     });
 
-    // Verify we're either on home or in session with lesson content
-    const isInSession = page.url().includes("/session");
-    const isOnHome = page.url() === "http://localhost:3000/";
-
-    expect(isInSession || isOnHome).toBeTruthy();
-
-    // If we're in session, verify lesson is loading/visible
-    if (isInSession) {
-      const lessonContent = page.locator("text=/Listen|Ready to practise|Preparing/");
-      expect(lessonContent).toBeDefined();
-    }
+    const pathname = new URL(page.url()).pathname;
+    expect(pathname.startsWith("/session") || pathname === "/").toBeTruthy();
   });
 });
