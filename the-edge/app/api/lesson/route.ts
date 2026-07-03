@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, streamResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
-import { buildPersistentContext } from "@/lib/prompts/system-context";
+import { buildPersistentContext, getUserTrack } from "@/lib/prompts/system-context";
 import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
 import { getCompletedConcepts } from "@/lib/ledger";
@@ -52,8 +52,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
       }
       concept = found;
     } else {
-      const completedIds = await getCompletedConcepts(userId);
-      const result = await selectConcept(completedIds, userId);
+      const [completedIds, track] = await Promise.all([
+        getCompletedConcepts(userId),
+        getUserTrack(userId),
+      ]);
+      const result = await selectConcept(completedIds, userId, track);
       concept = result.concept;
       isReview = result.isReview;
     }

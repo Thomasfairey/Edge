@@ -55,6 +55,9 @@ async function handlePost(req: NextRequest, userId: string | null) {
   if (profileData.feedbackStyle && !["direct", "balanced", "supportive"].includes(profileData.feedbackStyle)) {
     return NextResponse.json({ error: "Invalid feedbackStyle" }, { status: 400 });
   }
+  if (profileData.track && !["professional", "social", "both"].includes(profileData.track)) {
+    return NextResponse.json({ error: "Invalid track" }, { status: 400 });
+  }
 
   const supabase = createUserClient(req);
   const { error } = await supabase
