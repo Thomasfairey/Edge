@@ -180,14 +180,55 @@ export default function SessionPage() {
           {/* ============================================================== */}
           {s.onboardingNeeded && (
             <div className="space-y-6 animate-fade-in-up">
-              {s.onboardingStep === "bio" && (
+              {s.onboardingStep === "track" && (
                 <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
                   <h2 className="text-xl font-semibold text-primary mb-2">
                     Welcome to The Edge{s.onboardingDisplayName ? `, ${s.onboardingDisplayName}` : ""}
                   </h2>
                   <p className="text-sm text-secondary mb-5">
-                    Before we begin, tell me about yourself. Your role, your company,
-                    what you&apos;re working on, and what you&apos;re trying to achieve.
+                    What do you want an edge in? You can change this anytime.
+                  </p>
+
+                  <div className="space-y-3">
+                    {([
+                      { value: "professional" as const, label: "Professional", desc: "Influence, negotiation, and power in high-stakes work conversations.", color: "#7C83FD" },
+                      { value: "social" as const, label: "Social", desc: "Charisma, storytelling, and being captivating and memorable socially.", color: "#F5A97F" },
+                      { value: "both" as const, label: "Both", desc: "Interleave professional influence and social charisma day to day.", color: "#6BC9A0" },
+                    ]).map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          haptic();
+                          s.setOnboardingTrack(opt.value);
+                          s.setOnboardingStep("bio");
+                        }}
+                        className="w-full rounded-2xl border-2 border-[#E8E5E0] bg-[#FAF9F6] p-4 text-left transition-all hover:border-[var(--accent)]/30 active:scale-[0.98]"
+                        style={s.onboardingTrack === opt.value ? { borderColor: "var(--accent)" } : undefined}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
+                          <div>
+                            <p className="text-sm font-semibold text-primary">{opt.label}</p>
+                            <p className="text-xs text-secondary mt-0.5">{opt.desc}</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {s.onboardingStep === "bio" && (
+                <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <h2 className="text-xl font-semibold text-primary mb-2">
+                    Tell me about yourself
+                  </h2>
+                  <p className="text-sm text-secondary mb-5">
+                    {s.onboardingTrack === "social"
+                      ? "Who you are, the social settings you want an edge in — parties, dates, new friendships — and what you find hard."
+                      : s.onboardingTrack === "both"
+                      ? "Your role and work, plus the social settings you want an edge in."
+                      : "Your role, your company, what you're working on, and what you're trying to achieve."}
                   </p>
                   <p className="text-xs text-tertiary mb-4">
                     This is used to personalise every scenario, lesson, and mission to your world.
@@ -196,7 +237,11 @@ export default function SessionPage() {
                   <textarea
                     className="w-full rounded-2xl border border-[#E8E5E0] bg-[#FAF9F6] px-4 py-3 text-sm text-primary placeholder-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
                     rows={5}
-                    placeholder="e.g. I'm the CEO of a fintech startup. We're raising our seed round and trying to sign our first enterprise clients in banking. I need to get better at high-stakes negotiations and investor pitches..."
+                    placeholder={
+                      s.onboardingTrack === "social"
+                        ? "e.g. I'm an engineer who's great one-on-one but goes quiet in groups. I want to tell better stories, be more memorable at parties, and not freeze on dates..."
+                        : "e.g. I'm the CEO of a fintech startup. We're raising our seed round and trying to sign our first enterprise clients in banking. I need to get better at high-stakes negotiations and investor pitches..."
+                    }
                     value={s.onboardingBio}
                     onChange={(e) => s.setOnboardingBio(e.target.value)}
                     maxLength={2000}
@@ -243,6 +288,13 @@ export default function SessionPage() {
                   {s.voice.state === "listening" && s.voice.interimTranscript && (
                     <p className="mt-2 text-xs text-secondary italic">{s.voice.interimTranscript}</p>
                   )}
+
+                  <button
+                    onClick={() => s.setOnboardingStep("track")}
+                    className="mt-4 text-xs text-secondary underline"
+                  >
+                    Back
+                  </button>
                 </div>
               )}
 

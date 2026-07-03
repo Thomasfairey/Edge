@@ -31,8 +31,13 @@ import {
   validateTranscript as validateTranscriptSoft,
   truncate,
   SCORE_KEYS as _SCORE_KEYS,
+  DOMAIN_TRACK,
+  TRACK_IDS,
+  trackForDomain,
+  domainMatchesTrack,
   type SessionScores,
   type Message,
+  type TrackId,
 } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1035,96 @@ describe("SM-2 date math", () => {
 
     it("handles leap year day rollover (2028-02-29 + 1 = 2028-03-01)", () => {
       assert.equal(addDays("2028-02-29", 1), "2028-03-01");
+    });
+  });
+});
+
+// ===========================================================================
+// 5. Track model (professional vs social)
+// ===========================================================================
+
+describe("Tracks", () => {
+  describe("DOMAIN_TRACK", () => {
+    it("maps every domain to either professional or social", () => {
+      for (const [domain, track] of Object.entries(DOMAIN_TRACK)) {
+        assert.ok(
+          track === "professional" || track === "social",
+          `${domain} mapped to unexpected track ${track}`
+        );
+      }
+    });
+
+    it("classifies the seven original domains as professional", () => {
+      assert.equal(DOMAIN_TRACK["Influence & Persuasion"], "professional");
+      assert.equal(DOMAIN_TRACK["Negotiation"], "professional");
+      assert.equal(DOMAIN_TRACK["Dark Psychology & Coercive Technique Recognition"], "professional");
+    });
+
+    it("classifies the three social domains as social", () => {
+      assert.equal(DOMAIN_TRACK["Charisma & Presence"], "social");
+      assert.equal(DOMAIN_TRACK["Storytelling & Narrative"], "social");
+      assert.equal(DOMAIN_TRACK["Conversation & Memorability"], "social");
+    });
+  });
+
+  describe("trackForDomain", () => {
+    it("returns the mapped track for known domains", () => {
+      assert.equal(trackForDomain("Negotiation"), "professional");
+      assert.equal(trackForDomain("Storytelling & Narrative"), "social");
+    });
+
+    it("defaults unknown/legacy domains to professional", () => {
+      assert.equal(trackForDomain("Some Old Domain"), "professional");
+      assert.equal(trackForDomain(""), "professional");
+    });
+  });
+
+  describe("domainMatchesTrack", () => {
+    it("'both' accepts every domain", () => {
+      assert.ok(domainMatchesTrack("Negotiation", "both"));
+      assert.ok(domainMatchesTrack("Charisma & Presence", "both"));
+      assert.ok(domainMatchesTrack("Unknown", "both"));
+    });
+
+    it("'social' accepts only social domains", () => {
+      assert.ok(domainMatchesTrack("Charisma & Presence", "social"));
+      assert.equal(domainMatchesTrack("Negotiation", "social"), false);
+    });
+
+    it("'professional' accepts only professional domains", () => {
+      assert.ok(domainMatchesTrack("Negotiation", "professional"));
+      assert.equal(domainMatchesTrack("Storytelling & Narrative", "professional"), false);
+      // legacy/unknown domains fall through to professional
+      assert.ok(domainMatchesTrack("Legacy Domain", "professional"));
+    });
+  });
+
+  describe("track-filter predicate (mirrors selectNewConcept)", () => {
+    // A miniature concept pool spanning both tracks.
+    const pool = [
+      { id: "a", domain: "Negotiation" },
+      { id: "b", domain: "Influence & Persuasion" },
+      { id: "c", domain: "Charisma & Presence" },
+      { id: "d", domain: "Storytelling & Narrative" },
+    ];
+    const inTrack = (track: TrackId) => pool.filter((c) => domainMatchesTrack(c.domain, track));
+
+    it("social preference surfaces only social concepts", () => {
+      assert.deepEqual(inTrack("social").map((c) => c.id), ["c", "d"]);
+    });
+
+    it("professional preference surfaces only professional concepts", () => {
+      assert.deepEqual(inTrack("professional").map((c) => c.id), ["a", "b"]);
+    });
+
+    it("both preference surfaces the whole pool", () => {
+      assert.equal(inTrack("both").length, pool.length);
+    });
+  });
+
+  describe("TRACK_IDS", () => {
+    it("contains exactly the three selectable tracks", () => {
+      assert.deepEqual([...TRACK_IDS].sort(), ["both", "professional", "social"]);
     });
   });
 });

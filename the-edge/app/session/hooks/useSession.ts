@@ -181,8 +181,9 @@ export function useSession() {
 
   // Onboarding
   const [onboardingNeeded, setOnboardingNeeded] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<"bio" | "style" | "saving">("bio");
+  const [onboardingStep, setOnboardingStep] = useState<"track" | "bio" | "style" | "saving">("track");
   const [onboardingBio, setOnboardingBio] = useState("");
+  const [onboardingTrack, setOnboardingTrack] = useState<"professional" | "social" | "both">("professional");
   const [onboardingDisplayName, setOnboardingDisplayName] = useState("");
 
   // Abort in-flight requests on unmount
@@ -864,6 +865,7 @@ export function useSession() {
           profileData: {
             bio: onboardingBio.trim(),
             feedbackStyle,
+            track: onboardingTrack,
           },
         }),
       });
@@ -1256,6 +1258,8 @@ export function useSession() {
     setOnboardingStep,
     onboardingBio,
     setOnboardingBio,
+    onboardingTrack,
+    setOnboardingTrack,
     onboardingDisplayName,
 
     // Debrief

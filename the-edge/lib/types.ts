@@ -49,13 +49,61 @@ export interface LedgerEntry {
 // ---------------------------------------------------------------------------
 
 export type ConceptDomain =
+  // ── Professional track ──
   | "Influence & Persuasion"
   | "Power Dynamics"
   | "Negotiation"
   | "Behavioural Psychology & Cognitive Bias"
   | "Nonverbal Intelligence & Behavioural Profiling"
   | "Rapport & Relationship Engineering"
-  | "Dark Psychology & Coercive Technique Recognition";
+  | "Dark Psychology & Coercive Technique Recognition"
+  // ── Social track ──
+  | "Charisma & Presence"
+  | "Storytelling & Narrative"
+  | "Conversation & Memorability";
+
+// ---------------------------------------------------------------------------
+// Tracks — professional vs social, and the user's chosen focus
+// ---------------------------------------------------------------------------
+
+/** The two domain families a concept can belong to. */
+export type DomainTrack = "professional" | "social";
+
+/** The focus a user selects. "both" interleaves every domain. */
+export type TrackId = "professional" | "social" | "both";
+
+export const TRACK_IDS: TrackId[] = ["professional", "social", "both"];
+
+/** Maps every concept domain to the track it belongs to. */
+export const DOMAIN_TRACK: Record<ConceptDomain, DomainTrack> = {
+  "Influence & Persuasion": "professional",
+  "Power Dynamics": "professional",
+  "Negotiation": "professional",
+  "Behavioural Psychology & Cognitive Bias": "professional",
+  "Nonverbal Intelligence & Behavioural Profiling": "professional",
+  "Rapport & Relationship Engineering": "professional",
+  "Dark Psychology & Coercive Technique Recognition": "professional",
+  "Charisma & Presence": "social",
+  "Storytelling & Narrative": "social",
+  "Conversation & Memorability": "social",
+};
+
+/**
+ * The track a domain belongs to. Unknown domains default to "professional"
+ * so legacy ledger rows and any future data never break selection.
+ */
+export function trackForDomain(domain: string): DomainTrack {
+  return DOMAIN_TRACK[domain as ConceptDomain] ?? "professional";
+}
+
+/**
+ * Whether a domain should be shown for a user's chosen track preference.
+ * "both" accepts everything.
+ */
+export function domainMatchesTrack(domain: string, track: TrackId): boolean {
+  if (track === "both") return true;
+  return trackForDomain(domain) === track;
+}
 
 export interface Concept {
   id: string;

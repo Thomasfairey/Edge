@@ -10,17 +10,20 @@ import { useRouter } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 
 type FeedbackStyle = "direct" | "balanced" | "supportive";
+type Track = "professional" | "social" | "both";
 
-interface ProfileData {
-  bio?: string;
-  feedbackStyle?: FeedbackStyle;
-}
+const TRACK_OPTIONS: { id: Track; label: string; desc: string }[] = [
+  { id: "professional", label: "Professional", desc: "Influence, negotiation, and power in high-stakes work conversations." },
+  { id: "social", label: "Social", desc: "Charisma, storytelling, and being captivating and memorable socially." },
+  { id: "both", label: "Both", desc: "Interleave professional influence and social charisma day to day." },
+];
 
 export default function ProfilePage() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [feedbackStyle, setFeedbackStyle] = useState<FeedbackStyle>("direct");
+  const [track, setTrack] = useState<Track>("professional");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -39,6 +42,7 @@ export default function ProfilePage() {
         if (data.profileData) {
           setBio(data.profileData.bio || "");
           setFeedbackStyle(data.profileData.feedbackStyle || "direct");
+          setTrack(data.profileData.track || "professional");
         }
       }
       setLoading(false);
@@ -57,7 +61,7 @@ export default function ProfilePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          profileData: { bio, feedbackStyle },
+          profileData: { bio, feedbackStyle, track },
         }),
       });
 
@@ -142,10 +146,36 @@ export default function ProfilePage() {
             />
           </label>
 
-          {/* Professional context */}
+          {/* Training track */}
+          <div>
+            <span className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
+              Training focus
+            </span>
+            <div className="mt-2 flex gap-2">
+              {TRACK_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setTrack(opt.id)}
+                  className="flex-1 rounded-xl py-2.5 text-sm font-medium transition-all"
+                  style={{
+                    backgroundColor: track === opt.id ? "var(--accent)" : "var(--background)",
+                    color: track === opt.id ? "white" : "var(--text-secondary)",
+                    border: track === opt.id ? "none" : "1px solid var(--border)",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-caption leading-relaxed" style={{ color: "var(--text-tertiary)" }}>
+              {TRACK_OPTIONS.find((o) => o.id === track)?.desc}
+            </p>
+          </div>
+
+          {/* Personal / professional context */}
           <label className="block">
             <span className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
-              Professional context
+              {track === "social" ? "About you" : track === "both" ? "About you & your work" : "Professional context"}
             </span>
             <textarea
               value={bio}
@@ -154,7 +184,13 @@ export default function ProfilePage() {
               maxLength={2000}
               className="mt-1 block w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)] resize-none"
               style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text-primary)" }}
-              placeholder="Your role, industry, and current challenges..."
+              placeholder={
+                track === "social"
+                  ? "Who you are, the social settings you want an edge in, and what you find hard..."
+                  : track === "both"
+                  ? "Your role and work, plus the social settings you want an edge in..."
+                  : "Your role, industry, and current challenges..."
+              }
             />
             <span className="mt-1 block text-right text-xs" style={{ color: "var(--text-tertiary)" }}>{bio.length}/2000</span>
           </label>

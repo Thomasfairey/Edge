@@ -6,7 +6,7 @@
  * Reference: PRD Section 3.3, Appendix A
  */
 
-import { Concept, ConceptDomain } from "@/lib/types";
+import { Concept, ConceptDomain, TrackId, domainMatchesTrack } from "@/lib/types";
 import { getDueReviews } from "@/lib/spaced-repetition";
 
 // ---------------------------------------------------------------------------
@@ -307,6 +307,136 @@ export const CONCEPTS: Concept[] = [
     description:
       "Overwhelming someone with excessive praise, attention, and inclusion early in a professional relationship to create dependency and obligation before deploying control tactics.",
   },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SOCIAL TRACK
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── Charisma & Presence (Van Edwards / Cabane) ─────────────────────────
+  {
+    id: "warmth-competence-balance",
+    name: "Warmth & Competence Balance",
+    domain: "Charisma & Presence",
+    source: "Van Edwards",
+    description:
+      "Every first impression is read on two axes: warmth (can I trust you?) and competence (can I respect you?). Charisma is the rare person who signals both at once — most people accidentally lead with only one.",
+  },
+  {
+    id: "charismatic-presence",
+    name: "Charismatic Presence",
+    domain: "Charisma & Presence",
+    source: "Cabane",
+    description:
+      "Charisma is presence, power, and warmth combined — and it starts with presence: giving someone your complete, undistracted attention so they feel they are the only person in the room.",
+  },
+  {
+    id: "nonverbal-warmth-cues",
+    name: "Nonverbal Warmth Cues",
+    domain: "Charisma & Presence",
+    source: "Van Edwards",
+    description:
+      "Open torso, visible hands, a slow triple-nod, the eyebrow flash of recognition, and a genuine (eye-crinkling) smile are the physical signals that unlock trust before you say a word.",
+  },
+  {
+    id: "vocal-power",
+    name: "Vocal Power",
+    domain: "Charisma & Presence",
+    source: "Van Edwards",
+    description:
+      "How you say it outweighs what you say. Ending statements with a downward inflection signals confidence; question-inflection ('upspeak') leaks doubt. Strategic pauses and lower resonance command a room.",
+  },
+  {
+    id: "intentional-first-impression",
+    name: "The Intentional Entrance",
+    domain: "Charisma & Presence",
+    source: "Van Edwards",
+    description:
+      "The first few seconds set the frame for everything after. Keep hands visible, make eye contact before you speak, and lead with relaxed posture — the 'launch' most people fumble by looking down at their phone.",
+  },
+
+  // ── Storytelling & Narrative (Dicks / Duarte / Van Edwards) ────────────
+  {
+    id: "five-second-moment",
+    name: "The Five-Second Moment",
+    domain: "Storytelling & Narrative",
+    source: "Dicks",
+    description:
+      "Every worthwhile story is really about one small moment of change — five seconds where something shifted inside you. Find that moment first; everything else is just the runway to it.",
+  },
+  {
+    id: "narrative-tension",
+    name: "Narrative Tension",
+    domain: "Storytelling & Narrative",
+    source: "Duarte",
+    description:
+      "Attention is held by an open gap between what is and what could be. Open a question the listener needs answered, then delay the resolution — tension, not information, is what keeps people leaning in.",
+  },
+  {
+    id: "stakes-and-vulnerability",
+    name: "Stakes & Vulnerability",
+    domain: "Storytelling & Narrative",
+    source: "Dicks",
+    description:
+      "People invest in a story only when something is at risk for the teller. Naming what you stood to lose — and admitting how you really felt — is what turns an anecdote into something people feel.",
+  },
+  {
+    id: "hook-opening",
+    name: "The Hook Opening",
+    domain: "Storytelling & Narrative",
+    source: "Van Edwards",
+    description:
+      "Start in motion — mid-scene, mid-action, or on an intriguing line — never with throat-clearing preamble like 'So this one time...'. The first sentence decides whether anyone stays for the rest.",
+  },
+  {
+    id: "show-dont-summarise",
+    name: "Show, Don't Summarise",
+    domain: "Storytelling & Narrative",
+    source: "Dicks",
+    description:
+      "Put the listener in the room with concrete, sensory detail rather than reporting the gist. A specific image ('he slid the cold coffee across the table') lands where an abstract summary ('the meeting was tense') evaporates.",
+  },
+
+  // ── Conversation & Memorability (Van Edwards / Carnegie) ───────────────
+  {
+    id: "conversational-spark",
+    name: "The Conversational Spark",
+    domain: "Conversation & Memorability",
+    source: "Van Edwards",
+    description:
+      "Scripted openers ('what do you do?') produce scripted, forgettable answers. A novel question ('working on anything exciting lately?') triggers a small dopamine hit and makes you the person they remember from the room.",
+  },
+  {
+    id: "threading",
+    name: "Threading",
+    domain: "Conversation & Memorability",
+    source: "Van Edwards",
+    description:
+      "People drop 'free information' — details they care about — into what they say. Catching a thread and pulling it ('wait, you mentioned Kyoto — what took you there?') is how effortless, memorable conversation actually works.",
+  },
+  {
+    id: "be-a-highlighter",
+    name: "Be a Highlighter",
+    domain: "Conversation & Memorability",
+    source: "Van Edwards",
+    description:
+      "There are highlighters, who make people feel their best, and highlighters' opposite, who make people feel small. Actively looking for what to admire in someone — and saying it — is the most magnetic social habit there is.",
+  },
+  {
+    id: "memorable-exit",
+    name: "The Memorable Exit",
+    domain: "Conversation & Memorability",
+    source: "Van Edwards",
+    description:
+      "The peak-end rule means people remember an interaction by its emotional high and its final moment. Close on a genuine high note with a specific callback ('good luck with the Kyoto trip') instead of letting it fizzle.",
+  },
+  {
+    id: "story-bank-and-signature",
+    name: "Story Bank & Signature",
+    domain: "Conversation & Memorability",
+    source: "Van Edwards",
+    description:
+      "Charismatic people aren't improvising from nothing — they keep a small bank of go-to stories and a memorable self-introduction that goes beyond a job title, so they're never caught with a flat 'I'm fine, you?'.",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -318,41 +448,51 @@ export const CONCEPTS: Concept[] = [
  * Returns { concept, isReview } — when reviews are due, 30% chance of review session.
  *
  * Rules:
- * 1. Never repeat a concept already in completedIds.
- * 2. Prefer a different domain than the most recently completed concept
+ * 1. Only ever surface concepts within the user's chosen track
+ *    ("professional", "social", or "both").
+ * 2. Never repeat a concept already in completedIds.
+ * 3. Prefer a different domain than the most recently completed concept
  *    (enforces breadth before depth).
- * 3. If all concepts in other domains are exhausted, allow same-domain.
- * 4. If ALL concepts are exhausted, reset the pool and pick randomly.
+ * 4. If all concepts in other domains are exhausted, allow same-domain.
+ * 5. If ALL concepts in the track are exhausted, reset the pool and pick randomly.
  */
-export async function selectConcept(completedIds: string[], userId?: string | null): Promise<{ concept: Concept; isReview: boolean }> {
-  // Check for due reviews — 30% chance of review session
+export async function selectConcept(
+  completedIds: string[],
+  userId?: string | null,
+  track: TrackId = "professional"
+): Promise<{ concept: Concept; isReview: boolean }> {
+  // Check for due reviews — 30% chance of review session.
+  // Only surface a review that belongs to the active track.
   try {
     const dueReviews = await getDueReviews(userId);
     if (dueReviews.length > 0 && Math.random() < 0.3) {
-      const mostOverdue = dueReviews[0];
-      const reviewConcept = CONCEPTS.find((c) => c.id === mostOverdue.conceptId);
-      if (reviewConcept) {
-        return { concept: reviewConcept, isReview: true };
+      for (const review of dueReviews) {
+        const reviewConcept = CONCEPTS.find((c) => c.id === review.conceptId);
+        if (reviewConcept && domainMatchesTrack(reviewConcept.domain, track)) {
+          return { concept: reviewConcept, isReview: true };
+        }
       }
     }
   } catch {
     // SR not available — continue with normal selection
   }
 
-  return { concept: selectNewConcept(completedIds), isReview: false };
+  return { concept: selectNewConcept(completedIds, track), isReview: false };
 }
 
-function selectNewConcept(completedIds: string[]): Concept {
+function selectNewConcept(completedIds: string[], track: TrackId = "professional"): Concept {
   // completedIds may contain either concept IDs (e.g. "mirroring") or
   // formatted ledger names (e.g. "Mirroring (Voss)"). Match against both.
   const completedSet = new Set(completedIds);
-  const available = CONCEPTS.filter(
+  // Restrict the entire pool to the active track before anything else.
+  const inTrack = CONCEPTS.filter((c) => domainMatchesTrack(c.domain, track));
+  const available = inTrack.filter(
     (c) => !completedSet.has(c.id) && !completedSet.has(`${c.name} (${c.source})`)
   );
 
-  // All concepts exhausted — reset the pool
+  // All in-track concepts exhausted — reset the pool (still within track)
   if (available.length === 0) {
-    return CONCEPTS[Math.floor(Math.random() * CONCEPTS.length)];
+    return inTrack[Math.floor(Math.random() * inTrack.length)];
   }
 
   // Determine the domain of the most recently completed concept
