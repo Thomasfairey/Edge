@@ -1128,3 +1128,55 @@ describe("Tracks", () => {
     });
   });
 });
+
+// ===========================================================================
+// 6. Roleplay stage-direction stripping (for voice read-back)
+// Inline copy of stripStageDirections from app/session/components/types.tsx
+// (that module pulls in React/JSX, so it can't be imported by the node runner).
+// ===========================================================================
+
+function stripStageDirections(text: string): string {
+  return text
+    .replace(/\*[^*]*\*/g, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .split("\n")
+    .map((line) => line.replace(/\s{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").trim())
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .trim();
+}
+
+describe("stripStageDirections (roleplay voice)", () => {
+  it("removes a leading standalone stage direction and its blank line", () => {
+    assert.equal(
+      stripStageDirections("*glances toward the kitchen*\n\nUh-huh. So what do you do?"),
+      "Uh-huh. So what do you do?"
+    );
+  });
+
+  it("removes inline stage directions without joining words", () => {
+    assert.equal(
+      stripStageDirections("*looking over your shoulder* Mm, yeah, hey— *takes a sip* So what's your deal?"),
+      "Mm, yeah, hey— So what's your deal?"
+    );
+  });
+
+  it("collapses multiple stage-direction-only lines but keeps ellipses", () => {
+    assert.equal(
+      stripStageDirections("*looks at you, then glances away*\n\nHey. \n\n...sorry, you were saying something?"),
+      "Hey.\n...sorry, you were saying something?"
+    );
+  });
+
+  it("removes [bracketed] cues too", () => {
+    assert.equal(stripStageDirections("[pauses] Right, where were we?"), "Right, where were we?");
+  });
+
+  it("returns empty string when the whole line is a stage direction", () => {
+    assert.equal(stripStageDirections("*sips drink*"), "");
+  });
+
+  it("leaves ordinary dialogue untouched", () => {
+    assert.equal(stripStageDirections("Yeah, whatever. You?"), "Yeah, whatever. You?");
+  });
+});

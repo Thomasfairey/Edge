@@ -15,7 +15,7 @@ import {
   Message,
 } from "@/lib/types";
 import { useVoice } from "@/app/hooks/useVoice";
-import { haptic, cleanForSpeech, splitLessonSections } from "../components/types";
+import { haptic, cleanForSpeech, stripStageDirections, splitLessonSections } from "../components/types";
 import type { VoiceProps } from "../components/types";
 import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
 import { trackClientEvent } from "@/lib/analytics-client";
@@ -919,7 +919,8 @@ export function useSession() {
       roleplayTranscript.length - 1 > lastSpokenIndex.current
     ) {
       lastSpokenIndex.current = roleplayTranscript.length - 1;
-      voiceSpeakRef.current(lastMsg.content);
+      // Speak only the character's words — never voice *stage directions*.
+      voiceSpeakRef.current(stripStageDirections(lastMsg.content));
     }
   }, [roleplayTranscript, currentPhase, voice.voiceEnabled, voice.ttsSupported]);
 

@@ -85,6 +85,24 @@ export function scoreTextColor(score: number): string {
   return "var(--score-low-text)";
 }
 
+/**
+ * Remove roleplay stage directions before speaking a character's line aloud.
+ * Roleplay is pure spoken dialogue, so any *…* or […] span is an action cue
+ * ("*glances at the door*"), never emphasis — strip the whole span and drop any
+ * line that was only a stage direction, so TTS never voices "glances at the door".
+ * Applied ONLY to roleplay speech; lessons keep their *italic* emphasis.
+ */
+export function stripStageDirections(text: string): string {
+  return text
+    .replace(/\*[^*]*\*/g, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .split("\n")
+    .map((line) => line.replace(/\s{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").trim())
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .trim();
+}
+
 /** Strip markdown formatting for natural TTS narration */
 export function cleanForSpeech(text: string): string {
   return text
