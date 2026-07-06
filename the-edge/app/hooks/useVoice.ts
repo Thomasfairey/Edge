@@ -111,8 +111,16 @@ function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   const ratio = sampleRate / targetRate;
   const newLength = Math.floor(samples.length / ratio);
   const downsampled = new Float32Array(newLength);
+  // Average each source window rather than picking a single nearest sample.
+  // Plain decimation has no anti-aliasing, so high-frequency content (sibilants,
+  // consonants) folds back into the speech band and garbles transcription.
+  // A box filter is a cheap low-pass that keeps speech intelligible.
   for (let i = 0; i < newLength; i++) {
-    downsampled[i] = samples[Math.floor(i * ratio)];
+    const start = Math.floor(i * ratio);
+    const end = Math.min(Math.floor((i + 1) * ratio), samples.length);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += samples[j];
+    downsampled[i] = end > start ? sum / (end - start) : samples[start];
   }
 
   const buffer = new ArrayBuffer(44 + downsampled.length * 2);
@@ -145,6 +153,58 @@ function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+/** Outcome of a transcription request — lets callers pick the right message. */
+type TranscriptionOutcome =
+  | { ok: true; text: string }
+  | { ok: false; reason: "empty" | "rate-limited" | "error" };
+
+/**
+ * POST an audio blob to /api/stt and return a typed outcome. Retries ONCE on a
+ * quick transient failure (network blip or 5xx) — but never on a timeout, since
+ * the request already waited out the full 35s and a second attempt would just
+ * double the wait. 429 (rate-limited) and other 4xx are returned immediately.
+ */
+async function postTranscription(blob: Blob, filename: string): Promise<TranscriptionOutcome> {
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const formData = new FormData();
+      formData.append("audio", blob, filename);
+
+      const res = await fetch("/api/stt", {
+        method: "POST",
+        body: formData,
+        // Must exceed the server's 30s ElevenLabs Scribe timeout (+ margin)
+        // so the client doesn't abort a transcription that's still running.
+        signal: AbortSignal.timeout(35000),
+      });
+
+      if (res.status === 429) return { ok: false, reason: "rate-limited" };
+      // Transient server error — retry once after a short backoff.
+      if (res.status >= 500 && attempt === 0) {
+        await delay(500);
+        continue;
+      }
+      if (!res.ok) return { ok: false, reason: "error" };
+
+      const data = await res.json().catch(() => ({}));
+      const text = (data.text ?? "").trim();
+      return text ? { ok: true, text } : { ok: false, reason: "empty" };
+    } catch (err) {
+      // A timeout already consumed the full budget — don't retry it.
+      const isTimeout = err instanceof DOMException && err.name === "TimeoutError";
+      if (!isTimeout && attempt === 0) {
+        await delay(500);
+        continue;
+      }
+      console.warn("[useVoice] transcription request failed:", err);
+      return { ok: false, reason: "error" };
+    }
+  }
+  return { ok: false, reason: "error" };
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -169,9 +229,15 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const onTranscriptRef = useRef(onTranscript);
   const onSpeakEndRef = useRef(onSpeakEnd);
   const characterIdRef = useRef(characterId);
-  onTranscriptRef.current = onTranscript;
-  onSpeakEndRef.current = onSpeakEnd;
-  characterIdRef.current = characterId;
+  // Keep the "latest value" refs current. These are only read inside async
+  // callbacks (recognition events, fetch handlers) that fire after commit, so
+  // updating them in a passive effect — rather than during render — is correct
+  // and satisfies react-hooks' no-ref-mutation-during-render rule.
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript;
+    onSpeakEndRef.current = onSpeakEnd;
+    characterIdRef.current = characterId;
+  });
 
   // Web Audio API refs for mic recording fallback (iOS Safari)
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -199,15 +265,22 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     // (MediaRecorder -> /api/stt) as mobile Safari.
     const webSpeech = detectNativeSpeechRecognition();
     const mic = detectMicAccess();
+    // Mount-only sync of browser capabilities into state. This MUST run in an
+    // effect (not lazy useState init) so the server and first client render
+    // agree; the resulting setState is the intended one-shot hydration update,
+    // not a cascading render — hence the targeted rule suppression.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNativeSTT(webSpeech);
     setSttSupported(webSpeech || mic);
     setIsIOS(detectIOS());
   }, []);
 
-  // Restore preference from localStorage (default: disabled)
+  // Restore preference from localStorage (default: disabled). Effect-only for
+  // hydration safety; the one-shot setState is intended, not a cascade.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(VOICE_PREF_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (saved === "true") setVoiceEnabled(true);
     } catch {}
   }, []);
@@ -399,49 +472,28 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         chunksRef.current = [];
 
         if (blob.size < 1000) {
-          // Too short — probably no speech
+          // Too short — probably no speech. Tell the user rather than going
+          // silent, which otherwise reads as "it didn't hear me".
           setState("idle");
           setInterimTranscript("");
+          setMicError("Didn’t catch that — try again");
           return;
         }
 
         setState("processing");
         setInterimTranscript("Transcribing...");
 
-        try {
-          const formData = new FormData();
-          formData.append("audio", blob, `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
+        const filename = `recording.${mimeType.includes("mp4") ? "mp4" : "webm"}`;
+        const outcome = await postTranscription(blob, filename);
+        setInterimTranscript("");
 
-          const res = await fetch("/api/stt", {
-            method: "POST",
-            body: formData,
-            signal: AbortSignal.timeout(15000),
-          });
-
-          if (res.status === 429) {
-            setMicError("Too many requests. Wait a moment and try again.");
-            setState("idle");
-            setInterimTranscript("");
-            return;
-          }
-
-          if (!res.ok) {
-            throw new Error(`STT API error: ${res.status}`);
-          }
-
-          const data = await res.json();
-          const text = data.text?.trim();
-
-          if (text) {
-            setInterimTranscript("");
-            onTranscriptRef.current?.(text);
-          } else {
-            setInterimTranscript("");
-            setMicError("Couldn\u2019t hear that \u2014 try again");
-          }
-        } catch (err) {
-          console.warn("[useVoice] transcription error:", err);
-          setInterimTranscript("");
+        if (outcome.ok) {
+          onTranscriptRef.current?.(outcome.text);
+        } else if (outcome.reason === "rate-limited") {
+          setMicError("Too many requests. Wait a moment and try again.");
+        } else if (outcome.reason === "empty") {
+          setMicError("Couldn\u2019t hear that \u2014 try again");
+        } else {
           setMicError("Transcription failed \u2014 try again");
         }
 
@@ -457,7 +509,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         setMicError("Recording failed");
       };
 
-      recorder.start(250); // Collect chunks every 250ms
+      // Record to a single blob (no timeslice). The chunks aren't streamed
+      // anywhere — they're concatenated on stop — so a timeslice buys nothing,
+      // and on iOS Safari/WKWebView (which records audio/mp4) a timeslice can
+      // yield a fragmented, partially-decodable file that transcribes poorly.
+      recorder.start();
       setState("listening");
       setInterimTranscript("Listening...");
     } catch (err) {
@@ -591,9 +647,11 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     cleanupRecording();
 
     if (totalLength < sampleRate * 0.3) {
-      // Less than 0.3 seconds — too short, probably accidental tap
+      // Less than 0.3 seconds — too short, probably accidental tap. Surface a
+      // hint instead of silently resetting so it doesn't look like a failure.
       setState("idle");
       setInterimTranscript("");
+      setMicError("Didn’t catch that — try again");
       return;
     }
 
@@ -607,50 +665,20 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     setState("processing");
     setInterimTranscript("Transcribing...");
 
-    try {
-      const wavBlob = encodeWAV(allSamples, sampleRate);
-      const formData = new FormData();
-      formData.append("audio", wavBlob, "recording.wav");
+    const wavBlob = encodeWAV(allSamples, sampleRate);
+    const outcome = await postTranscription(wavBlob, "recording.wav");
+    setInterimTranscript("");
 
-      const res = await fetch("/api/stt", {
-        method: "POST",
-        body: formData,
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (res.status === 429) {
-        setMicError("Too many requests. Wait a moment and try again.");
-        setState("idle");
-        setInterimTranscript("");
-        return;
-      }
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: "Unknown error" }));
-        console.warn("[useVoice] STT API error:", res.status, errData);
-        setMicError("Transcription failed. Please try again.");
-        setState("idle");
-        setInterimTranscript("");
-        return;
-      }
-
-      const data = await res.json();
-      const text = (data.text ?? "").trim();
-
-      setInterimTranscript("");
-
-      if (text) {
-        onTranscriptRef.current?.(text);
-      } else {
-        setState("idle");
-        // No error — just didn't detect speech
-      }
-    } catch (err) {
-      console.warn("[useVoice] fallback STT error:", err);
+    if (outcome.ok) {
+      onTranscriptRef.current?.(outcome.text);
+    } else if (outcome.reason === "rate-limited") {
+      setMicError("Too many requests. Wait a moment and try again.");
+    } else if (outcome.reason === "error") {
       setMicError("Connection error. Check your internet and try again.");
-      setState("idle");
-      setInterimTranscript("");
     }
+    // "empty" → no speech detected; reset quietly without an error banner.
+
+    setState("idle");
   }, [cleanupRecording]);
 
   // -------------------------------------------------------------------------
