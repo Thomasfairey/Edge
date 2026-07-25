@@ -1,8 +1,13 @@
 /**
  * Concept taxonomy and selection logic.
- * 76 concepts across 15 domains, spanning the relational canon (Van Edwards,
- * Gottman, Rogers, Aron, Brown, Cain, Hall, Dicks) and the influence canon
- * (Cialdini, Greene, Voss, Kahneman, Carnegie, Hughes).
+ * 76 concepts across 15 domains.
+ *
+ * Every concept is attributed to the person who actually established it, and
+ * the attributions were checked rather than recalled. Sources are empirical
+ * researchers (Gottman, Cialdini, Kahneman, Fiske, Pentland, Epley, Reis,
+ * Aron, Wood Brooks, Hall, Freyd, Pfeffer), practitioners with a real record
+ * (Voss, Navarro, Stokoe, Parker, Dicks, Ury), or foundational figures
+ * (Rogers, Goffman, Sacks). Pop-psychology sources were removed.
  *
  * A concept's `domain` says what it is; its `contexts` say where it is
  * practised. Most concepts inherit contexts from their domain — declare them
@@ -74,43 +79,43 @@ export const CONCEPTS: Concept[] = [
   // ── Power Dynamics (Greene) ────────────────────────────────────────────
   {
     id: "never-outshine-master",
-    name: "Law 1 — Never Outshine the Master",
+    name: "Managing Upward Visibility",
     domain: "Power Dynamics",
-    source: "Greene",
+    source: "Pfeffer",
     description:
-      "Making superiors feel intellectually or socially inferior triggers insecurity and retaliation. Always make those above you feel comfortably superior.",
+      "Pfeffer's research on organisational power finds that performance alone is a poor predictor of advancement, and that how your work is made visible to those above you matters as much as the work. The failure mode is not modesty but miscalibration — being seen as a threat by the person who decides your scope.",
   },
   {
     id: "conceal-intentions",
-    name: "Law 3 — Conceal Your Intentions",
+    name: "Sequencing What You Reveal",
     domain: "Power Dynamics",
-    source: "Greene",
+    source: "Pfeffer",
     description:
-      "Keeping your true goals opaque prevents others from preparing countermeasures. Use decoy desires and red herrings to throw people off the scent.",
+      "Announcing an ambition before you have the position to support it invites opposition to organise against it. Pfeffer's point is not deception but sequencing: build the base, then state the aim, because the order determines whether people are choosing sides or accepting a fact.",
   },
   {
     id: "court-attention",
-    name: "Law 6 — Court Attention at All Costs",
+    name: "Visibility as a Resource",
     domain: "Power Dynamics",
-    source: "Greene",
+    source: "Pfeffer",
     description:
-      "Visibility is power — being ignored is worse than being attacked. Everything is judged by its appearance; what is unseen counts for nothing.",
+      "Pfeffer's evidence is blunt: good work that nobody with power observes does not accrue to you. Visibility is not vanity, it is a condition of being considered — and the people who advance are consistently those who solved for being seen as well as for being right.",
   },
   {
     id: "crush-enemy",
-    name: "Law 15 — Crush Your Enemy Totally",
+    name: "Building a Power Base",
     domain: "Power Dynamics",
-    source: "Greene",
+    source: "Pfeffer",
     description:
-      "A half-defeated enemy recovers and seeks revenge. If you leave even a single ember of opposition, it will eventually reignite. Total victory is the only safe outcome.",
+      "Power in organisations accumulates through relationships, resources and reputation rather than through defeating rivals. Pfeffer's data show that people who invest in a base outlast those who invest in winning fights — and that today's opponent is very often tomorrow's necessary ally.",
   },
   {
     id: "discover-thumbscrew",
-    name: "Law 33 — Discover Each Person's Thumbscrew",
+    name: "Understanding What Someone Needs",
     domain: "Power Dynamics",
-    source: "Greene",
+    source: "Pfeffer",
     description:
-      "Everyone has a weakness, a gap in their armour. It is usually an insecurity, an uncontrollable emotion, or a secret need. Find it and you have leverage.",
+      "Influence follows from knowing what the other person is actually optimising for — their targets, their exposure, what their own boss is asking of them. This is the same observation Greene frames as finding a weakness, and it works considerably better framed as finding a shared interest.",
   },
 
   // ── Negotiation (Voss) ─────────────────────────────────────────────────
@@ -203,43 +208,43 @@ export const CONCEPTS: Concept[] = [
   // ── Nonverbal Intelligence & Behavioural Profiling (Chase Hughes) ──────
   {
     id: "baseline-reading",
-    name: "Baseline Behaviour Reading",
+    name: "Baseline Behaviour",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
-    source: "Chase Hughes",
+    source: "Navarro",
     description:
-      "Before you can detect deception or stress, you must establish someone's baseline: their normal posture, speech cadence, eye movement, and gesture patterns at rest.",
+      "Navarro's twenty-five years of FBI behavioural analysis start here: no gesture means anything in isolation, only as a deviation from that particular person's normal. Establishing what someone looks like when they are comfortable is the entire foundation, and skipping it turns observation into projection.",
   },
   {
     id: "deviation-detection",
-    name: "Deviation Detection",
+    name: "Pacifying Behaviours",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
-    source: "Chase Hughes",
+    source: "Navarro",
     description:
-      "Meaningful behavioural shifts — speech rate changes, posture adjustments, gaze aversion — occur at moments of internal stress. The deviation is the signal, not the specific behaviour.",
+      "When the limbic system registers stress, the body produces self-soothing behaviours to restore calm — touching the neck, stroking the face, rubbing the thighs, exhaling with puffed cheeks. They appear within moments of the thing that caused them, so their timing tells you what the discomfort was about.",
   },
   {
     id: "authority-posture",
-    name: "Authority Posture",
+    name: "Ventral Fronting & Denial",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
-    source: "Chase Hughes",
+    source: "Navarro",
     description:
-      "Specific body positions — steepled fingers, asymmetric stance, controlled stillness, and deliberate spatial occupation — signal status and dominance to the limbic system before the conscious mind registers it.",
+      "We orient the soft front of the body toward what we like and angle it away from what we do not, largely below conscious control. Watching a torso turn a few degrees away mid-conversation is a more honest read on how it is going than anything the face is doing.",
   },
   {
     id: "microexpression-clusters",
-    name: "Microexpression Clusters",
+    name: "Discomfort, Not Deception",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
-    source: "Chase Hughes",
+    source: "Navarro",
     description:
-      "Fleeting facial expressions (40–500ms) reveal concealed emotions. Single microexpressions can be noise; clusters of 3+ signals within a 5-second window indicate genuine emotional leakage.",
+      "Navarro's central correction to the popular version of his field: nobody can reliably detect lies from behaviour, and the research on people who claim to is not kind. What you can detect is discomfort — and discomfort is a signal to ask a better question, not a verdict.",
   },
   {
     id: "ellipsis-model",
-    name: "The Ellipsis Model",
+    name: "Reading Comfort Over Time",
     domain: "Nonverbal Intelligence & Behavioural Profiling",
-    source: "Chase Hughes",
+    source: "Navarro",
     description:
-      "A comprehensive behavioural profiling framework that maps observable behaviour patterns to predictable responses, enabling you to anticipate and influence someone's next move.",
+      "The useful signal is not any single tell but the direction of travel: does this person get more comfortable as the conversation goes on, or less? Tracking that trajectory across an encounter is more informative, and far harder to fool yourself with, than cataloguing individual gestures.",
   },
 
   // ── Rapport & Relationship Engineering (Carnegie) ──────────────────────
@@ -287,19 +292,19 @@ export const CONCEPTS: Concept[] = [
   // ── Dark Psychology & Coercive Technique Recognition ────────────────────
   {
     id: "gaslighting",
-    name: "Gaslighting Recognition",
+    name: "Reality Erosion",
     domain: "Dark Psychology & Coercive Technique Recognition",
-    source: "Zimbardo",
+    source: "Freyd",
     description:
-      "Systematic denial of another person's reality to destabilise their confidence and judgment. Recognise it by the pattern: your clear memory is repeatedly contradicted, and you begin to doubt yourself.",
+      "The sustained undermining of someone's confidence in their own perception and memory, so that they come to rely on the other person's account of events over their own. Freyd's betrayal-trauma work explains why it is most effective from someone trusted: the closer the relationship, the higher the cost of disbelieving them.",
   },
   {
     id: "darvo",
-    name: "DARVO Pattern",
+    name: "DARVO",
     domain: "Dark Psychology & Coercive Technique Recognition",
-    source: "Zimbardo",
+    source: "Freyd",
     description:
-      "Deny, Attack, Reverse Victim and Offender. When confronted, the aggressor denies the behaviour, attacks the person confronting them, then claims to be the real victim.",
+      "Coined by Jennifer Freyd in 1997: Deny, Attack, and Reverse Victim and Offender. Confronted with accountability, the person denies the behaviour, attacks the credibility of whoever raised it, and repositions themselves as the injured party. Naming the pattern is most of the defence against it, because it works by disorienting the person who raised the concern.",
   },
   {
     id: "manufactured-urgency",
@@ -311,19 +316,19 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "information-asymmetry",
-    name: "Information Asymmetry Exploitation",
+    name: "Control of Information Flow",
     domain: "Dark Psychology & Coercive Technique Recognition",
-    source: "Greene",
+    source: "Pfeffer",
     description:
-      "Deliberately controlling what the other party knows to maintain strategic advantage. The person with more information controls the frame, the options, and the outcome.",
+      "Positions that sit between parts of an organisation carry power disproportionate to their rank, because they control what each side knows. Recognising who occupies those positions explains a great deal of otherwise puzzling decision-making — and recognising when it is being used on you is the defensive half.",
   },
   {
     id: "love-bombing-professional",
-    name: "Love-Bombing in Professional Contexts",
+    name: "Manufactured Intimacy",
     domain: "Dark Psychology & Coercive Technique Recognition",
-    source: "Zimbardo",
+    source: "Freyd",
     description:
-      "Overwhelming someone with excessive praise, attention, and inclusion early in a professional relationship to create dependency and obligation before deploying control tactics.",
+      "Intensity delivered far ahead of any earned basis for it — rapid flattery, disclosed confidences, accelerated closeness — which creates a sense of obligation before judgement has caught up. The tell is pace: real closeness is reciprocal and gradual, and this is neither.",
   },
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -333,43 +338,43 @@ export const CONCEPTS: Concept[] = [
   // ── Charisma & Presence (Van Edwards / Cabane) ─────────────────────────
   {
     id: "warmth-competence-balance",
-    name: "Warmth & Competence Balance",
+    name: "Warmth & Competence",
     domain: "Charisma & Presence",
-    source: "Van Edwards",
+    source: "Fiske",
     description:
-      "Every first impression is read on two axes: warmth (can I trust you?) and competence (can I respect you?). Charisma is the rare person who signals both at once — most people accidentally lead with only one.",
+      "Fiske's Stereotype Content Model found that people judge each other on two dimensions before anything else: warmth (are your intentions toward me good?) and competence (can you act on them?). Both are read within seconds, and being strong on one while absent on the other is the common failure — the impressive person nobody warms to, the warm person nobody trusts with anything.",
   },
   {
     id: "charismatic-presence",
-    name: "Charismatic Presence",
+    name: "Presence as a Measurable Signal",
     domain: "Charisma & Presence",
-    source: "Cabane",
+    source: "Pentland",
     description:
-      "Charisma is presence, power, and warmth combined — and it starts with presence: giving someone your complete, undistracted attention so they feel they are the only person in the room.",
+      "Pentland's MIT sociometer badges recorded real conversations and found that outcomes — job interviews, first dates, negotiations — were predicted by signals independent of content: how much you speak, how consistently, and how you vary. Presence is not a mood you summon; it is a pattern in behaviour that other people read unconsciously.",
   },
   {
     id: "nonverbal-warmth-cues",
-    name: "Nonverbal Warmth Cues",
+    name: "Mimicry",
     domain: "Charisma & Presence",
-    source: "Van Edwards",
+    source: "Pentland",
     description:
-      "Open torso, visible hands, a slow triple-nod, the eyebrow flash of recognition, and a genuine (eye-crinkling) smile are the physical signals that unlock trust before you say a word.",
+      "One of Pentland's four honest signals: unconscious mirroring of posture, gesture and speech rhythm within a few seconds of the other person. It reliably tracks empathy and trust because it is expensive to fake in real time — which is exactly why deliberate, delayed copying reads as unsettling rather than warm.",
   },
   {
     id: "vocal-power",
-    name: "Vocal Power",
+    name: "Vocal Emphasis & Activity",
     domain: "Charisma & Presence",
-    source: "Van Edwards",
+    source: "Pentland",
     description:
-      "How you say it outweighs what you say. Ending statements with a downward inflection signals confidence; question-inflection ('upspeak') leaks doubt. Strategic pauses and lower resonance command a room.",
+      "Activity and emphasis — energy in the voice, variation in pitch and pace — are honest signals of interest and conviction that listeners decode without noticing. A flat delivery is read as low investment regardless of what the words claim, which is why the same sentence can persuade or die depending entirely on how it is carried.",
   },
   {
     id: "intentional-first-impression",
-    name: "The Intentional Entrance",
+    name: "Managing the Impression",
     domain: "Charisma & Presence",
-    source: "Van Edwards",
+    source: "Goffman",
     description:
-      "The first few seconds set the frame for everything after. Keep hands visible, make eye contact before you speak, and lead with relaxed posture — the 'launch' most people fumble by looking down at their phone.",
+      "Goffman's dramaturgical account: in any encounter people are performing a self, with a front stage where the performance runs and a back stage where it does not. The point is not that this is dishonest, but that it is unavoidable — so the question is whether you are choosing the impression you give off, or leaking one by default.",
   },
 
   // ── Storytelling & Narrative (Dicks / Duarte / Van Edwards) ────────────
@@ -399,11 +404,11 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "hook-opening",
-    name: "The Hook Opening",
+    name: "The Opening Line",
     domain: "Storytelling & Narrative",
-    source: "Van Edwards",
+    source: "Dicks",
     description:
-      "Start in motion — mid-scene, mid-action, or on an intriguing line — never with throat-clearing preamble like 'So this one time...'. The first sentence decides whether anyone stays for the rest.",
+      "Dicks, a sixty-time Moth StorySLAM champion, opens on the moment rather than the setup — no throat-clearing about when and where, just straight into something already in motion. Context can be handed over later while the listener is already committed; delivered first, it is the point at which they decide not to listen.",
   },
   {
     id: "show-dont-summarise",
@@ -417,43 +422,43 @@ export const CONCEPTS: Concept[] = [
   // ── Conversation & Memorability (Van Edwards / Carnegie) ───────────────
   {
     id: "conversational-spark",
-    name: "The Conversational Spark",
+    name: "The Undersociality Gap",
     domain: "Conversation & Memorability",
-    source: "Van Edwards",
+    source: "Epley",
     description:
-      "Scripted openers ('what do you do?') produce scripted, forgettable answers. A novel question ('working on anything exciting lately?') triggers a small dopamine hit and makes you the person they remember from the room.",
+      "Epley's experiments found people are systematically wrong about conversation: they expect talking to a stranger to be awkward and unwelcome, and are reliably wrong in the same direction. The other person is more interested than you think, and the deeper conversation goes better than the shallow one you defaulted to.",
   },
   {
     id: "threading",
-    name: "Threading",
+    name: "Follow-Up Questions",
     domain: "Conversation & Memorability",
-    source: "Van Edwards",
+    source: "Wood Brooks",
     description:
-      "People drop 'free information' — details they care about — into what they say. Catching a thread and pulling it ('wait, you mentioned Kyoto — what took you there?') is how effortless, memorable conversation actually works.",
+      "Across 600 online conversations and 110 speed-dates, Huang and Wood Brooks found that people who ask more questions — and specifically follow-up questions on what was just said — are better liked, and go on more second dates. The follow-up is the signal, because it is the only kind of question that proves you listened to the answer.",
   },
   {
     id: "be-a-highlighter",
-    name: "Be a Highlighter",
+    name: "Perceived Responsiveness",
     domain: "Conversation & Memorability",
-    source: "Van Edwards",
+    source: "Reis",
     description:
-      "There are highlighters, who make people feel their best, and highlighters' opposite, who make people feel small. Actively looking for what to admire in someone — and saying it — is the most magnetic social habit there is.",
+      "Reis and Shaver's model of intimacy: closeness is not produced by disclosure alone but by whether the discloser perceives understanding, validation and caring in the response. You can be entirely attentive and still fail this if none of it reaches the other person — the perception is the mechanism, not your internal state.",
   },
   {
     id: "memorable-exit",
-    name: "The Memorable Exit",
+    name: "The Peak & the End",
     domain: "Conversation & Memorability",
-    source: "Van Edwards",
+    source: "Kahneman",
     description:
-      "The peak-end rule means people remember an interaction by its emotional high and its final moment. Close on a genuine high note with a specific callback ('good luck with the Kyoto trip') instead of letting it fizzle.",
+      "Kahneman, Fredrickson and colleagues found that people's memory of an experience is predicted almost entirely by its emotional peak and its final moments, with the duration barely registering. An hour that trails off is remembered as worse than a shorter one that ends well — so how you leave outweighs most of what came before.",
   },
   {
     id: "story-bank-and-signature",
-    name: "Story Bank & Signature",
+    name: "A Bank of Ready Stories",
     domain: "Conversation & Memorability",
-    source: "Van Edwards",
+    source: "Dicks",
     description:
-      "Charismatic people aren't improvising from nothing — they keep a small bank of go-to stories and a memorable self-introduction that goes beyond a job title, so they're never caught with a flat 'I'm fine, you?'.",
+      "Dicks's Homework for Life is the practice: every evening, note the one moment from that day worth five minutes of anyone's time. It is not a memory exercise but a noticing one — people who do it find their days were never short of material, only of attention, and they are never caught with nothing to say.",
   },
 
   // ── Empathy & Attunement (Rogers, Nichols, Gottman) ────────────────────
@@ -517,27 +522,27 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "strategic-imperfection",
-    name: "Strategic Imperfection",
+    name: "Disclosure That Invites Reciprocity",
     domain: "Vulnerability & Intimacy",
-    source: "Brown",
+    source: "Reis",
     description:
-      "Admitting something you're genuinely unsure of, or bad at, gives the other person permission to be a real person too. Flawlessness is not attractive — it's unreachable, and unreachable is lonely.",
+      "In Reis and Shaver's model, a disclosure only builds intimacy if the response conveys understanding rather than evaluation. Admitting something genuinely uncertain gives the other person a low-cost opportunity to be responsive, which is what actually moves a conversation toward closeness.",
   },
   {
     id: "sitting-with-discomfort",
-    name: "Sitting With Discomfort",
+    name: "Staying Responsive Under Discomfort",
     domain: "Vulnerability & Intimacy",
-    source: "Brown",
+    source: "Reis",
     description:
-      "When someone says something hard, the instinct is to fill the silence, joke, or reassure. Staying in the discomfort with them — without rescuing yourself out of it — is what signals you can be trusted with real things.",
+      "The moment someone says something hard is the moment responsiveness is tested. Filling the silence, joking, or rushing to reassure are all ways of managing your own discomfort, and all read to the discloser as an absence of understanding — which is the one thing the model says has to be present.",
   },
   {
     id: "naming-the-unsaid",
-    name: "Naming the Unsaid",
+    name: "Escalating the Disclosure Ladder",
     domain: "Vulnerability & Intimacy",
-    source: "Brown",
+    source: "Aron",
     description:
-      "Saying the thing everyone is carefully not saying — 'I think we're both being very polite about something' — collapses the distance instantly. It's high-risk and high-reward, and it must be done without accusation.",
+      "Aron's closeness procedure works through sustained, escalating, reciprocal disclosure — each step slightly deeper than the last, matched by the other person. Naming what is going unsaid is simply a large step on that ladder, and it lands or fails on whether the previous rungs were climbed together.",
   },
 
   // ── Conflict & Repair (Gottman, Ury, Voss) ─────────────────────────────
@@ -617,11 +622,11 @@ export const CONCEPTS: Concept[] = [
   },
   {
     id: "expressed-attraction",
-    name: "Saying It Plainly",
+    name: "Direct Over Ambiguous",
     domain: "Flirtation & Signalling",
-    source: "Van Edwards",
+    source: "Hall",
     description:
-      "After enough signalling, indirectness stops being intriguing and starts being ambiguous. Stating interest directly and without pressure — 'I've really enjoyed this, I'd like to see you again' — is rarer, and lands harder, than another layer of subtext.",
+      "Hall's Flirting Styles Inventory, built from over five thousand respondents, identifies a sincere style — direct expression of genuine interest — that is associated with better outcomes than the playful or polite styles most people default to. After enough signalling, indirectness stops reading as intriguing and starts reading as unavailable.",
   },
   {
     id: "graceful-rejection",
@@ -635,43 +640,43 @@ export const CONCEPTS: Concept[] = [
   // ── Group Dynamics & Inclusion (Van Edwards, Cain) ─────────────────────
   {
     id: "joining-a-group",
-    name: "Joining a Conversation",
+    name: "Entering a Conversation in Progress",
     domain: "Group Dynamics & Inclusion",
-    source: "Van Edwards",
+    source: "Stokoe",
     description:
-      "Standing at the edge waiting to be invited rarely works. Approach at a natural break, listen for a full beat before speaking, and contribute to the topic already running rather than resetting it to yourself.",
+      "Stokoe's conversation analysis works from recordings of real interaction rather than what people report doing, and finds that entries succeed or fail on sequence: joining at a natural transition and contributing to the topic in play is accepted, while resetting the topic to yourself is politely closed down.",
   },
   {
     id: "bringing-others-in",
-    name: "Bringing Others In",
+    name: "Equalising the Room",
     domain: "Group Dynamics & Inclusion",
-    source: "Cain",
+    source: "Parker",
     description:
-      "Noticing who has gone quiet and handing them a specific, easy opening — 'Priya, you actually did this, didn't you?' — is the highest-status move in any group. It costs you the floor and buys you far more.",
+      "Parker's generous authority has three jobs, and this is the second: actively addressing the power differences in a room rather than pretending they are not there. Handing a specific, easy opening to whoever has gone quiet costs you the floor and is the most reliably generous thing anyone in a group can do.",
   },
   {
     id: "reading-the-room",
-    name: "Reading the Room's Energy",
+    name: "Group Signal Patterns",
     domain: "Group Dynamics & Inclusion",
-    source: "Van Edwards",
+    source: "Pentland",
     description:
-      "Groups have a shared tempo and mood. Matching it before trying to change it is the difference between leading a room and being the person who misjudged it — the loud arrival into a quiet, tired group never recovers.",
+      "Pentland's badge data showed that a group's collective signal pattern — how evenly turns are distributed, how much energy circulates — predicts its performance better than the individual talent in it. Reading a room means reading that pattern before you change it, because arriving loud into a flat room does not lift it.",
   },
   {
     id: "holding-the-floor-briefly",
-    name: "Holding the Floor Briefly",
+    name: "Turn-Taking",
     domain: "Group Dynamics & Inclusion",
-    source: "Van Edwards",
+    source: "Sacks",
     description:
-      "In a group, attention is lent, not given. Taking it, doing something worthwhile with it, and handing it back before it's taken from you is what makes people want to give it to you again.",
+      "Sacks, Schegloff and Jefferson's foundational analysis showed conversation is governed by an orderly turn-taking system with transition-relevance places where the floor can legitimately change hands. Attention in a group is lent at those points and reclaimed at the next one — taking it, using it, and handing it back is what makes people willing to lend it again.",
   },
   {
     id: "hosting-instinct",
-    name: "The Hosting Instinct",
+    name: "Generous Authority",
     domain: "Group Dynamics & Inclusion",
-    source: "Cain",
+    source: "Parker",
     description:
-      "Behaving like a host rather than a guest — making introductions, connecting two people by naming what they share, checking who's stranded — reframes you from someone seeking acceptance to someone conferring it.",
+      "Parker's argument is that under-hosting is not kindness, it is abdication: guests left to fend for themselves are not free, they are stranded. Generous authority means using your position to protect, equalise and connect people — and it is available to anyone in the room, not just whoever owns the flat.",
   },
 ];
 
