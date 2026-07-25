@@ -13,6 +13,8 @@ import {
   CharacterArchetype,
   SessionScores,
   Message,
+  LifeContext,
+  LIFE_CONTEXTS,
 } from "@/lib/types";
 import { useVoice } from "@/app/hooks/useVoice";
 import { haptic, cleanForSpeech, stripStageDirections, splitLessonSections } from "../components/types";
@@ -136,6 +138,9 @@ export function useSession() {
   const [checkinOutcome, setCheckinOutcome] = useState<string | null>(null);
   const [checkinUserText, setCheckinUserText] = useState<string | null>(null);
   const [concept, setConcept] = useState<Concept | null>(null);
+  // The life context this session runs in, chosen server-side alongside the
+  // concept. Drives character selection and scenario generation.
+  const [sessionContext, setSessionContext] = useState<LifeContext | null>(null);
   const [character, setCharacter] = useState<CharacterArchetype | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [scenarioContext, setScenarioContext] = useState<string | null>(null);
@@ -284,7 +289,7 @@ export function useSession() {
         transcript: roleplayTranscript, turnCount,
         completedPhases: Array.from(completedPhases), commandsUsed,
         checkinOutcome, checkinNeeded, checkinDone, checkinUserText,
-        dayNumber, scenarioContext, debriefContent, scores,
+        dayNumber, scenarioContext, sessionContext, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
         lastMission, coachAdvice, isReviewSession, previousScores,
         timestamp: Date.now(),
@@ -361,6 +366,7 @@ export function useSession() {
           setConcept(parsed.concept);
           setLessonContent(parsed.lessonContent);
           setIsReviewSession(parsed.isReview ?? false);
+          if (parsed.context) setSessionContext(parsed.context);
           setIsLoading(false);
           localStorage.removeItem("edge-pregenerated-lesson");
           return;
@@ -390,6 +396,11 @@ export function useSession() {
 
       const isReview = res.headers.get("X-Is-Review") === "true";
       setIsReviewSession(isReview);
+
+      const contextHeader = res.headers.get("X-Context");
+      if (contextHeader && (LIFE_CONTEXTS as string[]).includes(contextHeader)) {
+        setSessionContext(contextHeader as LifeContext);
+      }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No stream body");
@@ -509,9 +520,8 @@ export function useSession() {
 
   async function startRoleplay() {
     if (!concept) return;
-    const { selectCharacter } = await import("@/lib/characters");
-    const char = selectCharacter(concept);
-    setCharacter(char);
+    // The character is chosen server-side, where the ledger is, so selection
+    // can avoid whoever the user has faced in recent sessions.
     advancePhase("retrieval", "roleplay");
     setIsLoading(true);
 
@@ -520,10 +530,18 @@ export function useSession() {
       try {
         const res = await fetchWithRequestId("/api/roleplay", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, character: char, transcript: [], userMessage: null }),
+          body: JSON.stringify({ concept, context: sessionContext, transcript: [], userMessage: null }),
           signal: AbortSignal.timeout(30000),
         });
         if (!res.ok) throw new Error("API failed");
+        const characterHeader = res.headers.get("X-Character");
+        if (characterHeader) {
+          try {
+            setCharacter(JSON.parse(decodeURIComponent(characterHeader)));
+          } catch {
+            console.warn("[session] Failed to parse X-Character header");
+          }
+        }
         const sc = res.headers.get("X-Scenario-Context");
         if (sc) {
           try { setScenarioContext(decodeURIComponent(sc)); } catch { /* malformed header */ }
@@ -1122,6 +1140,9 @@ export function useSession() {
           localStorage.removeItem(SESSION_STORAGE_KEY);
         } else if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) {
           setCurrentPhase(s.phase); setConcept(s.concept ?? null); setCharacter(s.character ?? null);
+          if (s.sessionContext && (LIFE_CONTEXTS as string[]).includes(s.sessionContext)) {
+            setSessionContext(s.sessionContext as LifeContext);
+          }
           setLessonContent(s.lessonContent ?? null); setRoleplayTranscript(Array.isArray(s.transcript) ? s.transcript : []);
           setTurnCount(typeof s.turnCount === "number" ? s.turnCount : 0); setCompletedPhases(new Set(Array.isArray(s.completedPhases) ? s.completedPhases : []));
           setCommandsUsed(Array.isArray(s.commandsUsed) ? s.commandsUsed : []); setCheckinOutcome(s.checkinOutcome ?? null);

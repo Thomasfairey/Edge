@@ -49,13 +49,20 @@ import {
   DISPOSITIONS,
   type LifeContext,
 } from "../types";
-import { CONCEPTS } from "../concepts";
+import { CONCEPTS, selectNewConcept, conceptFromLedgerValue } from "../concepts";
+import {
+  chooseWithHistory,
+  nextDisposition,
+  type Picker,
+} from "../selection";
 import {
   CHARACTERS,
   characterContexts,
   characterDisposition,
   charactersForContext,
   selectCharacter,
+  characterIdFromName,
+  dispositionsForNames,
 } from "../characters";
 
 // ---------------------------------------------------------------------------
@@ -1445,6 +1452,155 @@ describe("Content library", () => {
     it("derives the context from the concept when none is passed", () => {
       const chosen = selectCharacter(conceptIn("work"));
       assert.ok(chosen, "returned nothing without an explicit context");
+    });
+  });
+});
+
+// ===========================================================================
+// 8. History-aware selection
+//
+// The rule that matters most is the last one in each group: every constraint
+// relaxes rather than failing. Returning nothing here means failing to start
+// a session, which is strictly worse than a slightly repetitive one.
+// ===========================================================================
+
+describe("History-aware selection", () => {
+  const first: Picker = () => 0;
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  const idOf = (x: { id: string }) => x.id;
+
+  describe("chooseWithHistory", () => {
+    it("returns null only when there is nothing to choose from", () => {
+      assert.equal(chooseWithHistory([], { idOf, recentIds: [], window: 3, pick: first }), null);
+    });
+
+    it("never repeats the most recent selection", () => {
+      for (let i = 0; i < 50; i++) {
+        const chosen = chooseWithHistory(items, { idOf, recentIds: ["a"], window: 1 });
+        assert.notEqual(chosen!.id, "a");
+      }
+    });
+
+    it("excludes everything inside the window", () => {
+      for (let i = 0; i < 50; i++) {
+        const chosen = chooseWithHistory(items, { idOf, recentIds: ["a", "b", "c"], window: 3 });
+        assert.equal(chosen!.id, "d");
+      }
+    });
+
+    it("prefers never-used items over merely older ones", () => {
+      // "a" is outside the window but has been seen; "d" never has.
+      const chosen = chooseWithHistory(items, {
+        idOf,
+        recentIds: ["b", "c", "a"],
+        window: 2,
+        pick: first,
+      });
+      assert.equal(chosen!.id, "d");
+    });
+
+    it("shrinks the window rather than returning nothing", () => {
+      // Window of 4 would exclude the entire pool; it should relax to exclude
+      // only the most recent and still return something.
+      const chosen = chooseWithHistory(items, {
+        idOf,
+        recentIds: ["a", "b", "c", "d"],
+        window: 4,
+        pick: first,
+      });
+      assert.ok(chosen, "returned nothing when the window covered everything");
+      assert.notEqual(chosen!.id, "a", "did not even avoid the most recent");
+    });
+
+    it("still returns something when the pool is a single item", () => {
+      const one = [{ id: "only" }];
+      const chosen = chooseWithHistory(one, { idOf, recentIds: ["only"], window: 3, pick: first });
+      assert.equal(chosen!.id, "only");
+    });
+
+    it("ignores history entries that are not in the candidate pool", () => {
+      const chosen = chooseWithHistory(items, {
+        idOf,
+        recentIds: ["gone", "retired"],
+        window: 3,
+        pick: first,
+      });
+      assert.equal(chosen!.id, "a");
+    });
+  });
+
+  describe("nextDisposition", () => {
+    it("prefers a disposition not seen in recent sessions", () => {
+      const chosen = nextDisposition(["resistant", "resistant"], DISPOSITIONS, first);
+      assert.notEqual(chosen, "resistant");
+    });
+
+    it("steers away from the most recent when all have been used", () => {
+      for (let i = 0; i < 30; i++) {
+        const chosen = nextDisposition(["warm", "neutral", "resistant"]);
+        assert.notEqual(chosen, "warm", "repeated the most recent disposition");
+      }
+    });
+
+    it("returns undefined only when nothing is available", () => {
+      assert.equal(nextDisposition(["warm"], [], first), undefined);
+    });
+
+    it("copes with a single available disposition", () => {
+      assert.equal(nextDisposition(["warm"], ["warm"], first), "warm");
+    });
+  });
+
+  describe("selectNewConcept", () => {
+    it("avoids the domains of the last few sessions", () => {
+      const recent = CONCEPTS.filter((c) => c.domain === "Influence & Persuasion")
+        .slice(0, 2)
+        .map((c) => c.id);
+      for (let i = 0; i < 30; i++) {
+        const chosen = selectNewConcept(recent, ["work"]);
+        assert.notEqual(chosen.domain, "Influence & Persuasion");
+      }
+    });
+
+    it("only returns concepts practisable in the active contexts", () => {
+      for (let i = 0; i < 40; i++) {
+        const chosen = selectNewConcept([], ["dating"]);
+        assert.ok(contextsForConcept(chosen).includes("dating"), `${chosen.id} is not a dating concept`);
+      }
+    });
+
+    it("resets rather than failing once every in-context concept is used", () => {
+      const allDating = CONCEPTS.filter((c) => contextsForConcept(c).includes("dating")).map(
+        (c) => c.id
+      );
+      const chosen = selectNewConcept(allDating, ["dating"]);
+      assert.ok(chosen, "returned nothing when the curriculum was exhausted");
+      assert.ok(contextsForConcept(chosen).includes("dating"));
+    });
+  });
+
+  describe("conceptFromLedgerValue", () => {
+    it("resolves both concept ids and formatted ledger names", () => {
+      assert.equal(conceptFromLedgerValue("mirroring")?.id, "mirroring");
+      assert.equal(conceptFromLedgerValue("Mirroring (Voss)")?.id, "mirroring");
+    });
+
+    it("returns undefined for retired or unknown values", () => {
+      assert.equal(conceptFromLedgerValue("no-such-concept"), undefined);
+    });
+  });
+
+  describe("characterIdFromName", () => {
+    it("maps a ledger character name back to its id", () => {
+      assert.equal(characterIdFromName("The Sceptical Investor"), "sceptical-investor");
+    });
+
+    it("returns null for retired archetypes rather than throwing", () => {
+      assert.equal(characterIdFromName("The Archetype That Was Deleted"), null);
+    });
+
+    it("silently drops unknown names when deriving dispositions", () => {
+      assert.deepEqual(dispositionsForNames(["Nobody At All"]), []);
     });
   });
 });

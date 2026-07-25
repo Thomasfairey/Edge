@@ -15,7 +15,6 @@
 
 import {
   Concept,
-  ConceptDomain,
   LifeContext,
   SOCIAL_CONTEXTS,
   contextsForConcept,
@@ -23,6 +22,7 @@ import {
   resolveSessionContext,
 } from "@/lib/types";
 import { getDueReviews } from "@/lib/spaced-repetition";
+import { chooseWithHistory, HISTORY_WINDOWS, type Picker } from "@/lib/selection";
 
 // ---------------------------------------------------------------------------
 // Master concept library
@@ -726,7 +726,16 @@ export async function selectConcept(
   };
 }
 
-function selectNewConcept(completedIds: string[], contexts: LifeContext[] = SOCIAL_CONTEXTS): Concept {
+/** Resolve a concept from either an id or a formatted ledger name. */
+export function conceptFromLedgerValue(value: string): Concept | undefined {
+  return CONCEPTS.find((c) => c.id === value || `${c.name} (${c.source})` === value);
+}
+
+export function selectNewConcept(
+  completedIds: string[],
+  contexts: LifeContext[] = SOCIAL_CONTEXTS,
+  pick: Picker = (n) => Math.floor(Math.random() * n)
+): Concept {
   // completedIds may contain either concept IDs (e.g. "mirroring") or
   // formatted ledger names (e.g. "Mirroring (Voss)"). Match against both.
   const completedSet = new Set(completedIds);
@@ -740,29 +749,25 @@ function selectNewConcept(completedIds: string[], contexts: LifeContext[] = SOCI
 
   // All in-context concepts exhausted — reset the pool (still in context)
   if (available.length === 0) {
-    return pool[Math.floor(Math.random() * pool.length)];
+    return pool[pick(pool.length)];
   }
 
-  // Determine the domain of the most recently completed concept
-  let lastDomain: ConceptDomain | null = null;
-  if (completedIds.length > 0) {
-    const lastEntry = completedIds[completedIds.length - 1];
-    const lastConcept = CONCEPTS.find(
-      (c) => c.id === lastEntry || `${c.name} (${c.source})` === lastEntry
-    );
-    if (lastConcept) {
-      lastDomain = lastConcept.domain;
-    }
+  // Domains of the most recent sessions, most recent first. Avoiding the last
+  // few domains rather than only the last one is what stops the curriculum
+  // oscillating between two domains for a week.
+  const recentDomains: string[] = [];
+  for (let i = completedIds.length - 1; i >= 0; i--) {
+    const concept = conceptFromLedgerValue(completedIds[i]);
+    if (concept) recentDomains.push(concept.domain);
+    if (recentDomains.length >= HISTORY_WINDOWS.domain) break;
   }
 
-  // Prefer a concept from a different domain
-  if (lastDomain) {
-    const differentDomain = available.filter((c) => c.domain !== lastDomain);
-    if (differentDomain.length > 0) {
-      return differentDomain[Math.floor(Math.random() * differentDomain.length)];
-    }
-  }
+  const byDomain = chooseWithHistory(available, {
+    idOf: (c) => c.domain,
+    recentIds: recentDomains,
+    window: HISTORY_WINDOWS.domain,
+    pick,
+  });
 
-  // Fallback: pick from whatever is available
-  return available[Math.floor(Math.random() * available.length)];
+  return byDomain ?? available[pick(available.length)];
 }

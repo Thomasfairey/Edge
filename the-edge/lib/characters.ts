@@ -972,6 +972,24 @@ export function charactersForContext(context: LifeContext): CharacterArchetype[]
 }
 
 /**
+ * Resolve a character id from the display name stored on ledger rows.
+ * The ledger records `character` as the archetype's name, so recent-history
+ * lookups have to map back. Unknown names (renamed or retired archetypes)
+ * return null and are simply ignored by the history filter.
+ */
+export function characterIdFromName(name: string): string | null {
+  return CHARACTERS.find((c) => c.name === name)?.id ?? null;
+}
+
+/** Dispositions of the given characters, for steering the next session. */
+export function dispositionsForNames(names: string[]): Disposition[] {
+  return names
+    .map((n) => CHARACTERS.find((c) => c.name === n))
+    .filter((c): c is CharacterArchetype => Boolean(c))
+    .map(characterDisposition);
+}
+
+/**
  * Select a character for today's session.
  *
  * `avoidIds` lets the caller exclude recently used characters; history-aware

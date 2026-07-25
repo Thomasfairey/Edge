@@ -220,6 +220,35 @@ export async function getCompletedConcepts(userId?: string | null): Promise<stri
 }
 
 /**
+ * Return the last `count` entries, most recent first.
+ *
+ * History-aware selection needs a handful of recent sessions, not the whole
+ * ledger — getLedger() pulls every row a user has ever written.
+ */
+export async function getRecentEntries(
+  count: number = 5,
+  userId?: string | null
+): Promise<LedgerEntry[]> {
+  let query = supabase
+    .from("ledger")
+    .select("*")
+    .order("day", { ascending: false })
+    .limit(count);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
+
+  if (error || !data) {
+    if (error) {
+      logger.error(`Failed to read recent entries: ${error.message}`, { phase: "ledger" });
+    }
+    return [];
+  }
+  return (data as LedgerRow[]).map(rowToEntry);
+}
+
+/**
  * Return the total number of ledger entries.
  */
 export async function getLedgerCount(userId?: string | null): Promise<number> {
