@@ -21,6 +21,7 @@ import { haptic, cleanForSpeech, stripStageDirections, splitLessonSections } fro
 import type { VoiceProps } from "../components/types";
 import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
 import { trackClientEvent } from "@/lib/analytics-client";
+import { dimensionSetFor } from "@/lib/scoring-dimensions";
 import { MENTOR_VOICE_ID } from "@/lib/voice-map";
 
 // ---------------------------------------------------------------------------
@@ -35,19 +36,25 @@ const SESSION_VERSION = 2; // Bump when session shape changes to invalidate stal
 // Helpers
 // ---------------------------------------------------------------------------
 
-const ABBREV_MAP: Record<string, keyof SessionScores> = {
-  TA: "technique_application", TW: "tactical_awareness",
-  FC: "frame_control", ER: "emotional_regulation", SO: "strategic_outcome",
-};
-
-function normaliseScores(scores: Record<string, number> | null): SessionScores | null {
+/**
+ * The debrief occasionally returns two-letter abbreviations instead of full
+ * dimension keys. Map them back using the session's own dimension set, so this
+ * works for every set rather than only the work one.
+ */
+function normaliseScores(
+  scores: Record<string, number> | null,
+  setId?: string | null
+): SessionScores | null {
   if (!scores) return null;
-  if ("technique_application" in scores) return scores as unknown as SessionScores;
+  const dimensions = dimensionSetFor(setId).dimensions;
+  const byShort = new Map(dimensions.map((d) => [d.short.toUpperCase(), d.key]));
+  const knownKeys = new Set(dimensions.map((d) => d.key));
+
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(scores)) {
-    out[ABBREV_MAP[k] ?? k] = v;
+    out[knownKeys.has(k) ? k : byShort.get(k.toUpperCase()) ?? k] = v;
   }
-  return out as unknown as SessionScores;
+  return out;
 }
 
 async function fetchWithRetry(
@@ -144,6 +151,8 @@ export function useSession() {
   // One-line description of the generated scenario, written to the ledger so
   // future sessions can avoid repeating the situation.
   const [scenarioSummary, setScenarioSummary] = useState<string | null>(null);
+  // Names the keys in `scores` — returned by /api/debrief, sent on to /api/mission.
+  const [dimensionSet, setDimensionSet] = useState<string | null>(null);
   const [character, setCharacter] = useState<CharacterArchetype | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [scenarioContext, setScenarioContext] = useState<string | null>(null);
@@ -292,7 +301,7 @@ export function useSession() {
         transcript: roleplayTranscript, turnCount,
         completedPhases: Array.from(completedPhases), commandsUsed,
         checkinOutcome, checkinNeeded, checkinDone, checkinUserText,
-        dayNumber, scenarioContext, sessionContext, scenarioSummary, debriefContent, scores,
+        dayNumber, scenarioContext, sessionContext, scenarioSummary, dimensionSet, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
         lastMission, coachAdvice, isReviewSession, previousScores,
         timestamp: Date.now(),
@@ -707,6 +716,7 @@ export function useSession() {
             character,
             commandsUsed,
             checkinContext: checkinUserText || undefined,
+            context: sessionContext,
           }),
           signal: AbortSignal.timeout(55000) },
         3, 3000, (a, max) => { if (a > 1) setError(`Analysing your session\u2026 attempt ${a} of ${max}`); }
@@ -716,7 +726,9 @@ export function useSession() {
       const idx = display.indexOf("---SCORES---");
       if (idx !== -1) display = display.slice(0, idx).trim();
       setDebriefContent(display);
-      setScores(normaliseScores(data.scores));
+      const returnedSet = typeof data.dimensionSet === "string" ? data.dimensionSet : sessionContext;
+      setDimensionSet(returnedSet);
+      setScores(normaliseScores(data.scores, returnedSet));
       setBehavioralWeaknessSummary(data.behavioralWeaknessSummary);
       setKeyMoment(data.keyMoment);
       setError(null); setIsLoading(false);
@@ -735,7 +747,12 @@ export function useSession() {
   }
 
   function skipDebriefToMission() {
-    setScores({ technique_application: 3, tactical_awareness: 3, frame_control: 3, emotional_regulation: 3, strategic_outcome: 3 });
+    // Neutral scores for whichever set this session runs under.
+    const setId = dimensionSet ?? sessionContext;
+    setDimensionSet(setId);
+    setScores(
+      Object.fromEntries(dimensionSetFor(setId).dimensions.map((d) => [d.key, 3]))
+    );
     setDebriefContent("Debrief unavailable due to connection issues. Default scores applied.");
     setBehavioralWeaknessSummary("Unable to generate analysis.");
     setKeyMoment("Unable to identify key moment.");
@@ -793,7 +810,7 @@ export function useSession() {
       const res = await fetchWithRetry(
         "/api/mission",
         { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome, context: sessionContext, scenarioSummary }),
+          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome, context: dimensionSet ?? sessionContext, scenarioSummary }),
           signal: AbortSignal.timeout(30000) },
         3, 2000, (a, max) => { if (a > 1) setError(`Generating mission\u2026 attempt ${a} of ${max}`); }
       );
@@ -1151,6 +1168,7 @@ export function useSession() {
             setSessionContext(s.sessionContext as LifeContext);
           }
           if (typeof s.scenarioSummary === "string") setScenarioSummary(s.scenarioSummary);
+          if (typeof s.dimensionSet === "string") setDimensionSet(s.dimensionSet);
           setLessonContent(s.lessonContent ?? null); setRoleplayTranscript(Array.isArray(s.transcript) ? s.transcript : []);
           setTurnCount(typeof s.turnCount === "number" ? s.turnCount : 0); setCompletedPhases(new Set(Array.isArray(s.completedPhases) ? s.completedPhases : []));
           setCommandsUsed(Array.isArray(s.commandsUsed) ? s.commandsUsed : []); setCheckinOutcome(s.checkinOutcome ?? null);
@@ -1248,6 +1266,7 @@ export function useSession() {
     coachLoading,
     dismissCoach: () => { setCoachAdvice(null); setCoachLoading(false); },
     turnCount,
+    dimensionSet,
     debriefContent,
     scores,
     previousScores,

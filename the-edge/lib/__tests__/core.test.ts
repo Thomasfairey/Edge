@@ -26,11 +26,10 @@ import {
 // ---------------------------------------------------------------------------
 import {
   clampScore,
-  validateScores as validateScoresSoft,
+  validateScoresForSet as validateScoresSoft,
   isValidMessage,
   validateTranscript as validateTranscriptSoft,
   truncate,
-  SCORE_KEYS as _SCORE_KEYS,
   LIFE_CONTEXTS,
   SOCIAL_CONTEXTS,
   CONTEXT_LABELS,
@@ -56,6 +55,13 @@ import {
   type Picker,
 } from "../selection";
 import { buildScenarioPrompt, fallbackScenario } from "../prompts/scenario";
+import {
+  DIMENSION_SETS,
+  dimensionSetFor,
+  dimensionKeys,
+  averageScore,
+  weakestDimension,
+} from "../scoring-dimensions";
 import {
   CHARACTERS,
   characterContexts,
@@ -587,7 +593,7 @@ describe("types.ts", () => {
   // -----------------------------------------------------------------------
   // validateScores (soft — returns null on invalid)
   // -----------------------------------------------------------------------
-  describe("validateScores (soft)", () => {
+  describe("validateScoresForSet (soft)", () => {
     const valid = {
       technique_application: 4,
       tactical_awareness: 3,
@@ -617,6 +623,40 @@ describe("types.ts", () => {
         // missing frame_control, emotional_regulation, strategic_outcome
       };
       assert.equal(validateScoresSoft(partial), null);
+    });
+
+    it("validates against the named set, not a fixed list of keys", () => {
+      // A family session is scored on regulation/listening/ownership/...
+      const familyScores = {
+        regulation: 4,
+        listening: 3,
+        ownership: 5,
+        boundary_clarity: 2,
+        repair: 1,
+      };
+      const result = validateScoresSoft(familyScores, "family");
+      assert.ok(result !== null);
+      assert.equal(result!.regulation, 4);
+      assert.equal(result!.repair, 1);
+    });
+
+    it("rejects a work rubric submitted for a family session", () => {
+      assert.equal(validateScoresSoft(valid, "family"), null);
+    });
+
+    it("defaults to the work set for an unknown or missing set id", () => {
+      assert.ok(validateScoresSoft(valid, "nonsense") !== null);
+      assert.ok(validateScoresSoft(valid) !== null);
+    });
+
+    it("ignores extra keys not in the set", () => {
+      const result = validateScoresSoft({ ...valid, invented_dimension: 5 }, "work");
+      assert.ok(result !== null);
+      assert.equal("invented_dimension" in result!, false);
+    });
+
+    it("returns null for an array, which is technically an object", () => {
+      assert.equal(validateScoresSoft([1, 2, 3, 4, 5]), null);
     });
 
     it("clamps out-of-range values instead of rejecting", () => {
@@ -1677,6 +1717,115 @@ describe("Scenario generation", () => {
     it("derives a context from the concept when none is given", () => {
       const { scenario } = fallbackScenario(concept, character);
       assert.ok(scenario.length > 80);
+    });
+  });
+});
+
+// ===========================================================================
+// 10. Scoring dimension sets
+//
+// The old rubric scored a friend in crisis on "frame control" and "strategic
+// outcome". These check each context gets its own five, that work is preserved
+// exactly, and that unknown sets degrade to work rather than blowing up the
+// dashboard.
+// ===========================================================================
+
+describe("Scoring dimensions", () => {
+  it("gives every life context exactly five dimensions", () => {
+    for (const context of LIFE_CONTEXTS) {
+      const set = DIMENSION_SETS[context];
+      assert.equal(set.dimensions.length, 5, `${context} has ${set.dimensions.length}`);
+    }
+  });
+
+  it("gives every dimension a key, label, short code and prompt", () => {
+    for (const context of LIFE_CONTEXTS) {
+      for (const d of DIMENSION_SETS[context].dimensions) {
+        assert.ok(/^[a-z_]+$/.test(d.key), `${context}.${d.key} is not snake_case`);
+        assert.ok(d.label.length > 0);
+        assert.ok(d.short.length === 2, `${context}.${d.key} short code is not 2 chars`);
+        assert.ok(d.prompt.length > 30, `${context}.${d.key} prompt is too thin`);
+      }
+    }
+  });
+
+  it("uses unique keys within each set", () => {
+    for (const context of LIFE_CONTEXTS) {
+      const keys = DIMENSION_SETS[context].dimensions.map((d) => d.key);
+      assert.equal(new Set(keys).size, keys.length, `${context} has duplicate keys`);
+    }
+  });
+
+  it("preserves the work rubric exactly, so professional sessions are unchanged", () => {
+    assert.deepEqual(dimensionKeys("work"), [
+      "technique_application",
+      "tactical_awareness",
+      "frame_control",
+      "emotional_regulation",
+      "strategic_outcome",
+    ]);
+  });
+
+  it("does not score personal contexts on frame control or strategic outcome", () => {
+    // The whole point: these are the wrong questions to ask about a friend.
+    for (const context of SOCIAL_CONTEXTS) {
+      const keys = dimensionKeys(context);
+      assert.equal(keys.includes("frame_control"), false, `${context} scores frame control`);
+      assert.equal(keys.includes("strategic_outcome"), false, `${context} scores strategic outcome`);
+    }
+  });
+
+  describe("dimensionSetFor", () => {
+    it("resolves known contexts", () => {
+      assert.equal(dimensionSetFor("dating").id, "dating");
+      assert.equal(dimensionSetFor("family").id, "family");
+    });
+
+    it("falls back to work for unknown, empty, or missing values", () => {
+      assert.equal(dimensionSetFor("nonsense").id, "work");
+      assert.equal(dimensionSetFor("").id, "work");
+      assert.equal(dimensionSetFor(null).id, "work");
+      assert.equal(dimensionSetFor(undefined).id, "work");
+    });
+  });
+
+  describe("averageScore", () => {
+    it("averages whatever dimensions are present", () => {
+      assert.equal(averageScore({ a: 2, b: 4 }), 3);
+    });
+
+    it("returns 0 rather than NaN for an empty object", () => {
+      assert.equal(averageScore({}), 0);
+    });
+  });
+
+  describe("weakestDimension", () => {
+    it("returns the lowest-scoring dimension with its label", () => {
+      const worst = weakestDimension(
+        { regulation: 4, listening: 2, ownership: 5, boundary_clarity: 3, repair: 4 },
+        "family"
+      );
+      assert.equal(worst?.key, "listening");
+      assert.equal(worst?.label, "Listening");
+      assert.equal(worst?.score, 2);
+    });
+
+    it("breaks ties toward the set's declared order", () => {
+      const worst = weakestDimension(
+        { regulation: 1, listening: 1, ownership: 5, boundary_clarity: 5, repair: 5 },
+        "family"
+      );
+      assert.equal(worst?.key, "regulation");
+    });
+
+    it("ignores keys that are not in the set", () => {
+      const worst = weakestDimension({ regulation: 4, not_a_dimension: 1 }, "family");
+      assert.equal(worst?.key, "regulation");
+    });
+
+    it("returns null when nothing in the set was scored", () => {
+      assert.equal(weakestDimension({}, "family"), null);
+      assert.equal(weakestDimension({ frame_control: 1 }, "family"), null);
     });
   });
 });

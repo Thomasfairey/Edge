@@ -3,6 +3,7 @@
  * Validates request bodies at the system boundary before passing to LLM or DB.
  */
 
+import { dimensionKeys } from "@/lib/scoring-dimensions";
 import { Message, Concept, CharacterArchetype } from "@/lib/types";
 
 const MAX_TRANSCRIPT_TURNS = 100;
@@ -67,18 +68,14 @@ export function validateText(
  * Validate scores object — all values must be integers 1-5.
  */
 export function validateScores(
-  scores: unknown
+  scores: unknown,
+  setId?: string | null
 ): Record<string, number> {
   if (!scores || typeof scores !== "object") {
     throw new ValidationError("scores must be an object");
   }
-  const required = [
-    "technique_application",
-    "tactical_awareness",
-    "frame_control",
-    "emotional_regulation",
-    "strategic_outcome",
-  ];
+  // Which keys are required depends on the session's dimension set.
+  const required = dimensionKeys(setId);
   const s = scores as Record<string, unknown>;
   const out: Record<string, number> = {};
   for (const key of required) {

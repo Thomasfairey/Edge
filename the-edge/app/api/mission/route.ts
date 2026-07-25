@@ -26,7 +26,9 @@ import {
   LIFE_CONTEXTS,
   SessionScores,
   truncate,
+  primaryContextForConcept,
 } from "@/lib/types";
+import { averageScore } from "@/lib/scoring-dimensions";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateScores, validateText, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
@@ -43,12 +45,22 @@ async function handlePost(req: NextRequest, userId: string | null) {
     );
   }
 
+  const sessionContext: LifeContext | null =
+    typeof body.context === "string" && (LIFE_CONTEXTS as string[]).includes(body.context)
+      ? (body.context as LifeContext)
+      : null;
+
   let concept: Concept;
   let character: CharacterArchetype;
+  let dimensionSet: LifeContext;
   try {
     concept = validateConcept(body.concept);
     character = validateCharacter(body.character);
-    body.scores = validateScores(body.scores);
+    // The set names which keys `scores` must carry, so it has to be resolved
+    // before validation. Falls back to the concept's representative context so
+    // a client that sends no context still validates against something sane.
+    dimensionSet = sessionContext ?? primaryContextForConcept(concept);
+    body.scores = validateScores(body.scores, dimensionSet);
     if (body.behavioralWeaknessSummary) {
       validateText(body.behavioralWeaknessSummary, "behavioralWeaknessSummary");
     }
@@ -61,21 +73,10 @@ async function handlePost(req: NextRequest, userId: string | null) {
     }
     throw e;
   }
-  // validateScores already verified all 5 keys are integers 1-5
-  const validatedScores = body.scores as Record<string, number>;
-  const scores: SessionScores = {
-    technique_application: validatedScores.technique_application,
-    tactical_awareness: validatedScores.tactical_awareness,
-    frame_control: validatedScores.frame_control,
-    emotional_regulation: validatedScores.emotional_regulation,
-    strategic_outcome: validatedScores.strategic_outcome,
-  };
+  // validateScores already verified every key in the set is an integer 1-5
+  const scores: SessionScores = body.scores as SessionScores;
   const behavioralWeaknessSummary = truncate(body.behavioralWeaknessSummary ?? "", 2000);
   const keyMoment = truncate(body.keyMoment ?? "", 2000);
-  const sessionContext: LifeContext | null =
-    typeof body.context === "string" && (LIFE_CONTEXTS as string[]).includes(body.context)
-      ? (body.context as LifeContext)
-      : null;
   const scenarioSummary = body.scenarioSummary
     ? truncate(body.scenarioSummary, 300)
     : null;
@@ -86,7 +87,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
   try {
     // Generate the mission
     const serialisedLedger = await serialiseForPrompt(7, userId);
-    const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger);
+    const missionPrompt = buildMissionPrompt(concept, scores, serialisedLedger, dimensionSet);
     const systemPrompt = `${await buildPersistentContext(userId)}\n\n${missionPrompt}`;
 
     const rawMission = await generateResponse(
@@ -120,6 +121,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
       character: character.name,
       difficulty: Math.min(5, Math.max(1, character.tactics?.length ?? 3)),
       scores,
+      dimension_set: dimensionSet,
       behavioral_weakness_summary: behavioralWeaknessSummary,
       key_moment: keyMoment,
       mission,
@@ -138,8 +140,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     log.info(`Day ${day} ledger entry written. Mission assigned.`, { phase: "mission" });
 
     // Track session completion
-    const avg = (scores.technique_application + scores.tactical_awareness +
-      scores.frame_control + scores.emotional_regulation + scores.strategic_outcome) / 5;
+    const avg = averageScore(scores);
     trackEvent({
       event: "session_completed",
       userId,

@@ -4,6 +4,7 @@
 
 import type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message } from "@/lib/types";
 import type { VoiceState } from "@/app/hooks/useVoice";
+import { dimensionSetFor } from "@/lib/scoring-dimensions";
 
 // Re-export lib types used across session components
 export type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message };
@@ -29,13 +30,20 @@ export const PHASE_BG: Record<string, string> = {
   mission: "#F0FAF4",
 };
 
-export const SCORE_DIMS: { key: keyof SessionScores; label: string; fullName: string }[] = [
-  { key: "technique_application", label: "TA", fullName: "Technique" },
-  { key: "tactical_awareness", label: "TW", fullName: "Tactical" },
-  { key: "frame_control", label: "FC", fullName: "Frame" },
-  { key: "emotional_regulation", label: "ER", fullName: "Regulation" },
-  { key: "strategic_outcome", label: "SO", fullName: "Outcome" },
-];
+/**
+ * The score chips for a session, derived from its dimension set rather than
+ * hardcoded — a family session shows Regulation/Listening/Ownership, a dating
+ * session shows Presence/Playfulness/Spark.
+ */
+export function scoreDimsFor(
+  setId?: string | null
+): { key: string; label: string; fullName: string }[] {
+  return dimensionSetFor(setId).dimensions.map((d) => ({
+    key: d.key,
+    label: d.short,
+    fullName: d.label,
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Voice props — subset of useVoice return passed to phase components

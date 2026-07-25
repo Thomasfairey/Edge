@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { SessionScores } from "./types";
-import { SCORE_DIMS, scoreCircleColor, scoreTextColor, LoadingDots } from "./types";
+import { scoreDimsFor, scoreCircleColor, scoreTextColor, LoadingDots } from "./types";
 
 // ---------------------------------------------------------------------------
 // Debrief section parser
@@ -203,6 +203,8 @@ interface DebriefPhaseProps {
   debriefContent: string | null;
   scores: SessionScores | null;
   previousScores: SessionScores | null;
+  /** Names the keys in `scores`; drives which dimension chips are shown. */
+  dimensionSet: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +216,7 @@ export default function DebriefPhase({
   debriefContent,
   scores,
   previousScores,
+  dimensionSet,
 }: DebriefPhaseProps) {
   return (
     <>
@@ -230,7 +233,7 @@ export default function DebriefPhase({
           {scores && (
             <div className="mb-5 card">
               <div className="flex items-center justify-center gap-4">
-                {SCORE_DIMS.map(({ key, fullName }) => {
+                {scoreDimsFor(dimensionSet).map(({ key, fullName }) => {
                   const s = scores[key];
                   const prev = previousScores ? previousScores[key] : null;
                   const diff = prev !== null ? s - prev : null;

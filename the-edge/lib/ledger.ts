@@ -11,6 +11,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { LedgerEntry } from "@/lib/types";
+import { DEFAULT_DIMENSION_SET } from "@/lib/scoring-dimensions";
 import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
@@ -25,11 +26,8 @@ interface LedgerRow {
   domain: string;
   character: string;
   difficulty: number;
-  score_technique_application: number;
-  score_tactical_awareness: number;
-  score_frame_control: number;
-  score_emotional_regulation: number;
-  score_strategic_outcome: number;
+  scores: Record<string, number> | null;
+  dimension_set: string | null;
   behavioral_weakness_summary: string;
   key_moment: string;
   mission: string;
@@ -50,13 +48,8 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
     domain: row.domain,
     character: row.character,
     difficulty: row.difficulty,
-    scores: {
-      technique_application: row.score_technique_application,
-      tactical_awareness: row.score_tactical_awareness,
-      frame_control: row.score_frame_control,
-      emotional_regulation: row.score_emotional_regulation,
-      strategic_outcome: row.score_strategic_outcome,
-    },
+    scores: row.scores ?? {},
+    dimension_set: row.dimension_set ?? DEFAULT_DIMENSION_SET,
     behavioral_weakness_summary: row.behavioral_weakness_summary,
     key_moment: row.key_moment,
     mission: row.mission,
@@ -77,11 +70,8 @@ function entryToRow(entry: LedgerEntry, userId?: string | null): Omit<LedgerRow,
     domain: entry.domain,
     character: entry.character,
     difficulty: entry.difficulty,
-    score_technique_application: entry.scores.technique_application,
-    score_tactical_awareness: entry.scores.tactical_awareness,
-    score_frame_control: entry.scores.frame_control,
-    score_emotional_regulation: entry.scores.emotional_regulation,
-    score_strategic_outcome: entry.scores.strategic_outcome,
+    scores: entry.scores,
+    dimension_set: entry.dimension_set,
     behavioral_weakness_summary: entry.behavioral_weakness_summary,
     key_moment: entry.key_moment,
     mission: entry.mission,

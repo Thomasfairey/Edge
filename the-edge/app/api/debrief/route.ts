@@ -20,10 +20,14 @@ import { getLedgerCount, serialiseForPrompt } from "@/lib/ledger";
 import {
   CharacterArchetype,
   Concept,
+  LifeContext,
+  LIFE_CONTEXTS,
   Message,
   SessionScores,
   clampScore,
+  primaryContextForConcept,
 } from "@/lib/types";
+import { dimensionKeys, dimensionSetFor } from "@/lib/scoring-dimensions";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateTranscript, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
@@ -33,14 +37,10 @@ import { captureError } from "@/lib/error-reporting";
 
 export const maxDuration = 60;
 
-/** Default scores when parsing fails. */
-const DEFAULT_SCORES: SessionScores = {
-  technique_application: 3,
-  tactical_awareness: 3,
-  frame_control: 3,
-  emotional_regulation: 3,
-  strategic_outcome: 3,
-};
+/** Neutral scores for the given set, used when parsing fails entirely. */
+function defaultScores(setId: string): SessionScores {
+  return Object.fromEntries(dimensionKeys(setId).map((key) => [key, 3]));
+}
 
 /**
  * Compute fallback scores from transcript data instead of blanket 3s.
@@ -48,7 +48,8 @@ const DEFAULT_SCORES: SessionScores = {
  */
 function computeFallbackScores(
   transcript: Message[],
-  commandsUsed: string[]
+  commandsUsed: string[],
+  setId: string
 ): SessionScores {
   const userTurns = transcript.filter((t) => t.role === "user").length;
   const turnCount = transcript.length;
@@ -61,14 +62,22 @@ function computeFallbackScores(
     Math.max(1, 2 + (userTurns > 4 ? 1 : 0) + (usedCoach ? 1 : 0) - (usedSkip ? 1 : 0))
   );
 
-  // Vary slightly per dimension
-  return {
-    technique_application: Math.max(1, base - (turnCount < 4 ? 1 : 0)),
-    tactical_awareness: base,
-    frame_control: Math.max(1, base - (usedSkip ? 1 : 0)),
-    emotional_regulation: Math.min(5, base + (userTurns > 6 ? 1 : 0)),
-    strategic_outcome: Math.max(1, base - (turnCount < 6 ? 1 : 0)),
-  };
+  // Vary slightly across the set's dimensions, in declared order, so the
+  // fallback isn't a flat row of identical numbers.
+  const adjustments = [
+    -(turnCount < 4 ? 1 : 0),
+    0,
+    -(usedSkip ? 1 : 0),
+    userTurns > 6 ? 1 : 0,
+    -(turnCount < 6 ? 1 : 0),
+  ];
+  const keys = dimensionKeys(setId);
+  return Object.fromEntries(
+    keys.map((key, i) => [
+      key,
+      Math.max(1, Math.min(5, base + (adjustments[i] ?? 0))),
+    ])
+  );
 }
 
 /**
@@ -80,7 +89,7 @@ function computeFallbackScores(
  * - Abbreviated: "TA: 3" or "TA : 3"
  * - Markdown bold: "**technique_application**: 3"
  */
-function parseScores(text: string): SessionScores {
+function parseScores(text: string, setId: string): SessionScores {
   // Try multiple delimiter patterns for the scores block
   const scoresMatch =
     text.match(/---\s*SCORES\s*---\s*([\s\S]*?)(?:---\s*LEDGER\s*---|$)/) ??
@@ -88,7 +97,7 @@ function parseScores(text: string): SessionScores {
 
   if (!scoresMatch) {
     logger.warn("Could not find ---SCORES--- block, using defaults", { phase: "debrief" });
-    return { ...DEFAULT_SCORES };
+    return defaultScores(setId);
   }
 
   const block = scoresMatch[1];
@@ -102,13 +111,12 @@ function parseScores(text: string): SessionScores {
     return 3;
   };
 
-  return {
-    technique_application: extract("technique_application", "TA"),
-    tactical_awareness: extract("tactical_awareness", "TW"),
-    frame_control: extract("frame_control", "FC"),
-    emotional_regulation: extract("emotional_regulation", "ER"),
-    strategic_outcome: extract("strategic_outcome", "SO"),
-  };
+  // Match on the dimension key, or on its two-letter short form, which is what
+  // the model tends to emit when it abbreviates.
+  const set = dimensionSetFor(setId);
+  return Object.fromEntries(
+    set.dimensions.map((d) => [d.key, extract(d.key, d.short)])
+  );
 }
 
 /**
@@ -174,6 +182,15 @@ async function handlePost(req: NextRequest, userId: string | null) {
     : [];
   const checkinContext = typeof body.checkinContext === "string" ? body.checkinContext : undefined;
 
+  // The session's life context names both the coaching tone and the scoring
+  // dimensions. An absent or unknown value falls back to the concept's
+  // representative context rather than failing the debrief.
+  const sessionContext: LifeContext =
+    typeof body.context === "string" && (LIFE_CONTEXTS as string[]).includes(body.context)
+      ? (body.context as LifeContext)
+      : primaryContextForConcept(concept);
+  const dimensionSet = sessionContext;
+
   try {
     const [ledgerCount, serialisedLedger] = await Promise.all([
       getLedgerCount(userId),
@@ -186,7 +203,8 @@ async function handlePost(req: NextRequest, userId: string | null) {
       character,
       ledgerCount,
       serialisedLedger,
-      checkinContext
+      checkinContext,
+      sessionContext
     );
 
     const systemPrompt = `${await buildPersistentContext(userId)}\n\n${debriefPrompt}`;
@@ -199,11 +217,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
     );
 
     // Parse structured output
-    const scores = parseScores(debriefContent);
+    const scores = parseScores(debriefContent, dimensionSet);
     const { behavioralWeaknessSummary, keyMoment } = parseLedgerFields(debriefContent);
 
     log.info(
-      `Scores: TA=${scores.technique_application} TW=${scores.tactical_awareness} FC=${scores.frame_control} ER=${scores.emotional_regulation} SO=${scores.strategic_outcome}`,
+      `Scores (${dimensionSet}): ${dimensionSetFor(dimensionSet)
+        .dimensions.map((d) => `${d.short}=${scores[d.key]}`)
+        .join(" ")}`,
       { phase: "debrief" }
     );
     log.info(`Commands used: ${safeCommandsUsed.join(", ") || "none"}`, { phase: "debrief" });
@@ -211,6 +231,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     return NextResponse.json({
       debriefContent,
       scores,
+      dimensionSet,
       behavioralWeaknessSummary,
       keyMoment,
     });
@@ -229,7 +250,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     });
 
     // Fallback: compute scores from transcript data
-    const fallbackScores = computeFallbackScores(transcript, safeCommandsUsed);
+    const fallbackScores = computeFallbackScores(transcript, safeCommandsUsed, dimensionSet);
     trackEvent({
       event: "debrief_fallback",
       userId,
@@ -238,6 +259,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
     return NextResponse.json({
       debriefContent: "Debrief generation failed. Scores have been estimated from your session activity.",
       scores: fallbackScores,
+      dimensionSet,
       behavioralWeaknessSummary: "Unable to generate analysis due to connection timeout.",
       keyMoment: "Unable to identify key moment.",
     });

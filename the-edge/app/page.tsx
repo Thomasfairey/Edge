@@ -12,11 +12,14 @@ import { hapticTap } from "@/lib/haptics";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import Onboarding from "./components/Onboarding";
 import TrendDashboard from "./components/TrendDashboard";
+import { dimensionSetFor, averageScore } from "@/lib/scoring-dimensions";
 
 interface ScoreEntry {
   day: number;
   date: string;
   scores: SessionScores;
+  /** Names the keys in `scores`. Missing on pre-migration rows. */
+  dimensionSet?: string | null;
   concept: string;
   character?: string;
   keyMoment?: string;
@@ -33,13 +36,19 @@ interface StatusData {
   allScores?: ScoreEntry[];
 }
 
-const DIMENSIONS: { key: keyof SessionScores; label: string; shortLabel: string; fullName: string; description: string }[] = [
-  { key: "technique_application", label: "Technique", shortLabel: "Tech", fullName: "Technique Application", description: "How effectively you deployed the day\u2019s concept during the roleplay." },
-  { key: "tactical_awareness", label: "Tactical", shortLabel: "Tact", fullName: "Tactical Awareness", description: "Your ability to recognise the character\u2019s tactics and adapt in real time." },
-  { key: "frame_control", label: "Frame", shortLabel: "Frame", fullName: "Frame Control", description: "Who owned the conversation frame and whether you maintained or lost it." },
-  { key: "emotional_regulation", label: "Regulation", shortLabel: "Reg", fullName: "Emotional Regulation", description: "Whether you stayed strategic under pressure or became reactive." },
-  { key: "strategic_outcome", label: "Outcome", shortLabel: "Out", fullName: "Strategic Outcome", description: "Whether you achieved your objective and moved the character from their position." },
-];
+/**
+ * The dimensions shown on the home screen come from the most recent session's
+ * dimension set, so the labels match what the user was actually scored on.
+ */
+function dimensionsFor(setId?: string | null) {
+  return dimensionSetFor(setId).dimensions.map((d) => ({
+    key: d.key,
+    label: d.label,
+    shortLabel: d.short,
+    fullName: d.label,
+    description: d.prompt,
+  }));
+}
 
 function scoreCircleColor(score: number): string {
   if (score >= 4) return "var(--score-high)";
@@ -318,13 +327,13 @@ export default function Home() {
   const latestScores = recentScores.length > 0 ? recentScores[recentScores.length - 1] : null;
   const allScores = status?.allScores ?? [];
 
-  const average = latestScores
-    ? (latestScores.technique_application +
-       latestScores.tactical_awareness +
-       latestScores.frame_control +
-       latestScores.emotional_regulation +
-       latestScores.strategic_outcome) / 5
-    : 0;
+  // The set the most recent session was scored on names its dimensions.
+  const latestSet = allScores.length > 0
+    ? allScores[allScores.length - 1].dimensionSet ?? null
+    : null;
+  const DIMENSIONS = dimensionsFor(latestSet);
+
+  const average = latestScores ? averageScore(latestScores) : 0;
 
   const hasData = latestScores !== null;
 

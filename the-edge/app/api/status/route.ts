@@ -70,6 +70,7 @@ async function handleGet(_req: NextRequest, userId: string | null) {
       day: e.day,
       date: e.date,
       scores: e.scores,
+      dimensionSet: e.dimension_set,
       concept: e.concept,
       character: e.character,
       keyMoment: e.key_moment,

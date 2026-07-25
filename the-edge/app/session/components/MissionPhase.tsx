@@ -1,7 +1,7 @@
 "use client";
 
 import type { Concept, SessionScores } from "./types";
-import { SCORE_DIMS, scoreCircleColor, scoreTextColor } from "./types";
+import { scoreDimsFor, scoreCircleColor, scoreTextColor } from "./types";
 
 // ---------------------------------------------------------------------------
 // Motivational lines
@@ -76,6 +76,8 @@ interface MissionPhaseProps {
   rationale: string | null;
   scores: SessionScores | null;
   previousScores: SessionScores | null;
+  /** Names the keys in `scores`; drives which dimension chips are shown. */
+  dimensionSet: string | null;
   concept: Concept | null;
   dayNumber: number;
   keyMoment: string;
@@ -94,6 +96,7 @@ export default function MissionPhase({
   rationale,
   scores,
   previousScores,
+  dimensionSet,
   concept,
   dayNumber,
   keyMoment,
@@ -187,7 +190,7 @@ export default function MissionPhase({
             {scores && (
               <div className="mb-5">
                 <div className="flex items-center justify-center gap-3">
-                  {SCORE_DIMS.map(({ key, fullName }) => {
+                  {scoreDimsFor(dimensionSet).map(({ key, fullName }) => {
                     const s = scores[key];
                     const prev = previousScores ? previousScores[key] : null;
                     const diff = prev !== null ? s - prev : null;
@@ -247,7 +250,7 @@ export default function MissionPhase({
               <p className="text-caption font-medium mb-2" style={{ color: "var(--text-primary)" }}>{concept?.name}</p>
               {scores && (
                 <div className="flex gap-1.5 mb-2">
-                  {SCORE_DIMS.map(({ key }) => {
+                  {scoreDimsFor(dimensionSet).map(({ key }) => {
                     const s = scores[key];
                     return (
                       <div key={key} className="h-2 flex-1 rounded-full" style={{

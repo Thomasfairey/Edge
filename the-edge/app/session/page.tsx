@@ -432,6 +432,7 @@ export default function SessionPage() {
               debriefContent={s.debriefContent}
               scores={s.scores}
               previousScores={s.previousScores}
+              dimensionSet={s.dimensionSet}
             />
           )}
 
@@ -447,6 +448,7 @@ export default function SessionPage() {
                   rationale={s.rationale}
                   scores={s.scores}
                   previousScores={s.previousScores}
+                  dimensionSet={s.dimensionSet}
                   concept={s.concept}
                   dayNumber={s.dayNumber}
                   keyMoment={s.keyMoment}

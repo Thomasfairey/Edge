@@ -1,5 +1,6 @@
 import { Concept, CharacterArchetype } from '../types';
 import { LifeContext, isSocialContext, primaryContextForConcept } from '../types';
+import { dimensionSetFor } from '@/lib/scoring-dimensions';
 
 export function buildDebriefPrompt(
   transcript: { role: string; content: string }[],
@@ -39,35 +40,20 @@ You are blunt. You are specific. You reference exact moments. You never give abs
 
 You do not soften. You do not encourage. You do not say "good effort." The user is a CEO and former CRO who has scaled companies globally. They do not need hand-holding. They need the truth delivered with surgical precision.`;
 
-  const dimensionBlock = isSocial
-    ? `**TECHNIQUE APPLICATION**
-1-2 sentences. Did the user deploy ${concept.name}? How effectively? Reference the specific turn where they used it (or failed to).
-
-**TACTICAL AWARENESS**
-1-2 sentences. Did the user read the other person's energy and cues (${character.tactics.slice(0, 2).join(', ')})? Did they adapt to how the person was actually responding? Reference specific turns.
-
-**FRAME CONTROL**
-1-2 sentences. Who set the tone and energy of this conversation? Did the user hold their presence and warmth, or shrink / try too hard? At what point did it shift?
-
-**EMOTIONAL REGULATION**
-1-2 sentences. Did the user stay relaxed and present, or become needy, self-conscious, or reactive? If the other person tested or ignored them, at which turn — and what was the tell?
-
-**STRATEGIC OUTCOME**
-1-2 sentences. Did the user actually connect — did the other person warm up, lean in, or want to keep talking? Was the character moved from their opening indifference/reserve?`
-    : `**TECHNIQUE APPLICATION**
-1-2 sentences. Did the user deploy ${concept.name}? How effectively? Reference the specific turn where they used it (or failed to).
-
-**TACTICAL AWARENESS**
-1-2 sentences. Did the user recognise the character's tactics (${character.tactics.slice(0, 2).join(', ')})? Did they adapt? Reference specific turns.
-
-**FRAME CONTROL**
-1-2 sentences. Who owned the frame of this conversation? At what point did control shift (if it did)? Be specific.
-
-**EMOTIONAL REGULATION**
-1-2 sentences. Did the user stay strategic or become reactive? If the character provoked them, at which turn? What was the tell?
-
-**STRATEGIC OUTCOME**
-1-2 sentences. Did the user achieve their objective? Was the character moved from their opening position?`;
+  // Dimensions come from the session's context, so a family conversation is
+  // never scored on "frame control" and a date is never scored on whether the
+  // user achieved their objective.
+  const set = dimensionSetFor(context ?? primaryContextForConcept(concept));
+  const dimensionBlock = set.dimensions
+    .map((d) => {
+      const detail = d.key === "technique_application"
+        ? `Did the user deploy ${concept.name}? How effectively? Reference the specific turn where they used it (or failed to).`
+        : d.key === "tactical_awareness"
+        ? `Did the user recognise what the character was doing (${character.tactics.slice(0, 2).join(', ')})? Did they adapt? Reference specific turns.`
+        : d.prompt;
+      return `**${d.label.toUpperCase()}**\n1-2 sentences. ${detail}`;
+    })
+    .join('\n\n');
 
   return `${personaBlock}
 
@@ -110,11 +96,7 @@ A CALIBRATION NOTE: If you find yourself giving 4s on everything, you are being 
 MANDATORY STRUCTURED OUTPUT — end your response with this EXACT block on new lines. The backend parses this programmatically. Do not modify the format, do not add commentary after it, do not wrap it in markdown code blocks:
 
 ---SCORES---
-technique_application: [1-5]
-tactical_awareness: [1-5]
-frame_control: [1-5]
-emotional_regulation: [1-5]
-strategic_outcome: [1-5]
+${set.dimensions.map((d) => `${d.key}: [1-5]`).join('\n')}
 ---LEDGER---
 behavioral_weakness_summary: [Exactly 2 sentences. Be specific. Reference turns and patterns. This gets stored and shown to future sessions.]
 key_moment: [Exactly 1 sentence. The single most important turn — what happened and what should have happened.]`;
