@@ -141,6 +141,9 @@ export function useSession() {
   // The life context this session runs in, chosen server-side alongside the
   // concept. Drives character selection and scenario generation.
   const [sessionContext, setSessionContext] = useState<LifeContext | null>(null);
+  // One-line description of the generated scenario, written to the ledger so
+  // future sessions can avoid repeating the situation.
+  const [scenarioSummary, setScenarioSummary] = useState<string | null>(null);
   const [character, setCharacter] = useState<CharacterArchetype | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [scenarioContext, setScenarioContext] = useState<string | null>(null);
@@ -289,7 +292,7 @@ export function useSession() {
         transcript: roleplayTranscript, turnCount,
         completedPhases: Array.from(completedPhases), commandsUsed,
         checkinOutcome, checkinNeeded, checkinDone, checkinUserText,
-        dayNumber, scenarioContext, sessionContext, debriefContent, scores,
+        dayNumber, scenarioContext, sessionContext, scenarioSummary, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
         lastMission, coachAdvice, isReviewSession, previousScores,
         timestamp: Date.now(),
@@ -546,6 +549,10 @@ export function useSession() {
         if (sc) {
           try { setScenarioContext(decodeURIComponent(sc)); } catch { /* malformed header */ }
         }
+        const summary = res.headers.get("X-Scenario-Summary");
+        if (summary) {
+          try { setScenarioSummary(decodeURIComponent(summary)); } catch { /* malformed header */ }
+        }
         await streamRoleplayResponse(res, []);
         return; // Success — exit
       } catch {
@@ -786,7 +793,7 @@ export function useSession() {
       const res = await fetchWithRetry(
         "/api/mission",
         { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome }),
+          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome, context: sessionContext, scenarioSummary }),
           signal: AbortSignal.timeout(30000) },
         3, 2000, (a, max) => { if (a > 1) setError(`Generating mission\u2026 attempt ${a} of ${max}`); }
       );
@@ -1143,6 +1150,7 @@ export function useSession() {
           if (s.sessionContext && (LIFE_CONTEXTS as string[]).includes(s.sessionContext)) {
             setSessionContext(s.sessionContext as LifeContext);
           }
+          if (typeof s.scenarioSummary === "string") setScenarioSummary(s.scenarioSummary);
           setLessonContent(s.lessonContent ?? null); setRoleplayTranscript(Array.isArray(s.transcript) ? s.transcript : []);
           setTurnCount(typeof s.turnCount === "number" ? s.turnCount : 0); setCompletedPhases(new Set(Array.isArray(s.completedPhases) ? s.completedPhases : []));
           setCommandsUsed(Array.isArray(s.commandsUsed) ? s.commandsUsed : []); setCheckinOutcome(s.checkinOutcome ?? null);

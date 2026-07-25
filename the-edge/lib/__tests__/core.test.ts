@@ -55,6 +55,7 @@ import {
   nextDisposition,
   type Picker,
 } from "../selection";
+import { buildScenarioPrompt, fallbackScenario } from "../prompts/scenario";
 import {
   CHARACTERS,
   characterContexts,
@@ -1601,6 +1602,81 @@ describe("History-aware selection", () => {
 
     it("silently drops unknown names when deriving dispositions", () => {
       assert.deepEqual(dispositionsForNames(["Nobody At All"]), []);
+    });
+  });
+});
+
+// ===========================================================================
+// 9. Scenario generation
+//
+// The generator itself needs a model call, so these cover the parts that must
+// hold without one: the prompt actually carries the avoid-list and the concept
+// stays hidden, the parser tolerates whatever comes back, and the fallback is
+// always usable.
+// ===========================================================================
+
+describe("Scenario generation", () => {
+  const concept = CONCEPTS.find((c) => c.id === "reading-interest")!;
+  const character = CHARACTERS.find((c) => c.id === "nervous-first-date")!;
+
+  describe("buildScenarioPrompt", () => {
+    it("names the character and the setting", () => {
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.ok(prompt.includes(character.name));
+      assert.ok(prompt.includes(character.hidden_motivation));
+      assert.ok(prompt.includes(CONTEXT_LABELS.dating));
+    });
+
+    it("tells the model the concept must stay hidden", () => {
+      // A scenario that telegraphs the skill being practised defeats the point.
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.ok(prompt.includes(concept.name));
+      assert.ok(/must NOT know/i.test(prompt));
+    });
+
+    it("passes recent scenarios through as an explicit avoid list", () => {
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", [
+        "rooftop bar, character just left a bad meeting",
+        "coffee shop, raining, character running late",
+      ]);
+      assert.ok(prompt.includes("rooftop bar, character just left a bad meeting"));
+      assert.ok(prompt.includes("coffee shop, raining, character running late"));
+      assert.ok(/do not repeat/i.test(prompt));
+    });
+
+    it("omits the avoid block entirely when there is no history", () => {
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.equal(/do not repeat/i.test(prompt), false);
+    });
+
+    it("includes the bio when present and omits the section when not", () => {
+      const withBio = buildScenarioPrompt(concept, character, "dating", "I'm a vet in Leeds.", []);
+      assert.ok(withBio.includes("I'm a vet in Leeds."));
+      const withoutBio = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.equal(/ABOUT THE USER/.test(withoutBio), false);
+    });
+
+    it("varies its guidance by context rather than emitting one generic brief", () => {
+      const prompts = LIFE_CONTEXTS.map((ctx) =>
+        buildScenarioPrompt(concept, character, ctx, "", [])
+      );
+      assert.equal(new Set(prompts).size, LIFE_CONTEXTS.length);
+    });
+  });
+
+  describe("fallbackScenario", () => {
+    it("produces a usable scenario and summary for every context", () => {
+      for (const context of LIFE_CONTEXTS) {
+        const { scenario, summary } = fallbackScenario(concept, character, context);
+        assert.ok(scenario.length > 80, `${context} fallback is too thin`);
+        assert.ok(scenario.includes(character.name));
+        assert.ok(summary.includes(context));
+      }
+    });
+
+    it("derives a context from the concept when none is given", () => {
+      const { scenario } = fallbackScenario(concept, character);
+      assert.ok(scenario.length > 80);
     });
   });
 });

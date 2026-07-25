@@ -42,6 +42,10 @@ export interface LedgerEntry {
   mission_outcome: string; // qualitative extraction or "NOT EXECUTED"
   commands_used: string[]; // /coach, /reset, /skip
   session_completed: boolean;
+  // Session provenance — all optional so pre-migration rows still map cleanly.
+  character_id?: string | null; // stable id; `character` holds the display name
+  context?: LifeContext | null; // which life context the session ran in
+  scenario_summary?: string | null; // one line, fed back in to avoid repeats
 }
 
 // ---------------------------------------------------------------------------

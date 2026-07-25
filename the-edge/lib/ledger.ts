@@ -36,6 +36,9 @@ interface LedgerRow {
   mission_outcome: string;
   commands_used: string[];
   session_completed: boolean;
+  character_id: string | null;
+  context: string | null;
+  scenario_summary: string | null;
   user_id?: string;
 }
 
@@ -60,6 +63,9 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
     mission_outcome: row.mission_outcome,
     commands_used: row.commands_used,
     session_completed: row.session_completed,
+    character_id: row.character_id ?? null,
+    context: (row.context as LedgerEntry["context"]) ?? null,
+    scenario_summary: row.scenario_summary ?? null,
   };
 }
 
@@ -82,6 +88,9 @@ function entryToRow(entry: LedgerEntry, userId?: string | null): Omit<LedgerRow,
     mission_outcome: entry.mission_outcome,
     commands_used: entry.commands_used,
     session_completed: entry.session_completed,
+    character_id: entry.character_id ?? null,
+    context: entry.context ?? null,
+    scenario_summary: entry.scenario_summary ?? null,
   };
   if (userId) row.user_id = userId;
   return row;

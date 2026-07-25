@@ -22,6 +22,8 @@ import {
   CharacterArchetype,
   Concept,
   LedgerEntry,
+  LifeContext,
+  LIFE_CONTEXTS,
   SessionScores,
   truncate,
 } from "@/lib/types";
@@ -70,6 +72,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
   };
   const behavioralWeaknessSummary = truncate(body.behavioralWeaknessSummary ?? "", 2000);
   const keyMoment = truncate(body.keyMoment ?? "", 2000);
+  const sessionContext: LifeContext | null =
+    typeof body.context === "string" && (LIFE_CONTEXTS as string[]).includes(body.context)
+      ? (body.context as LifeContext)
+      : null;
+  const scenarioSummary = body.scenarioSummary
+    ? truncate(body.scenarioSummary, 300)
+    : null;
   const commandsUsed = Array.isArray(body.commandsUsed)
     ? body.commandsUsed.filter((c: unknown) => typeof c === "string").slice(0, 20)
     : [];
@@ -117,6 +126,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
       mission_outcome: "",
       commands_used: commandsUsed,
       session_completed: true,
+      // Provenance — what this session actually was, so future sessions can
+      // avoid repeating the character and the situation.
+      character_id: character.id ?? null,
+      context: sessionContext ?? null,
+      scenario_summary: scenarioSummary ?? null,
     };
 
     // Write to Supabase

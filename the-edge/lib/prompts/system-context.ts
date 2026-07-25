@@ -51,6 +51,16 @@ async function getUserProfile(userId?: string | null): Promise<{ displayName: st
 }
 
 /**
+ * The user's own description of their life, used to make generated scenarios
+ * plausible. Empty for anonymous users or incomplete profiles.
+ */
+export async function getUserBio(userId?: string | null): Promise<string> {
+  if (!userId) return "";
+  const { profileData } = await getUserProfile(userId);
+  return profileData?.bio ?? "";
+}
+
+/**
  * Resolve the user's active life contexts for concept selection.
  * Anonymous users, and profiles predating the context model, get the social four.
  */
