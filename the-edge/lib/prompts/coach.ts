@@ -1,15 +1,16 @@
 import { Concept } from '../types';
-import { trackForDomain } from '../types';
+import { LifeContext, isSocialContext, primaryContextForConcept } from '../types';
 
 export function buildCoachPrompt(
   transcript: { role: string; content: string }[],
-  concept: Concept
+  concept: Concept,
+  context?: LifeContext
 ): string {
   const formattedTranscript = transcript
     .map((t) => `${t.role === 'assistant' ? 'CHARACTER' : 'USER'}: ${t.content}`)
     .join('\n\n');
 
-  const isSocial = trackForDomain(concept.domain) === 'social';
+  const isSocial = isSocialContext(context ?? primaryContextForConcept(concept));
   const advisorLine = isSocial
     ? "You are an elite social coach whispering in the user's ear at a party — reading the room in real time and telling them exactly what to say next."
     : "You are an elite tactical advisor. A spymaster watching a live operation through a one-way mirror.";

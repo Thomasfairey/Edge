@@ -1,5 +1,5 @@
 import { Concept, CharacterArchetype } from '../types';
-import { trackForDomain } from '../types';
+import { LifeContext, isSocialContext, primaryContextForConcept } from '../types';
 
 export function buildDebriefPrompt(
   transcript: { role: string; content: string }[],
@@ -7,7 +7,8 @@ export function buildDebriefPrompt(
   character: CharacterArchetype,
   ledgerCount: number,
   serialisedLedger: string,
-  checkinContext?: string
+  checkinContext?: string,
+  context?: LifeContext
 ): string {
   const formattedTranscript = transcript
     .map((t, i) => `Turn ${Math.floor(i / 2) + 1} — ${t.role === 'assistant' ? character.name.toUpperCase() : 'USER'}: ${t.content}`)
@@ -24,7 +25,7 @@ ${serialisedLedger}`
     ? `\n\nFIELD MISSION UPDATE:\nThe user reported on yesterday's mission before this session: "${checkinContext}"\nConnect this field experience to their performance today where relevant — did they apply yesterday's learning?\n`
     : "";
 
-  const isSocial = trackForDomain(concept.domain) === 'social';
+  const isSocial = isSocialContext(context ?? primaryContextForConcept(concept));
 
   const personaBlock = isSocial
     ? `You are an elite charisma and communication coach. The kind who quietly trains actors, founders, and public figures on how to walk into a room and own it — and who tells them the truth about why they don't yet.

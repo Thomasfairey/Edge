@@ -1,16 +1,17 @@
 import { Concept, SessionScores } from '../types';
-import { trackForDomain } from '../types';
+import { LifeContext, isSocialContext, primaryContextForConcept } from '../types';
 
 export function buildMissionPrompt(
   concept: Concept,
   scores: SessionScores,
-  serialisedLedger: string
+  serialisedLedger: string,
+  context?: LifeContext
 ): string {
   const weakestDimension = Object.entries(scores).reduce((a, b) =>
     a[1] <= b[1] ? a : b
   );
 
-  const isSocial = trackForDomain(concept.domain) === 'social';
+  const isSocial = isSocialContext(context ?? primaryContextForConcept(concept));
 
   const personaLine = isSocial
     ? "You are a sharp social coach assigning a single, precise field experiment before the user next walks into a room full of people."

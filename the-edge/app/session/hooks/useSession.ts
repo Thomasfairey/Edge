@@ -183,7 +183,9 @@ export function useSession() {
   const [onboardingNeeded, setOnboardingNeeded] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"track" | "bio" | "style" | "saving">("track");
   const [onboardingBio, setOnboardingBio] = useState("");
-  const [onboardingTrack, setOnboardingTrack] = useState<"professional" | "social" | "both">("professional");
+  // Social is the default: work is one context among several, not the premise.
+  // The full context multi-select replaces this control in a later change.
+  const [onboardingTrack, setOnboardingTrack] = useState<"professional" | "social" | "both">("social");
   const [onboardingDisplayName, setOnboardingDisplayName] = useState("");
 
   // Abort in-flight requests on unmount

@@ -49,60 +49,147 @@ export interface LedgerEntry {
 // ---------------------------------------------------------------------------
 
 export type ConceptDomain =
-  // ── Professional track ──
+  // ── Relational ──
+  | "Charisma & Presence"
+  | "Storytelling & Narrative"
+  | "Conversation & Memorability"
+  | "Rapport & Relationship Engineering"
+  // ── Persuasion & pressure ──
   | "Influence & Persuasion"
   | "Power Dynamics"
   | "Negotiation"
   | "Behavioural Psychology & Cognitive Bias"
   | "Nonverbal Intelligence & Behavioural Profiling"
-  | "Rapport & Relationship Engineering"
-  | "Dark Psychology & Coercive Technique Recognition"
-  // ── Social track ──
-  | "Charisma & Presence"
-  | "Storytelling & Narrative"
-  | "Conversation & Memorability";
+  | "Dark Psychology & Coercive Technique Recognition";
 
 // ---------------------------------------------------------------------------
-// Tracks — professional vs social, and the user's chosen focus
+// Life contexts — the settings a skill is practised in
+//
+// A domain says what a concept IS; a context says WHERE you use it. The two are
+// independent: labelling works on a hostile buyer and on an upset sibling. Work
+// is one context among five, not the organising principle.
 // ---------------------------------------------------------------------------
 
-/** The two domain families a concept can belong to. */
-export type DomainTrack = "professional" | "social";
+export type LifeContext = "dating" | "friends" | "groups" | "family" | "work";
 
-/** The focus a user selects. "both" interleaves every domain. */
-export type TrackId = "professional" | "social" | "both";
+export const LIFE_CONTEXTS: LifeContext[] = ["dating", "friends", "groups", "family", "work"];
 
-export const TRACK_IDS: TrackId[] = ["professional", "social", "both"];
+/** Everything that isn't work. The default selection for a new user. */
+export const SOCIAL_CONTEXTS: LifeContext[] = ["dating", "friends", "groups", "family"];
 
-/** Maps every concept domain to the track it belongs to. */
-export const DOMAIN_TRACK: Record<ConceptDomain, DomainTrack> = {
-  "Influence & Persuasion": "professional",
-  "Power Dynamics": "professional",
-  "Negotiation": "professional",
-  "Behavioural Psychology & Cognitive Bias": "professional",
-  "Nonverbal Intelligence & Behavioural Profiling": "professional",
-  "Rapport & Relationship Engineering": "professional",
-  "Dark Psychology & Coercive Technique Recognition": "professional",
-  "Charisma & Presence": "social",
-  "Storytelling & Narrative": "social",
-  "Conversation & Memorability": "social",
+export const CONTEXT_LABELS: Record<LifeContext, string> = {
+  dating: "Dating & romance",
+  friends: "Friendships",
+  groups: "Groups & parties",
+  family: "Family & hard conversations",
+  work: "Work",
 };
 
-/**
- * The track a domain belongs to. Unknown domains default to "professional"
- * so legacy ledger rows and any future data never break selection.
- */
-export function trackForDomain(domain: string): DomainTrack {
-  return DOMAIN_TRACK[domain as ConceptDomain] ?? "professional";
+export const CONTEXT_BLURBS: Record<LifeContext, string> = {
+  dating: "First dates, flirting, reading interest, the awkward middle, romantic conflict.",
+  friends: "Getting past small talk, friends you've drifted from, listening well, asking for help.",
+  groups: "Holding a room, joining a conversation, being memorable, hosting.",
+  family: "Parents, siblings, partners — conflict with people you can't walk away from.",
+  work: "Negotiation, stakeholders, pitching, difficult colleagues.",
+};
+
+export function isSocialContext(context: LifeContext): boolean {
+  return context !== "work";
 }
 
 /**
- * Whether a domain should be shown for a user's chosen track preference.
- * "both" accepts everything.
+ * Default contexts for a domain, used to tag content that predates the context
+ * model and to keep legacy ledger rows selectable. Content should declare its
+ * own `contexts` — this is the fallback, not the source of truth.
+ *
+ * ORDER MATTERS: the first entry is the domain's representative context, used
+ * when a caller has no explicit session context to hand.
  */
-export function domainMatchesTrack(domain: string, track: TrackId): boolean {
-  if (track === "both") return true;
-  return trackForDomain(domain) === track;
+export const DOMAIN_DEFAULT_CONTEXTS: Record<ConceptDomain, LifeContext[]> = {
+  "Charisma & Presence": ["groups", "dating", "friends", "work"],
+  "Storytelling & Narrative": ["groups", "friends", "dating", "work"],
+  "Conversation & Memorability": ["groups", "friends", "dating", "work"],
+  "Rapport & Relationship Engineering": ["friends", "dating", "groups", "family", "work"],
+  "Influence & Persuasion": ["work"],
+  "Power Dynamics": ["work"],
+  "Negotiation": ["work", "family"],
+  "Behavioural Psychology & Cognitive Bias": ["work"],
+  "Nonverbal Intelligence & Behavioural Profiling": ["work", "dating", "groups"],
+  "Dark Psychology & Coercive Technique Recognition": ["work", "family"],
+};
+
+/** Unknown domains fall back to work so legacy data never breaks selection. */
+export function contextsForDomain(domain: string): LifeContext[] {
+  return DOMAIN_DEFAULT_CONTEXTS[domain as ConceptDomain] ?? ["work"];
+}
+
+/** A concept's own contexts, or its domain's defaults. */
+export function contextsForConcept(concept: Pick<Concept, "domain" | "contexts">): LifeContext[] {
+  return concept.contexts && concept.contexts.length > 0
+    ? concept.contexts
+    : contextsForDomain(concept.domain);
+}
+
+/**
+ * The context to assume when no explicit session context was passed. Prompt
+ * builders use this so they keep working before the session context is threaded
+ * through every route.
+ */
+export function primaryContextForConcept(concept: Pick<Concept, "domain" | "contexts">): LifeContext {
+  return contextsForConcept(concept)[0] ?? "work";
+}
+
+/** True when the item is practisable in any of the user's active contexts. */
+export function matchesContexts(
+  itemContexts: LifeContext[] | undefined,
+  active: LifeContext[]
+): boolean {
+  if (active.length === 0) return true;
+  const contexts = itemContexts && itemContexts.length > 0 ? itemContexts : [];
+  if (contexts.length === 0) return true;
+  return contexts.some((c) => active.includes(c));
+}
+
+/**
+ * Choose the single context a session runs in — the overlap between what the
+ * concept supports and what the user has switched on. Falls back to the
+ * concept's own first context, then to work, so this never returns undefined.
+ */
+export function resolveSessionContext(
+  itemContexts: LifeContext[] | undefined,
+  active: LifeContext[],
+  pick: (n: number) => number = (n) => Math.floor(Math.random() * n)
+): LifeContext {
+  const contexts = itemContexts && itemContexts.length > 0 ? itemContexts : LIFE_CONTEXTS;
+  const overlap = contexts.filter((c) => active.includes(c));
+  const pool = overlap.length > 0 ? overlap : contexts;
+  return pool[pick(pool.length)] ?? "work";
+}
+
+function isLifeContext(value: unknown): value is LifeContext {
+  return typeof value === "string" && (LIFE_CONTEXTS as string[]).includes(value);
+}
+
+/** Map a pre-context `track` value onto the contexts it stood for. */
+export function migrateLegacyTrack(track: unknown): LifeContext[] {
+  if (track === "professional") return ["work"];
+  if (track === "social") return [...SOCIAL_CONTEXTS];
+  if (track === "both") return [...LIFE_CONTEXTS];
+  return [...SOCIAL_CONTEXTS];
+}
+
+/**
+ * Coerce whatever is in profile_data into a valid context list. Accepts the new
+ * `contexts` array or a legacy `track` string, drops unknown values, dedupes,
+ * and never returns empty.
+ */
+export function normaliseContexts(raw: unknown, legacyTrack?: unknown): LifeContext[] {
+  if (Array.isArray(raw)) {
+    const valid = Array.from(new Set(raw.filter(isLifeContext)));
+    if (valid.length > 0) return valid;
+  }
+  if (legacyTrack !== undefined) return migrateLegacyTrack(legacyTrack);
+  return [...SOCIAL_CONTEXTS];
 }
 
 export interface Concept {
@@ -111,6 +198,7 @@ export interface Concept {
   domain: ConceptDomain;
   source: string; // attribution, e.g., "Cialdini"
   description: string; // 1-2 sentence summary for prompt injection
+  contexts?: LifeContext[]; // where this is practised; defaults to the domain's
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +209,7 @@ export interface CharacterArchetype {
   id: string;
   name: string;
   description: string; // 1 sentence
+  contexts?: LifeContext[]; // settings this character belongs in
   personality: string; // detailed personality brief for system prompt
   communication_style: string; // how they talk
   hidden_motivation: string; // what they secretly want

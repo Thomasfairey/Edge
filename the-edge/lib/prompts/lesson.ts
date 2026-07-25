@@ -1,8 +1,12 @@
 import { Concept } from '../types';
-import { trackForDomain } from '../types';
+import { LifeContext, isSocialContext, primaryContextForConcept } from '../types';
 
-export function buildLessonPrompt(concept: Concept, isReview: boolean = false): string {
-  const isSocial = trackForDomain(concept.domain) === 'social';
+export function buildLessonPrompt(
+  concept: Concept,
+  isReview: boolean = false,
+  context?: LifeContext
+): string {
+  const isSocial = isSocialContext(context ?? primaryContextForConcept(concept));
 
   const engineLine = isSocial
     ? "You are the Lesson Engine for The Edge — a daily training system for charisma, storytelling, and social presence."

@@ -11,9 +11,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, streamResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
-import { buildPersistentContext, getUserTrack } from "@/lib/prompts/system-context";
+import { buildPersistentContext, getUserContexts } from "@/lib/prompts/system-context";
 import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
+import { LifeContext, contextsForConcept, resolveSessionContext } from "@/lib/types";
 import { getCompletedConcepts } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
@@ -42,6 +43,8 @@ async function handlePost(req: NextRequest, userId: string | null) {
     let concept;
     let isReview = false;
 
+    let sessionContext: LifeContext;
+
     if (conceptId) {
       const found = CONCEPTS.find((c) => c.id === conceptId);
       if (!found) {
@@ -51,17 +54,22 @@ async function handlePost(req: NextRequest, userId: string | null) {
         );
       }
       concept = found;
+      sessionContext = resolveSessionContext(
+        contextsForConcept(found),
+        await getUserContexts(userId)
+      );
     } else {
-      const [completedIds, track] = await Promise.all([
+      const [completedIds, contexts] = await Promise.all([
         getCompletedConcepts(userId),
-        getUserTrack(userId),
+        getUserContexts(userId),
       ]);
-      const result = await selectConcept(completedIds, userId, track);
+      const result = await selectConcept(completedIds, userId, contexts);
       concept = result.concept;
       isReview = result.isReview;
+      sessionContext = result.context;
     }
 
-    const lessonPrompt = buildLessonPrompt(concept, isReview);
+    const lessonPrompt = buildLessonPrompt(concept, isReview, sessionContext);
     const systemPrompt = `${await buildPersistentContext(userId)}\n\n${lessonPrompt}`;
 
     const userMessage = {
@@ -81,6 +89,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
           "Cache-Control": "no-cache",
           "X-Concept": encodeURIComponent(JSON.stringify(concept)),
           "X-Is-Review": isReview ? "true" : "false",
+          "X-Context": sessionContext,
         },
       });
     } else {
@@ -90,7 +99,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
         PHASE_CONFIG.lesson
       );
 
-      return NextResponse.json({ concept, lessonContent, isReview });
+      return NextResponse.json({ concept, lessonContent, isReview, context: sessionContext });
     }
   } catch (error) {
     if (error instanceof CircuitBreakerOpenError) {

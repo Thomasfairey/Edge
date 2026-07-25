@@ -9,6 +9,7 @@ import { createUserClient } from "@/lib/supabase";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { createRequestLogger } from "@/lib/logger";
+import { LIFE_CONTEXTS } from "@/lib/types";
 
 async function handleGet(req: NextRequest, userId: string | null) {
   if (!userId) {
@@ -55,6 +56,20 @@ async function handlePost(req: NextRequest, userId: string | null) {
   if (profileData.feedbackStyle && !["direct", "balanced", "supportive"].includes(profileData.feedbackStyle)) {
     return NextResponse.json({ error: "Invalid feedbackStyle" }, { status: 400 });
   }
+  if (profileData.contexts !== undefined) {
+    if (
+      !Array.isArray(profileData.contexts) ||
+      profileData.contexts.length === 0 ||
+      !profileData.contexts.every((c: unknown) => (LIFE_CONTEXTS as string[]).includes(c as string))
+    ) {
+      return NextResponse.json(
+        { error: `contexts must be a non-empty array of: ${LIFE_CONTEXTS.join(", ")}` },
+        { status: 400 }
+      );
+    }
+  }
+  // Legacy `track` is still accepted on write so old clients don't 400; it is
+  // migrated to contexts on read by normaliseContexts().
   if (profileData.track && !["professional", "social", "both"].includes(profileData.track)) {
     return NextResponse.json({ error: "Invalid track" }, { status: 400 });
   }
