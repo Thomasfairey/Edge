@@ -10,11 +10,11 @@ export function buildLessonPrompt(
 
   const engineLine = isSocial
     ? "You are the Lesson Engine for The Edge — a daily training system for charisma, storytelling, and social presence."
-    : "You are the Lesson Engine for The Edge — a daily influence training system for elite professionals.";
+    : "You are the Lesson Engine for The Edge — a daily training system for the conversations that decide things at work.";
 
   const audienceLine = isSocial
     ? "Write for a sharp, curious adult who wants to be more magnetic, interesting, and memorable in real social life — dinners, parties, dates, new friendships. Precise language, no filler, no self-help fluff or clichés."
-    : "Write for a senior executive: precise language, no filler, no condescension. The reader has a theology degree from Oxford and has built multiple companies — they can handle density.";
+    : "Write for an experienced professional: precise language, no filler, no condescension. The reader is well-read and can handle density.";
 
   const playExampleGuidance = isSocial
     ? `- Name real people and real moments wherever possible (great storytellers, charismatic public figures, memorable hosts, a vivid scene from real social life).

@@ -13,6 +13,7 @@
  */
 
 import { useSession } from "./hooks/useSession";
+import { LIFE_CONTEXTS, CONTEXT_LABELS, CONTEXT_BLURBS } from "@/lib/types";
 import { useIsTouchDevice } from "@/app/hooks/useIsTouchDevice";
 
 // Components
@@ -180,41 +181,50 @@ export default function SessionPage() {
           {/* ============================================================== */}
           {s.onboardingNeeded && (
             <div className="space-y-6 animate-fade-in-up">
-              {s.onboardingStep === "track" && (
+              {s.onboardingStep === "contexts" && (
                 <div className="rounded-3xl bg-white p-6 shadow-[var(--shadow-soft)]">
                   <h2 className="text-xl font-semibold text-primary mb-2">
                     Welcome to The Edge{s.onboardingDisplayName ? `, ${s.onboardingDisplayName}` : ""}
                   </h2>
                   <p className="text-sm text-secondary mb-5">
-                    What do you want an edge in? You can change this anytime.
+                    Where do you want to get better with people? Pick as many as you like — you can change this anytime.
                   </p>
 
                   <div className="space-y-3">
-                    {([
-                      { value: "professional" as const, label: "Professional", desc: "Influence, negotiation, and power in high-stakes work conversations.", color: "#7C83FD" },
-                      { value: "social" as const, label: "Social", desc: "Charisma, storytelling, and being captivating and memorable socially.", color: "#F5A97F" },
-                      { value: "both" as const, label: "Both", desc: "Interleave professional influence and social charisma day to day.", color: "#6BC9A0" },
-                    ]).map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => {
-                          haptic();
-                          s.setOnboardingTrack(opt.value);
-                          s.setOnboardingStep("bio");
-                        }}
-                        className="w-full rounded-2xl border-2 border-[#E8E5E0] bg-[#FAF9F6] p-4 text-left transition-all hover:border-[var(--accent)]/30 active:scale-[0.98]"
-                        style={s.onboardingTrack === opt.value ? { borderColor: "var(--accent)" } : undefined}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
-                          <div>
-                            <p className="text-sm font-semibold text-primary">{opt.label}</p>
-                            <p className="text-xs text-secondary mt-0.5">{opt.desc}</p>
+                    {LIFE_CONTEXTS.map((context) => {
+                      const selected = s.onboardingContexts.includes(context);
+                      return (
+                        <button
+                          key={context}
+                          onClick={() => { haptic(); s.toggleOnboardingContext(context); }}
+                          aria-pressed={selected}
+                          className="w-full rounded-2xl border-2 border-[#E8E5E0] bg-[#FAF9F6] p-4 text-left transition-all hover:border-[var(--accent)]/30 active:scale-[0.98]"
+                          style={selected ? { borderColor: "var(--accent)" } : undefined}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="h-4 w-4 rounded-full flex-shrink-0 border-2"
+                              style={{
+                                backgroundColor: selected ? "var(--accent)" : "transparent",
+                                borderColor: selected ? "var(--accent)" : "#D8D4CE",
+                              }}
+                            />
+                            <div>
+                              <p className="text-sm font-semibold text-primary">{CONTEXT_LABELS[context]}</p>
+                              <p className="text-xs text-secondary mt-0.5">{CONTEXT_BLURBS[context]}</p>
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
+
+                  <button
+                    onClick={() => { haptic(); s.setOnboardingStep("bio"); }}
+                    className="btn-primary w-full mt-5"
+                  >
+                    Continue
+                  </button>
                 </div>
               )}
 
@@ -224,11 +234,9 @@ export default function SessionPage() {
                     Tell me about yourself
                   </h2>
                   <p className="text-sm text-secondary mb-5">
-                    {s.onboardingTrack === "social"
-                      ? "Who you are, the social settings you want an edge in — parties, dates, new friendships — and what you find hard."
-                      : s.onboardingTrack === "both"
-                      ? "Your role and work, plus the social settings you want an edge in."
-                      : "Your role, your company, what you're working on, and what you're trying to achieve."}
+                    {s.onboardingContexts.length === 1 && s.onboardingContexts[0] === "work"
+                      ? "Your role, what you're working on, and the conversations you need to get better at."
+                      : "Who you are, the people in your life, and what you find hard about being around them."}
                   </p>
                   <p className="text-xs text-tertiary mb-4">
                     This is used to personalise every scenario, lesson, and mission to your world.
@@ -238,9 +246,9 @@ export default function SessionPage() {
                     className="w-full rounded-2xl border border-[#E8E5E0] bg-[#FAF9F6] px-4 py-3 text-sm text-primary placeholder-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
                     rows={5}
                     placeholder={
-                      s.onboardingTrack === "social"
-                        ? "e.g. I'm an engineer who's great one-on-one but goes quiet in groups. I want to tell better stories, be more memorable at parties, and not freeze on dates..."
-                        : "e.g. I'm the CEO of a fintech startup. We're raising our seed round and trying to sign our first enterprise clients in banking. I need to get better at high-stakes negotiations and investor pitches..."
+                      s.onboardingContexts.length === 1 && s.onboardingContexts[0] === "work"
+                        ? "e.g. I run a small team and I'm about to renegotiate a contract I've been avoiding. I fold under pressure and agree to things I regret..."
+                        : "e.g. I'm an engineer. Great one-on-one, silent in groups. I've drifted from friends I care about, I never know how to talk to my dad, and I go blank on dates..."
                     }
                     value={s.onboardingBio}
                     onChange={(e) => s.setOnboardingBio(e.target.value)}
@@ -290,7 +298,7 @@ export default function SessionPage() {
                   )}
 
                   <button
-                    onClick={() => s.setOnboardingStep("track")}
+                    onClick={() => s.setOnboardingStep("contexts")}
                     className="mt-4 text-xs text-secondary underline"
                   >
                     Back

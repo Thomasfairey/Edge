@@ -15,6 +15,7 @@ import {
   Message,
   LifeContext,
   LIFE_CONTEXTS,
+  SOCIAL_CONTEXTS,
 } from "@/lib/types";
 import { useVoice } from "@/app/hooks/useVoice";
 import { haptic, cleanForSpeech, stripStageDirections, splitLessonSections } from "../components/types";
@@ -211,11 +212,23 @@ export function useSession() {
 
   // Onboarding
   const [onboardingNeeded, setOnboardingNeeded] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<"track" | "bio" | "style" | "saving">("track");
+  const [onboardingStep, setOnboardingStep] = useState<"contexts" | "bio" | "style" | "saving">("contexts");
   const [onboardingBio, setOnboardingBio] = useState("");
   // Social is the default: work is one context among several, not the premise.
   // The full context multi-select replaces this control in a later change.
-  const [onboardingTrack, setOnboardingTrack] = useState<"professional" | "social" | "both">("social");
+  // Which life contexts the user wants to train in. Defaults to the social
+  // four — work is one context among five, not the premise.
+  const [onboardingContexts, setOnboardingContexts] = useState<LifeContext[]>([...SOCIAL_CONTEXTS]);
+
+  function toggleOnboardingContext(context: LifeContext) {
+    setOnboardingContexts((prev) =>
+      prev.includes(context)
+        ? // Never let the user deselect everything — an empty selection would
+          // leave the concept pool with nothing to draw from.
+          prev.length > 1 ? prev.filter((c) => c !== context) : prev
+        : [...prev, context]
+    );
+  }
   const [onboardingDisplayName, setOnboardingDisplayName] = useState("");
 
   // Abort in-flight requests on unmount
@@ -959,7 +972,7 @@ export function useSession() {
           profileData: {
             bio: onboardingBio.trim(),
             feedbackStyle,
-            track: onboardingTrack,
+            contexts: onboardingContexts,
           },
         }),
       });
@@ -1378,8 +1391,8 @@ export function useSession() {
     setOnboardingStep,
     onboardingBio,
     setOnboardingBio,
-    onboardingTrack,
-    setOnboardingTrack,
+    onboardingContexts,
+    toggleOnboardingContext,
     onboardingDisplayName,
 
     // Debrief
