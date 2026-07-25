@@ -36,19 +36,21 @@ ALTER TABLE ledger
 -- Replace the five range checks with one over the JSONB values: every entry
 -- must be an integer between 1 and 5. An empty object passes, which is what a
 -- session that never reached the debrief should look like.
+--
+-- Expressed as a JSONPath rather than a subquery: Postgres rejects subqueries
+-- in CHECK constraints outright (0A000 "cannot use subquery in check
+-- constraint"), so the obvious jsonb_each form does not compile. Verified
+-- against a branch: accepts a valid rubric and an empty object; rejects 9,
+-- "high", and 3.5.
 ALTER TABLE ledger
   DROP CONSTRAINT IF EXISTS chk_scores_range;
 
 ALTER TABLE ledger
   ADD CONSTRAINT chk_scores_range CHECK (
     jsonb_typeof(scores) = 'object'
-    AND NOT EXISTS (
-      SELECT 1
-      FROM jsonb_each(scores) AS entry(key, value)
-      WHERE jsonb_typeof(entry.value) <> 'number'
-         OR (entry.value)::numeric < 1
-         OR (entry.value)::numeric > 5
-         OR (entry.value)::numeric <> trunc((entry.value)::numeric)
+    AND NOT jsonb_path_exists(
+      scores,
+      '$.* ? (@.type() != "number" || @ < 1 || @ > 5 || @.floor() != @)'
     )
   );
 
