@@ -56,6 +56,14 @@ import {
 } from "../selection";
 import { buildScenarioPrompt, fallbackScenario } from "../prompts/scenario";
 import {
+  SESSION_SHAPES,
+  shapeById,
+  nextPhase,
+  isValidTransition,
+  shapeIncludes,
+  selectShape,
+} from "../session-shapes";
+import {
   DIMENSION_SETS,
   dimensionSetFor,
   dimensionKeys,
@@ -1826,6 +1834,161 @@ describe("Scoring dimensions", () => {
     it("returns null when nothing in the set was scored", () => {
       assert.equal(weakestDimension({}, "family"), null);
       assert.equal(weakestDimension({ frame_control: 1 }, "family"), null);
+    });
+  });
+});
+
+// ===========================================================================
+// 11. Session shapes
+//
+// The transition rules are the load-bearing part: a shape that lets you skip
+// a phase, or that accepts a phase it doesn't contain, wedges a live session
+// with no way forward. The resume path depends on shapeIncludes specifically.
+// ===========================================================================
+
+describe("Session shapes", () => {
+  it("gives every shape a non-empty ordered phase list", () => {
+    for (const shape of SESSION_SHAPES) {
+      assert.ok(shape.phases.length > 0, `${shape.id} has no phases`);
+      assert.ok(shape.label.length > 0);
+      assert.ok(shape.description.length > 20, `${shape.id} has a thin description`);
+    }
+  });
+
+  it("never puts checkin in a shape — it is a prelude to all of them", () => {
+    for (const shape of SESSION_SHAPES) {
+      assert.equal(shape.phases.includes("checkin"), false, `${shape.id} contains checkin`);
+    }
+  });
+
+  it("gives every shape sane turn bounds", () => {
+    for (const shape of SESSION_SHAPES) {
+      assert.ok(shape.minTurns >= 1, `${shape.id} minTurns`);
+      assert.ok(shape.maxTurns > shape.minTurns, `${shape.id} maxTurns <= minTurns`);
+    }
+  });
+
+  it("actually differs in length — a drill is shorter than a deep scene", () => {
+    assert.ok(shapeById("drill").maxTurns < shapeById("deep").minTurns);
+    assert.ok(shapeById("drill").phases.length < shapeById("full").phases.length);
+  });
+
+  it("preserves the original loop as the full shape", () => {
+    assert.deepEqual(shapeById("full").phases, [
+      "lesson",
+      "retrieval",
+      "roleplay",
+      "debrief",
+      "mission",
+    ]);
+  });
+
+  describe("shapeById", () => {
+    it("falls back to the full loop for unknown ids", () => {
+      assert.equal(shapeById("nonsense").id, "full");
+      assert.equal(shapeById(null).id, "full");
+      assert.equal(shapeById(undefined).id, "full");
+    });
+  });
+
+  describe("nextPhase", () => {
+    it("walks the shape in order", () => {
+      const full = shapeById("full");
+      assert.equal(nextPhase(full, "lesson"), "retrieval");
+      assert.equal(nextPhase(full, "roleplay"), "debrief");
+    });
+
+    it("returns null at the end of the shape", () => {
+      assert.equal(nextPhase(shapeById("full"), "mission"), null);
+      assert.equal(nextPhase(shapeById("review"), "debrief"), null);
+    });
+
+    it("returns null for a phase the shape does not contain", () => {
+      assert.equal(nextPhase(shapeById("drill"), "lesson"), null);
+    });
+
+    it("sends a drill from roleplay straight to the mission, skipping debrief", () => {
+      assert.equal(nextPhase(shapeById("drill"), "roleplay"), "mission");
+    });
+  });
+
+  describe("isValidTransition", () => {
+    it("allows only the shape's own next step", () => {
+      const full = shapeById("full");
+      assert.ok(isValidTransition(full, "lesson", "retrieval"));
+      assert.equal(isValidTransition(full, "lesson", "roleplay"), false, "allowed a skipped phase");
+      assert.equal(isValidTransition(full, "roleplay", "lesson"), false, "allowed going backwards");
+    });
+
+    it("lets check-in lead into whatever the shape starts with", () => {
+      assert.ok(isValidTransition(shapeById("full"), "checkin", "lesson"));
+      assert.ok(isValidTransition(shapeById("deep"), "checkin", "roleplay"));
+      assert.equal(
+        isValidTransition(shapeById("deep"), "checkin", "lesson"),
+        false,
+        "let check-in enter a phase this shape does not have"
+      );
+    });
+  });
+
+  describe("shapeIncludes", () => {
+    it("accepts check-in for every shape", () => {
+      for (const shape of SESSION_SHAPES) {
+        assert.ok(shapeIncludes(shape, "checkin"));
+      }
+    });
+
+    it("rejects a phase the shape does not run", () => {
+      // This is what stops a resumed drill restoring into a retrieval phase
+      // it has no way to leave.
+      assert.equal(shapeIncludes(shapeById("drill"), "retrieval"), false);
+      assert.ok(shapeIncludes(shapeById("full"), "retrieval"));
+    });
+  });
+
+  describe("selectShape", () => {
+    const first: Picker = () => 0;
+
+    it("always runs the full loop on day 1", () => {
+      for (let i = 0; i < 20; i++) {
+        assert.equal(selectShape({ dayNumber: 1, hasDueReview: true }).id, "full");
+      }
+    });
+
+    it("only offers review when spaced repetition has something due", () => {
+      for (let i = 0; i < 40; i++) {
+        const shape = selectShape({ dayNumber: 5, hasDueReview: false });
+        assert.notEqual(shape.id, "review");
+      }
+    });
+
+    it("only offers a story session for a storytelling concept", () => {
+      for (let i = 0; i < 40; i++) {
+        const shape = selectShape({ dayNumber: 5, isStorytellingConcept: false });
+        assert.notEqual(shape.id, "story");
+      }
+    });
+
+    it("avoids repeating recent shapes", () => {
+      for (let i = 0; i < 40; i++) {
+        const shape = selectShape({ dayNumber: 5, recentShapeIds: ["full", "drill"] });
+        assert.notEqual(shape.id, "full");
+        assert.notEqual(shape.id, "drill");
+      }
+    });
+
+    it("still returns a shape when history covers everything eligible", () => {
+      const shape = selectShape({
+        dayNumber: 5,
+        recentShapeIds: SESSION_SHAPES.map((s) => s.id),
+        pick: first,
+      });
+      assert.ok(shape, "returned nothing rather than relaxing");
+    });
+
+    it("returns a usable shape with no options at all", () => {
+      const shape = selectShape();
+      assert.ok(shape.phases.length > 0);
     });
   });
 });

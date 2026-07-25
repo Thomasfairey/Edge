@@ -101,7 +101,7 @@ export default function SessionPage() {
             <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
           </svg>
         </button>
-        <PhaseIndicator current={s.currentPhase} completed={s.completedPhases} checkinNeeded={s.checkinNeeded} />
+        <PhaseIndicator current={s.currentPhase} completed={s.completedPhases} checkinNeeded={s.checkinNeeded} shapePhases={s.shape.phases} />
 
         {/* Global voice toggle */}
         <button
@@ -399,7 +399,7 @@ export default function SessionPage() {
               inputValue={s.inputValue}
               setInputValue={s.setInputValue}
               submitRetrievalResponse={s.submitRetrievalResponse}
-              startRoleplay={s.startRoleplay}
+              startRoleplay={s.leaveRetrieval}
               voice={s.voiceProps}
             />
           )}
@@ -413,6 +413,8 @@ export default function SessionPage() {
               roleplayTranscript={s.roleplayTranscript}
               scenarioContext={s.scenarioContext}
               turnCount={s.turnCount}
+              minTurns={s.shape.minTurns}
+              maxTurns={s.shape.maxTurns}
               isLoading={s.isLoading}
               isStreaming={s.isStreaming}
               streamingText={s.streamingText}
@@ -474,7 +476,7 @@ export default function SessionPage() {
                 {s.lessonCardPos.current + 1} of {s.lessonCardPos.total} &mdash; {isTouch ? "tap" : "click"} to continue
               </p>
             ) : (
-              <button onClick={() => s.startRetrieval()} className="btn-primary animate-fade-in-up">
+              <button onClick={() => s.leaveLesson()} className="btn-primary animate-fade-in-up">
                 Ready to practise &rarr;
               </button>
             )}

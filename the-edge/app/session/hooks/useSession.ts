@@ -22,6 +22,14 @@ import type { VoiceProps } from "../components/types";
 import { fetchWithRequestId } from "@/lib/fetch-with-request-id";
 import { trackClientEvent } from "@/lib/analytics-client";
 import { dimensionSetFor } from "@/lib/scoring-dimensions";
+import {
+  shapeById,
+  selectShape,
+  nextPhase,
+  isValidTransition,
+  shapeIncludes,
+  DEFAULT_SHAPE_ID,
+} from "@/lib/session-shapes";
 import { MENTOR_VOICE_ID } from "@/lib/voice-map";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +38,7 @@ import { MENTOR_VOICE_ID } from "@/lib/voice-map";
 
 const SESSION_STORAGE_KEY = "edge-session-state";
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
-const SESSION_VERSION = 2; // Bump when session shape changes to invalidate stale sessions
+const SESSION_VERSION = 3; // Bump when the saved session blob changes shape
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,6 +161,11 @@ export function useSession() {
   const [scenarioSummary, setScenarioSummary] = useState<string | null>(null);
   // Names the keys in `scores` — returned by /api/debrief, sent on to /api/mission.
   const [dimensionSet, setDimensionSet] = useState<string | null>(null);
+  // Today's session shape. Drives which phases run and in what order; the old
+  // fixed lesson→retrieval→roleplay→debrief→mission chain is now just one of
+  // several shapes.
+  const [shapeId, setShapeId] = useState<string>(DEFAULT_SHAPE_ID);
+  const shape = shapeById(shapeId);
   const [character, setCharacter] = useState<CharacterArchetype | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [scenarioContext, setScenarioContext] = useState<string | null>(null);
@@ -301,7 +314,7 @@ export function useSession() {
         transcript: roleplayTranscript, turnCount,
         completedPhases: Array.from(completedPhases), commandsUsed,
         checkinOutcome, checkinNeeded, checkinDone, checkinUserText,
-        dayNumber, scenarioContext, sessionContext, scenarioSummary, dimensionSet, debriefContent, scores,
+        dayNumber, scenarioContext, sessionContext, scenarioSummary, dimensionSet, shapeId, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
         lastMission, coachAdvice, isReviewSession, previousScores,
         timestamp: Date.now(),
@@ -325,18 +338,14 @@ export function useSession() {
   // Phase transition
   // =========================================================================
 
-  const VALID_TRANSITIONS: Record<string, string[]> = {
-    lesson: ["retrieval"],
-    retrieval: ["roleplay"],
-    roleplay: ["debrief"],
-    debrief: ["mission"],
-    mission: [],
-  };
-
+  /**
+   * Move to the next phase of today's shape. Callers name the phase they
+   * expect to land on so an unexpected shape blocks the move rather than
+   * silently running a phase this session shouldn't have.
+   */
   function advancePhase(from: SessionPhase, to: SessionPhase) {
-    const allowed = VALID_TRANSITIONS[from];
-    if (allowed && !allowed.includes(to)) {
-      return; // Block invalid transition
+    if (!isValidTransition(shape, from, to)) {
+      return; // Not a step this shape takes.
     }
     trackClientEvent("phase_completed", { from, to, day: dayNumber });
     voice.stopSpeaking();
@@ -350,6 +359,17 @@ export function useSession() {
       haptic();
       setTimeout(() => setPhaseAnimation("active"), 80);
     }, 280);
+  }
+
+  /**
+   * Advance to whichever phase follows `from` in today's shape. Used where the
+   * next phase is shape-dependent — after roleplay, a `deep` session goes to
+   * debrief while a `drill` goes straight to the mission.
+   */
+  function advanceToNext(from: SessionPhase): SessionPhase | null {
+    const to = nextPhase(shape, from);
+    if (to) advancePhase(from, to);
+    return to;
   }
 
   // =========================================================================
@@ -481,9 +501,14 @@ export function useSession() {
   // Retrieval Bridge
   // =========================================================================
 
+  /** Advance out of the lesson to whatever this shape does next. */
+  function leaveLesson() {
+    const to = advanceToNext("lesson");
+    if (to) runPhase(to);
+  }
+
   async function startRetrieval() {
     if (!concept) return;
-    advancePhase("lesson", "retrieval");
     setIsLoading(true);
     try {
       const res = await fetchWithRetry(
@@ -517,7 +542,7 @@ export function useSession() {
       setRetrievalReady(data.ready);
       setIsLoading(false);
       // Give user time to read the feedback before auto-advancing
-      if (data.ready) setTimeout(() => startRoleplay(), 5000);
+      if (data.ready) setTimeout(() => leaveRetrieval(), 5000);
     } catch {
       setError("Failed to evaluate response. Try again.");
       setIsLoading(false);
@@ -530,11 +555,16 @@ export function useSession() {
   // Phase 2: Roleplay
   // =========================================================================
 
+  /** Advance out of the retrieval check to whatever this shape does next. */
+  function leaveRetrieval() {
+    const to = advanceToNext("retrieval");
+    if (to) runPhase(to);
+  }
+
   async function startRoleplay() {
     if (!concept) return;
     // The character is chosen server-side, where the ledger is, so selection
     // can avoid whoever the user has faced in recent sessions.
-    advancePhase("retrieval", "roleplay");
     setIsLoading(true);
 
     // Attempt with one automatic retry on failure
@@ -678,14 +708,20 @@ export function useSession() {
     } catch { setError("Failed to reset."); setIsLoading(false); }
   }
 
+  function endRoleplay() {
+    // A drill has no debrief — it goes straight to the mission.
+    const to = advanceToNext("roleplay");
+    if (to) runPhase(to);
+  }
+
   function handleSkip() {
     setCommandsUsed((p) => [...p, "/skip"]); haptic();
     trackClientEvent("command_used", { command: "/skip", day: dayNumber });
-    advancePhase("roleplay", "debrief"); fetchDebrief();
+    endRoleplay();
   }
 
   function handleDone() {
-    haptic(); advancePhase("roleplay", "debrief"); fetchDebrief();
+    haptic(); endRoleplay();
   }
 
   function handleRoleplayInput(value: string) {
@@ -765,8 +801,8 @@ export function useSession() {
   // =========================================================================
 
   function enterDeploy() {
-    advancePhase("debrief", "mission");
-    fetchMission();
+    const to = advanceToNext("debrief");
+    if (to) runPhase(to);
   }
 
   async function submitCheckin(outcomeType: "completed" | "tried" | "skipped", userOutcome?: string) {
@@ -790,8 +826,8 @@ export function useSession() {
       setIsLoading(false);
       setTimeout(() => {
         setCheckinResponse(null);
-        advancePhase("checkin", "lesson");
-        fetchLesson();
+        advancePhase("checkin", shape.phases[0]);
+        runPhase(shape.phases[0]);
       }, 5000);
     } catch {
       setError("Failed to submit. Try again.");
@@ -810,7 +846,7 @@ export function useSession() {
       const res = await fetchWithRetry(
         "/api/mission",
         { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome, context: dimensionSet ?? sessionContext, scenarioSummary }),
+          body: JSON.stringify({ concept, character, scores, behavioralWeaknessSummary, keyMoment, commandsUsed, checkinOutcome, context: dimensionSet ?? sessionContext, scenarioSummary, shapeId }),
           signal: AbortSignal.timeout(30000) },
         3, 2000, (a, max) => { if (a > 1) setError(`Generating mission\u2026 attempt ${a} of ${max}`); }
       );
@@ -885,14 +921,28 @@ export function useSession() {
     pregenerateTomorrowsLesson();
   }
 
+  /** Start the work for a phase. Does not transition — the shape does that. */
+  function runPhase(phase: SessionPhase) {
+    if (phase === "checkin") { setIsLoading(false); return; }
+    if (phase === "lesson") { fetchLesson(); return; }
+    if (phase === "retrieval") { startRetrieval(); return; }
+    // Opening a scene and replaying one are different calls: startRoleplay lets
+    // the server pick the character, startRoleplayFresh replays with the one we
+    // already have. Entering the phase for the first time must use the former —
+    // the latter returns early when `character` is still null.
+    if (phase === "roleplay") {
+      if (character) startRoleplayFresh();
+      else startRoleplay();
+      return;
+    }
+    if (phase === "debrief") { fetchDebrief(); return; }
+    if (phase === "mission") { fetchMission(); return; }
+  }
+
   function retry() {
     setError(null);
-    if (currentPhase === "checkin") { setIsLoading(false); }
-    else if (currentPhase === "lesson") fetchLesson();
-    else if (currentPhase === "retrieval") startRetrieval();
-    else if (currentPhase === "roleplay") startRoleplayFresh();
-    else if (currentPhase === "debrief") fetchDebrief();
-    else if (currentPhase === "mission" && concept && character && scores) fetchMission();
+    if (currentPhase === "mission" && !(concept && character && scores)) return;
+    runPhase(currentPhase);
   }
 
   // =========================================================================
@@ -1151,18 +1201,23 @@ export function useSession() {
         const s = JSON.parse(raw);
 
         // Validate session shape: version, timestamp, required fields
+        // The saved phase must belong to the saved shape. A fixed phase list
+        // would happily restore a "retrieval" phase into a drill, which has no
+        // retrieval step, and the session would wedge with no way forward.
+        const restoredShape = shapeById(typeof s?.shapeId === "string" ? s.shapeId : DEFAULT_SHAPE_ID);
         const isValid =
           s &&
           typeof s === "object" &&
           s._v === SESSION_VERSION &&
           typeof s.timestamp === "number" &&
           typeof s.phase === "string" &&
-          ["lesson", "retrieval", "roleplay", "debrief", "mission"].includes(s.phase);
+          shapeIncludes(restoredShape, s.phase as SessionPhase);
 
         if (!isValid) {
           // Corrupt or outdated session — discard silently
           localStorage.removeItem(SESSION_STORAGE_KEY);
         } else if (Date.now() - s.timestamp < SESSION_MAX_AGE_MS) {
+          setShapeId(restoredShape.id);
           setCurrentPhase(s.phase); setConcept(s.concept ?? null); setCharacter(s.character ?? null);
           if (s.sessionContext && (LIFE_CONTEXTS as string[]).includes(s.sessionContext)) {
             setSessionContext(s.sessionContext as LifeContext);
@@ -1186,7 +1241,7 @@ export function useSession() {
           if (s.isReviewSession) setIsReviewSession(s.isReviewSession);
           if (s.previousScores) setPreviousScores(normaliseScores(s.previousScores));
           setIsLoading(false); setRestored(true);
-          trackClientEvent("session_resumed", { phase: s.phase, day: s.dayNumber || 1 });
+          trackClientEvent("session_resumed", { phase: s.phase, day: s.dayNumber || 1, shape: restoredShape.id });
           return;
         } else { localStorage.removeItem(SESSION_STORAGE_KEY); }
       }
@@ -1199,13 +1254,24 @@ export function useSession() {
       fetchWithRequestId("/api/status", { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
       fetchWithRequestId("/api/profile", { signal: AbortSignal.timeout(10000) }).then((r) => r.ok ? r.json() : null).catch(() => null),
     ]).then(([statusData, profileData]) => {
+        // Today's shape. Day 1 is always the full loop; after that this varies
+        // deliberately, avoiding the shapes of recent sessions.
+        const todaysShape = selectShape({
+          dayNumber: statusData?.dayNumber ?? 1,
+          recentShapeIds: Array.isArray(statusData?.recentShapeIds) ? statusData.recentShapeIds : [],
+          hasDueReview: (statusData?.srSummary?.dueForReview ?? 0) > 0,
+        });
+        setShapeId(todaysShape.id);
+
         if (statusData) {
           setDayNumber(statusData.dayNumber);
           if (statusData.lastEntry) {
             setLastMission(statusData.lastEntry.mission);
             setCheckinNeeded(true);
             if (statusData.lastEntry.scores) {
-              setPreviousScores(normaliseScores(statusData.lastEntry.scores));
+              setPreviousScores(
+                normaliseScores(statusData.lastEntry.scores, statusData.lastEntry.dimension_set)
+              );
             }
           }
         }
@@ -1217,12 +1283,14 @@ export function useSession() {
           return;
         }
 
-        // Start at checkin phase if Day 2+ (has previous mission), otherwise go straight to lesson
+        // Check-in is a prelude to every shape, and only runs when the last
+        // session left a mission outstanding.
         if (statusData?.lastEntry) {
           setCurrentPhase("checkin");
           setIsLoading(false);
         } else {
-          fetchLesson();
+          setCurrentPhase(todaysShape.phases[0]);
+          runPhase(todaysShape.phases[0]);
         }
       })
       .catch(() => { fetchLesson(); });
@@ -1267,6 +1335,7 @@ export function useSession() {
     dismissCoach: () => { setCoachAdvice(null); setCoachLoading(false); },
     turnCount,
     dimensionSet,
+    shape,
     debriefContent,
     scores,
     previousScores,
@@ -1331,9 +1400,9 @@ export function useSession() {
 
     // Actions
     saveSession,
-    startRetrieval,
+    leaveLesson,
     submitRetrievalResponse,
-    startRoleplay,
+    leaveRetrieval,
     sendRoleplayMessage,
     handleRoleplayInput,
     handleCoach,

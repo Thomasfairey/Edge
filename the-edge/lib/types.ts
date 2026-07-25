@@ -38,6 +38,7 @@ export interface LedgerEntry {
   character_id?: string | null; // stable id; `character` holds the display name
   context?: LifeContext | null; // which life context the session ran in
   scenario_summary?: string | null; // one line, fed back in to avoid repeats
+  shape_id?: string | null; // which session shape ran
 }
 
 // ---------------------------------------------------------------------------

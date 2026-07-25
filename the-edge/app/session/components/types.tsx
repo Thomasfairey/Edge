@@ -13,13 +13,32 @@ export type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message 
 // Constants shared across components
 // ---------------------------------------------------------------------------
 
-export const PHASES: { key: SessionPhase; label: string; color: string }[] = [
-  { key: "checkin", label: "Gate", color: "#B8E0C8" },
-  { key: "lesson", label: "Learn", color: "#B8D4E3" },
-  { key: "roleplay", label: "Sim", color: "#F2C4C4" },
-  { key: "debrief", label: "Brief", color: "#C5B8E8" },
-  { key: "mission", label: "Deploy", color: "#B8E0C8" },
-];
+const PHASE_META: Record<SessionPhase, { label: string; color: string }> = {
+  checkin: { label: "Gate", color: "#B8E0C8" },
+  lesson: { label: "Learn", color: "#B8D4E3" },
+  // Retrieval is a beat within Learn and has never had its own pip.
+  retrieval: { label: "Learn", color: "#B8D4E3" },
+  roleplay: { label: "Sim", color: "#F2C4C4" },
+  debrief: { label: "Brief", color: "#C5B8E8" },
+  mission: { label: "Deploy", color: "#B8E0C8" },
+};
+
+/**
+ * The pips to show for a session, derived from its shape — a drill shows two,
+ * the full loop shows four. Retrieval is folded into Learn, and check-in only
+ * appears when the session actually has one.
+ */
+export function phasesForShape(
+  shapePhases: SessionPhase[],
+  checkinNeeded: boolean
+): { key: SessionPhase; label: string; color: string }[] {
+  const keys: SessionPhase[] = checkinNeeded ? ["checkin"] : [];
+  for (const phase of shapePhases) {
+    if (phase === "retrieval") continue; // shown as part of Learn
+    keys.push(phase);
+  }
+  return keys.map((key) => ({ key, ...PHASE_META[key] }));
+}
 
 export const PHASE_BG: Record<string, string> = {
   checkin: "#F0FAF4",

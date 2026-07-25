@@ -32,6 +32,9 @@ interface RoleplayPhaseProps {
   roleplayTranscript: Message[];
   scenarioContext: string | null;
   turnCount: number;
+  /** Turns before the scene may end, and the point it should wrap up. */
+  minTurns: number;
+  maxTurns: number;
   isLoading: boolean;
   isStreaming: boolean;
   streamingText: string;
@@ -50,6 +53,8 @@ export default function RoleplayPhase({
   roleplayTranscript,
   scenarioContext,
   turnCount,
+  minTurns,
+  maxTurns,
   isLoading,
   isStreaming,
   streamingText,
@@ -100,7 +105,7 @@ export default function RoleplayPhase({
             <span className="text-caption font-medium" style={{ color: "var(--text-secondary)" }}>{character?.name ?? "Character"}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            {Array.from({ length: 8 }, (_, i) => (
+            {Array.from({ length: Math.max(4, Math.ceil(maxTurns / 2)) }, (_, i) => (
               <div
                 key={i}
                 className="rounded-full transition-all"
@@ -205,7 +210,7 @@ export default function RoleplayPhase({
         <div ref={chatEndRef} />
       </div>
 
-      {Math.ceil(turnCount / 2) >= 8 && (
+      {Math.ceil(turnCount / 2) >= minTurns && (
         <div className="mb-2 text-center text-caption" style={{ backgroundColor: "rgba(255,255,255,0.7)", borderRadius: "var(--radius-md)", padding: "10px 16px", color: "var(--text-secondary)" }}>
           You can continue or tap &#10003; when ready
         </div>

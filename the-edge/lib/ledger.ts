@@ -37,6 +37,7 @@ interface LedgerRow {
   character_id: string | null;
   context: string | null;
   scenario_summary: string | null;
+  shape_id: string | null;
   user_id?: string;
 }
 
@@ -59,6 +60,7 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
     character_id: row.character_id ?? null,
     context: (row.context as LedgerEntry["context"]) ?? null,
     scenario_summary: row.scenario_summary ?? null,
+    shape_id: row.shape_id ?? null,
   };
 }
 
@@ -81,6 +83,7 @@ function entryToRow(entry: LedgerEntry, userId?: string | null): Omit<LedgerRow,
     character_id: entry.character_id ?? null,
     context: entry.context ?? null,
     scenario_summary: entry.scenario_summary ?? null,
+    shape_id: entry.shape_id ?? null,
   };
   if (userId) row.user_id = userId;
   return row;

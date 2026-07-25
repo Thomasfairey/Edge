@@ -1,16 +1,18 @@
 "use client";
 
-import { PHASES } from "./types";
+import { phasesForShape } from "./types";
 import type { SessionPhase } from "./types";
 
 interface PhaseIndicatorProps {
   current: SessionPhase;
   completed: Set<SessionPhase>;
   checkinNeeded?: boolean;
+  /** The phases of today's session shape, in order. */
+  shapePhases: SessionPhase[];
 }
 
-export default function PhaseIndicator({ current, completed, checkinNeeded }: PhaseIndicatorProps) {
-  const visiblePhases = checkinNeeded ? PHASES : PHASES.filter(p => p.key !== "checkin");
+export default function PhaseIndicator({ current, completed, checkinNeeded, shapePhases }: PhaseIndicatorProps) {
+  const visiblePhases = phasesForShape(shapePhases, Boolean(checkinNeeded));
   return (
     <nav aria-label="Session progress" className="flex-shrink-0 z-50 pt-safe" style={{ backgroundColor: "var(--background)" }}>
       <div className="flex items-center justify-center gap-1.5 sm:gap-3 pt-3 pb-3 px-3" role="list" style={{ borderBottom: "1px solid var(--border-subtle)" }}>

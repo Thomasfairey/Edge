@@ -133,6 +133,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
       character_id: character.id ?? null,
       context: sessionContext ?? null,
       scenario_summary: scenarioSummary ?? null,
+      shape_id: typeof body.shapeId === "string" ? body.shapeId : null,
     };
 
     // Write to Supabase

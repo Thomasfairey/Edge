@@ -65,6 +65,14 @@ async function handleGet(_req: NextRequest, userId: string | null) {
 
     const streakCount = calculateStreak(entries);
 
+    // Shape ids of recent sessions, most recent first — history-aware shape
+    // selection uses these to avoid running the same shape two days running.
+    const recentShapeIds = entries
+      .slice(-5)
+      .reverse()
+      .map((e) => e.shape_id)
+      .filter((id): id is string => Boolean(id));
+
     // All scores for trend dashboard + session history
     const allScores = entries.map((e) => ({
       day: e.day,
@@ -84,6 +92,7 @@ async function handleGet(_req: NextRequest, userId: string | null) {
       recentScores,
       streakCount,
       srSummary,
+      recentShapeIds,
       allScores,
     });
   } catch (error) {
