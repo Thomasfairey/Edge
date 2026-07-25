@@ -1,6 +1,13 @@
 /**
  * Concept taxonomy and selection logic.
- * 35+ concepts across 7 domains from the influence canon.
+ * 76 concepts across 15 domains, spanning the relational canon (Van Edwards,
+ * Gottman, Rogers, Aron, Brown, Cain, Hall, Dicks) and the influence canon
+ * (Cialdini, Greene, Voss, Kahneman, Carnegie, Hughes).
+ *
+ * A concept's `domain` says what it is; its `contexts` say where it is
+ * practised. Most concepts inherit contexts from their domain — declare them
+ * explicitly only when a concept is broader or narrower than its domain.
+ *
  * The LLM generates full lesson content at runtime; these definitions
  * provide the seed data and prompt injection context.
  * Reference: PRD Section 3.3, Appendix A
@@ -18,7 +25,7 @@ import {
 import { getDueReviews } from "@/lib/spaced-repetition";
 
 // ---------------------------------------------------------------------------
-// Master concept library — 5 per domain, 35 total
+// Master concept library
 // ---------------------------------------------------------------------------
 
 export const CONCEPTS: Concept[] = [
@@ -114,6 +121,7 @@ export const CONCEPTS: Concept[] = [
     source: "Voss",
     description:
       "Demonstrating understanding of the other side's perspective — without agreeing with it — creates psychological safety that opens them to influence.",
+    contexts: ["family", "friends", "dating", "work"],
   },
   {
     id: "mirroring",
@@ -122,6 +130,7 @@ export const CONCEPTS: Concept[] = [
     source: "Voss",
     description:
       "Repeating the last 1–3 words of what someone said triggers unconscious elaboration and builds rapport. It makes the other person feel heard and encourages them to reveal more.",
+    contexts: ["family", "friends", "dating", "work"],
   },
   {
     id: "labelling",
@@ -130,6 +139,7 @@ export const CONCEPTS: Concept[] = [
     source: "Voss",
     description:
       "Naming the other person's emotion ('It seems like you're frustrated by...') defuses negative feelings and creates a sense of being deeply understood.",
+    contexts: ["family", "friends", "dating", "work"],
   },
   {
     id: "calibrated-questions",
@@ -444,6 +454,224 @@ export const CONCEPTS: Concept[] = [
     source: "Van Edwards",
     description:
       "Charismatic people aren't improvising from nothing — they keep a small bank of go-to stories and a memorable self-introduction that goes beyond a job title, so they're never caught with a flat 'I'm fine, you?'.",
+  },
+
+  // ── Empathy & Attunement (Rogers, Nichols, Gottman) ────────────────────
+  {
+    id: "listening-to-understand",
+    name: "Listening to Understand",
+    domain: "Empathy & Attunement",
+    source: "Nichols",
+    description:
+      "Most people listen while composing their reply. Real listening means holding your own response in abeyance until you could argue the other person's position better than they just did. The other person can feel the difference immediately.",
+  },
+  {
+    id: "reflecting-back",
+    name: "Reflecting Back",
+    domain: "Empathy & Attunement",
+    source: "Rogers",
+    description:
+      "Saying back the substance of what someone said, in your own words, before you respond to it. It proves you heard them, and it lets them correct you cheaply if you didn't.",
+  },
+  {
+    id: "bids-for-connection",
+    name: "Turning Toward Bids",
+    domain: "Empathy & Attunement",
+    source: "Gottman",
+    description:
+      "People constantly make small bids for attention — a comment, a sigh, a photo held up. Gottman found that turning toward these micro-bids, rather than away, predicts whether relationships survive. The bid is rarely about its literal content.",
+  },
+  {
+    id: "validation-before-solution",
+    name: "Validation Before Solution",
+    domain: "Empathy & Attunement",
+    source: "Rogers",
+    description:
+      "Jumping to advice tells someone their feeling was a problem to be removed. Naming the feeling first — and stopping there — is what actually lets them move. Most people need to be understood before they can think.",
+  },
+  {
+    id: "reading-emotional-state",
+    name: "Reading the Emotional Weather",
+    domain: "Empathy & Attunement",
+    source: "Gottman",
+    description:
+      "Before you decide what to say, read what state the other person is actually in — flooded, guarded, buoyant, exhausted. The same sentence lands completely differently depending on the weather you say it into.",
+  },
+
+  // ── Vulnerability & Intimacy (Aron, Brown) ─────────────────────────────
+  {
+    id: "disclosure-reciprocity",
+    name: "Disclosure Reciprocity",
+    domain: "Vulnerability & Intimacy",
+    source: "Aron",
+    description:
+      "Closeness is built by escalating, matched self-disclosure. One person goes slightly deeper, the other matches, and it ratchets. Going far deeper than the other person is ready for breaks the ratchet rather than speeding it up.",
+  },
+  {
+    id: "escalating-questions",
+    name: "The Escalating Question",
+    domain: "Vulnerability & Intimacy",
+    source: "Aron",
+    description:
+      "Aron generated laboratory closeness between strangers using questions that deepened in sequence. The mechanism is the gradient, not the intensity: each question earns the right to the next one.",
+  },
+  {
+    id: "strategic-imperfection",
+    name: "Strategic Imperfection",
+    domain: "Vulnerability & Intimacy",
+    source: "Brown",
+    description:
+      "Admitting something you're genuinely unsure of, or bad at, gives the other person permission to be a real person too. Flawlessness is not attractive — it's unreachable, and unreachable is lonely.",
+  },
+  {
+    id: "sitting-with-discomfort",
+    name: "Sitting With Discomfort",
+    domain: "Vulnerability & Intimacy",
+    source: "Brown",
+    description:
+      "When someone says something hard, the instinct is to fill the silence, joke, or reassure. Staying in the discomfort with them — without rescuing yourself out of it — is what signals you can be trusted with real things.",
+  },
+  {
+    id: "naming-the-unsaid",
+    name: "Naming the Unsaid",
+    domain: "Vulnerability & Intimacy",
+    source: "Brown",
+    description:
+      "Saying the thing everyone is carefully not saying — 'I think we're both being very polite about something' — collapses the distance instantly. It's high-risk and high-reward, and it must be done without accusation.",
+  },
+
+  // ── Conflict & Repair (Gottman, Ury, Voss) ─────────────────────────────
+  {
+    id: "softened-startup",
+    name: "The Softened Start-Up",
+    domain: "Conflict & Repair",
+    source: "Gottman",
+    description:
+      "Gottman could predict the outcome of an argument from its first three minutes. Opening with a complaint about a specific behaviour ('I felt dismissed when...') rather than a verdict on character ('you always...') changes where the whole conversation can go.",
+  },
+  {
+    id: "repair-attempts",
+    name: "Repair Attempts",
+    domain: "Conflict & Repair",
+    source: "Gottman",
+    description:
+      "Small moves mid-argument that de-escalate — a joke, an admission, 'wait, let me start again'. What separates stable relationships isn't fewer conflicts, it's whether repair attempts get made and, crucially, whether they get accepted.",
+  },
+  {
+    id: "real-apology",
+    name: "The Real Apology",
+    domain: "Conflict & Repair",
+    source: "Gottman",
+    description:
+      "A real apology names the specific thing you did, acknowledges its effect without justifying your intent, and stops. 'I'm sorry you felt that way' and 'I'm sorry but' are both defences wearing an apology's clothes.",
+  },
+  {
+    id: "boundary-without-attack",
+    name: "The Warm Boundary",
+    domain: "Conflict & Repair",
+    source: "Ury",
+    description:
+      "A boundary states what you will do, not what the other person must stop doing. 'I'm not going to discuss my job at dinner' is enforceable by you alone — which is precisely why it holds without needing their agreement.",
+  },
+  {
+    id: "flooding-and-timeout",
+    name: "Recognising Flooding",
+    domain: "Conflict & Repair",
+    source: "Gottman",
+    description:
+      "Past a physiological threshold, people stop processing what they hear — nothing said after that point lands. Recognising flooding, in yourself or the other person, and pausing deliberately is not avoidance; continuing is.",
+  },
+  {
+    id: "going-to-the-balcony",
+    name: "Going to the Balcony",
+    domain: "Conflict & Repair",
+    source: "Ury",
+    description:
+      "Ury's move for a conversation heading somewhere bad: mentally step off the stage and watch it from above before you respond. The pause between provocation and reaction is the entire space in which you have any choice at all.",
+  },
+
+  // ── Flirtation & Signalling (Hall, Van Edwards) ────────────────────────
+  {
+    id: "reading-interest",
+    name: "Reading Interest Honestly",
+    domain: "Flirtation & Signalling",
+    source: "Hall",
+    description:
+      "Interest shows in clusters — sustained attention, leaning in, asking follow-ups, keeping the conversation alive past its natural end. One signal means nothing. The honest skill is reading the absence of a cluster and accepting it gracefully.",
+  },
+  {
+    id: "playful-teasing",
+    name: "Playful Teasing",
+    domain: "Flirtation & Signalling",
+    source: "Hall",
+    description:
+      "Light teasing works because it signals you're not intimidated and creates a shared private register. It fails the moment it targets something the person is actually insecure about — then it's just a small cruelty with a smile on it.",
+  },
+  {
+    id: "calibrated-escalation",
+    name: "Calibrated Escalation",
+    domain: "Flirtation & Signalling",
+    source: "Hall",
+    description:
+      "Moving from friendly to flirtatious in increments, each one small enough to retreat from without embarrassment for either person. The size of the step matters more than the direction.",
+  },
+  {
+    id: "expressed-attraction",
+    name: "Saying It Plainly",
+    domain: "Flirtation & Signalling",
+    source: "Van Edwards",
+    description:
+      "After enough signalling, indirectness stops being intriguing and starts being ambiguous. Stating interest directly and without pressure — 'I've really enjoyed this, I'd like to see you again' — is rarer, and lands harder, than another layer of subtext.",
+  },
+  {
+    id: "graceful-rejection",
+    name: "Taking a No Well",
+    domain: "Flirtation & Signalling",
+    source: "Hall",
+    description:
+      "How you handle disinterest is itself a signal, and the one people remember. Accepting a no warmly and without a sulk or a second attempt is both the decent thing and, incidentally, the only thing that ever leaves a door open.",
+  },
+
+  // ── Group Dynamics & Inclusion (Van Edwards, Cain) ─────────────────────
+  {
+    id: "joining-a-group",
+    name: "Joining a Conversation",
+    domain: "Group Dynamics & Inclusion",
+    source: "Van Edwards",
+    description:
+      "Standing at the edge waiting to be invited rarely works. Approach at a natural break, listen for a full beat before speaking, and contribute to the topic already running rather than resetting it to yourself.",
+  },
+  {
+    id: "bringing-others-in",
+    name: "Bringing Others In",
+    domain: "Group Dynamics & Inclusion",
+    source: "Cain",
+    description:
+      "Noticing who has gone quiet and handing them a specific, easy opening — 'Priya, you actually did this, didn't you?' — is the highest-status move in any group. It costs you the floor and buys you far more.",
+  },
+  {
+    id: "reading-the-room",
+    name: "Reading the Room's Energy",
+    domain: "Group Dynamics & Inclusion",
+    source: "Van Edwards",
+    description:
+      "Groups have a shared tempo and mood. Matching it before trying to change it is the difference between leading a room and being the person who misjudged it — the loud arrival into a quiet, tired group never recovers.",
+  },
+  {
+    id: "holding-the-floor-briefly",
+    name: "Holding the Floor Briefly",
+    domain: "Group Dynamics & Inclusion",
+    source: "Van Edwards",
+    description:
+      "In a group, attention is lent, not given. Taking it, doing something worthwhile with it, and handing it back before it's taken from you is what makes people want to give it to you again.",
+  },
+  {
+    id: "hosting-instinct",
+    name: "The Hosting Instinct",
+    domain: "Group Dynamics & Inclusion",
+    source: "Cain",
+    description:
+      "Behaving like a host rather than a guest — making introductions, connecting two people by naming what they share, checking who's stranded — reframes you from someone seeking acceptance to someone conferring it.",
   },
 ];
 

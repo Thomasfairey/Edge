@@ -46,8 +46,17 @@ import {
   normaliseContexts,
   type SessionScores,
   type Message,
+  DISPOSITIONS,
   type LifeContext,
 } from "../types";
+import { CONCEPTS } from "../concepts";
+import {
+  CHARACTERS,
+  characterContexts,
+  characterDisposition,
+  charactersForContext,
+  selectCharacter,
+} from "../characters";
 
 // ---------------------------------------------------------------------------
 // Non-exported functions copied from app/api/debrief/route.ts for testing
@@ -1269,5 +1278,173 @@ describe("stripStageDirections (roleplay voice)", () => {
 
   it("leaves ordinary dialogue untouched", () => {
     assert.equal(stripStageDirections("Yeah, whatever. You?"), "Yeah, whatever. You?");
+  });
+});
+
+// ===========================================================================
+// 7. Content library integrity and coverage
+//
+// The library is data, and data rots quietly: a duplicate id, a context with no
+// characters in it, a domain nothing maps to. These are the checks that fail
+// loudly when someone adds content by copy-paste.
+// ===========================================================================
+
+describe("Content library", () => {
+  describe("concepts", () => {
+    it("has unique ids", () => {
+      const ids = CONCEPTS.map((c) => c.id);
+      assert.equal(new Set(ids).size, ids.length, "duplicate concept id");
+    });
+
+    it("has a name, source and description on every concept", () => {
+      for (const c of CONCEPTS) {
+        assert.ok(c.name?.length > 0, `${c.id} has no name`);
+        assert.ok(c.source?.length > 0, `${c.id} has no source`);
+        assert.ok(c.description?.length > 40, `${c.id} has a thin description`);
+      }
+    });
+
+    it("resolves every concept to at least one valid context", () => {
+      for (const c of CONCEPTS) {
+        const ctx = contextsForConcept(c);
+        assert.ok(ctx.length > 0, `${c.id} resolves to no contexts`);
+        for (const one of ctx) {
+          assert.ok(LIFE_CONTEXTS.includes(one), `${c.id} declares unknown context ${one}`);
+        }
+      }
+    });
+
+    it("gives every life context something to teach", () => {
+      for (const context of LIFE_CONTEXTS) {
+        const available = CONCEPTS.filter((c) => contextsForConcept(c).includes(context));
+        assert.ok(available.length >= 10, `${context} has only ${available.length} concepts`);
+      }
+    });
+
+    it("is no longer majority-work — social life is the bulk of the curriculum", () => {
+      const social = CONCEPTS.filter((c) =>
+        contextsForConcept(c).some((ctx) => ctx !== "work")
+      );
+      assert.ok(
+        social.length > CONCEPTS.length / 2,
+        `only ${social.length}/${CONCEPTS.length} concepts are practisable outside work`
+      );
+    });
+
+    it("covers the four social contexts deeply enough not to loop in a fortnight", () => {
+      // 15 social concepts was the old ceiling and the reason it felt repetitive.
+      for (const context of SOCIAL_CONTEXTS) {
+        const available = CONCEPTS.filter((c) => contextsForConcept(c).includes(context));
+        assert.ok(available.length > 15, `${context} has only ${available.length} concepts`);
+      }
+    });
+  });
+
+  describe("characters", () => {
+    it("has unique ids", () => {
+      const ids = CHARACTERS.map((c) => c.id);
+      assert.equal(new Set(ids).size, ids.length, "duplicate character id");
+    });
+
+    it("gives every character a usable brief for the roleplay prompt", () => {
+      for (const c of CHARACTERS) {
+        assert.ok(c.personality?.length > 200, `${c.id} has a thin personality brief`);
+        assert.ok(c.communication_style?.length > 0, `${c.id} has no communication style`);
+        assert.ok(c.hidden_motivation?.length > 0, `${c.id} has no hidden motivation`);
+        assert.ok(c.pressure_points?.length >= 3, `${c.id} has too few pressure points`);
+        assert.ok(c.tactics?.length >= 3, `${c.id} has too few tactics`);
+      }
+    });
+
+    it("declares a valid disposition and valid contexts", () => {
+      for (const c of CHARACTERS) {
+        assert.ok(
+          DISPOSITIONS.includes(characterDisposition(c)),
+          `${c.id} has unknown disposition`
+        );
+        for (const one of characterContexts(c)) {
+          assert.ok(LIFE_CONTEXTS.includes(one), `${c.id} declares unknown context ${one}`);
+        }
+      }
+    });
+
+    it("populates every life context with enough cast to avoid repeats", () => {
+      for (const context of LIFE_CONTEXTS) {
+        const cast = charactersForContext(context);
+        assert.ok(cast.length >= 5, `${context} has only ${cast.length} characters`);
+      }
+    });
+
+    it("is not uniformly hostile — every social context has a warm character", () => {
+      // Connecting with someone warm is a different skill from winning against
+      // someone hostile, and the old cast could only train the second.
+      for (const context of SOCIAL_CONTEXTS) {
+        const warm = charactersForContext(context).filter(
+          (c) => characterDisposition(c) === "warm"
+        );
+        assert.ok(warm.length > 0, `${context} has no warm characters`);
+      }
+    });
+
+    it("still offers resistance in every social context", () => {
+      for (const context of SOCIAL_CONTEXTS) {
+        const hard = charactersForContext(context).filter(
+          (c) => characterDisposition(c) !== "warm"
+        );
+        assert.ok(hard.length > 0, `${context} has no resistant or neutral characters`);
+      }
+    });
+  });
+
+  describe("selectCharacter", () => {
+    const conceptIn = (context: LifeContext) =>
+      CONCEPTS.find((c) => contextsForConcept(c).includes(context))!;
+
+    it("only ever returns a character that belongs in the session's context", () => {
+      for (const context of LIFE_CONTEXTS) {
+        for (let i = 0; i < 40; i++) {
+          const chosen = selectCharacter(conceptIn(context), context);
+          assert.ok(
+            characterContexts(chosen).includes(context),
+            `${chosen.id} is not a ${context} character`
+          );
+        }
+      }
+    });
+
+    it("avoids recently used characters", () => {
+      const cast = charactersForContext("groups");
+      const avoid = cast.slice(0, cast.length - 1).map((c) => c.id);
+      const chosen = selectCharacter(conceptIn("groups"), "groups", { avoidIds: avoid });
+      assert.equal(chosen.id, cast[cast.length - 1].id);
+    });
+
+    it("relaxes the avoid list rather than failing when it would empty the pool", () => {
+      const all = CHARACTERS.map((c) => c.id);
+      const chosen = selectCharacter(conceptIn("family"), "family", { avoidIds: all });
+      assert.ok(chosen, "returned nothing when everything was excluded");
+      assert.ok(characterContexts(chosen).includes("family"));
+    });
+
+    it("honours a preferred disposition when the context offers one", () => {
+      for (let i = 0; i < 25; i++) {
+        const chosen = selectCharacter(conceptIn("dating"), "dating", {
+          preferDisposition: "warm",
+        });
+        assert.equal(characterDisposition(chosen), "warm");
+      }
+    });
+
+    it("falls back to any disposition rather than failing when none matches", () => {
+      // No warm characters exist for work; selection must still return someone.
+      const chosen = selectCharacter(conceptIn("work"), "work", { preferDisposition: "warm" });
+      assert.ok(chosen);
+      assert.ok(characterContexts(chosen).includes("work"));
+    });
+
+    it("derives the context from the concept when none is passed", () => {
+      const chosen = selectCharacter(conceptIn("work"));
+      assert.ok(chosen, "returned nothing without an explicit context");
+    });
   });
 });

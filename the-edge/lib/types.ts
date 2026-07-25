@@ -54,6 +54,11 @@ export type ConceptDomain =
   | "Storytelling & Narrative"
   | "Conversation & Memorability"
   | "Rapport & Relationship Engineering"
+  | "Empathy & Attunement"
+  | "Vulnerability & Intimacy"
+  | "Conflict & Repair"
+  | "Flirtation & Signalling"
+  | "Group Dynamics & Inclusion"
   // ── Persuasion & pressure ──
   | "Influence & Persuasion"
   | "Power Dynamics"
@@ -110,6 +115,11 @@ export const DOMAIN_DEFAULT_CONTEXTS: Record<ConceptDomain, LifeContext[]> = {
   "Storytelling & Narrative": ["groups", "friends", "dating", "work"],
   "Conversation & Memorability": ["groups", "friends", "dating", "work"],
   "Rapport & Relationship Engineering": ["friends", "dating", "groups", "family", "work"],
+  "Empathy & Attunement": ["friends", "family", "dating", "groups", "work"],
+  "Vulnerability & Intimacy": ["dating", "friends", "family"],
+  "Conflict & Repair": ["family", "friends", "dating", "work"],
+  "Flirtation & Signalling": ["dating"],
+  "Group Dynamics & Inclusion": ["groups", "friends", "work"],
   "Influence & Persuasion": ["work"],
   "Power Dynamics": ["work"],
   "Negotiation": ["work", "family"],
@@ -205,11 +215,21 @@ export interface Concept {
 // Character archetypes (PRD Section 3.4)
 // ---------------------------------------------------------------------------
 
+/**
+ * How the character meets you. Not a difficulty rating — a warm character can
+ * be harder than a hostile one, because connecting is a different skill from
+ * winning, and only training against resistance teaches the second.
+ */
+export type Disposition = "resistant" | "neutral" | "warm";
+
+export const DISPOSITIONS: Disposition[] = ["resistant", "neutral", "warm"];
+
 export interface CharacterArchetype {
   id: string;
   name: string;
   description: string; // 1 sentence
   contexts?: LifeContext[]; // settings this character belongs in
+  disposition?: Disposition; // defaults to "resistant" for legacy content
   personality: string; // detailed personality brief for system prompt
   communication_style: string; // how they talk
   hidden_motivation: string; // what they secretly want

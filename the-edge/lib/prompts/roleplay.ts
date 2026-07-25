@@ -1,4 +1,4 @@
-import { Concept, CharacterArchetype } from '../types';
+import { Concept, CharacterArchetype, LifeContext, primaryContextForConcept } from '../types';
 
 export function buildRoleplayPrompt(
   concept: Concept,
@@ -41,7 +41,8 @@ CRITICAL RULES:
 
 export function buildScenarioContext(
   concept: Concept,
-  character: CharacterArchetype
+  character: CharacterArchetype,
+  context?: LifeContext
 ): string {
   const scenarios: Record<string, Record<string, string>> = {
     'sceptical-investor': {
@@ -85,16 +86,28 @@ export function buildScenarioContext(
     },
   };
 
-  const socialTracks = new Set(['Charisma & Presence', 'Storytelling & Narrative', 'Conversation & Memorability']);
-  const isSocial = socialTracks.has(concept.domain);
+  const resolved = context ?? primaryContextForConcept(concept);
 
-  const characterScenarios = scenarios[character.id] || scenarios[isSocial ? 'distracted-guest' : 'sceptical-investor'];
-  const domainScenario = characterScenarios[concept.domain];
-  const defaultScenario = characterScenarios['default'];
+  const characterScenarios = scenarios[character.id];
+  if (characterScenarios) {
+    const domainScenario = characterScenarios[concept.domain];
+    const defaultScenario = characterScenarios['default'];
+    if (domainScenario || defaultScenario) return domainScenario || defaultScenario;
+  }
 
-  const ultimateFallback = isSocial
-    ? "You're at a social gathering and have struck up a conversation with the user, whom you've only just met. You have your own mood and energy, and your attention has to be earned."
-    : "You are meeting with someone to discuss a business matter relevant to your role. You have your own agenda and are not easily persuaded.";
-
-  return domainScenario || defaultScenario || ultimateFallback;
+  // Most of the cast has no hand-written scenario. Rather than dropping them
+  // into a single generic line, compose one from the character's own brief and
+  // the context the session is running in. Generated scenarios replace this
+  // path entirely; it remains as the deterministic fallback for when that call
+  // is unavailable.
+  return `${CONTEXT_SETTINGS[resolved]}\n\nYou are ${character.name}: ${character.description}\n\nBring your own agenda and mood into it. Your attention, warmth, and openness have to be earned — do not hand them over because the user is present and pleasant.`;
 }
+
+/** Where a session in each context physically takes place. */
+const CONTEXT_SETTINGS: Record<LifeContext, string> = {
+  dating: "You are on a date with the user. It is early enough that neither of you is certain about the other, and both of you are still deciding.",
+  friends: "You are with the user, a friend, somewhere you can actually talk — a pub, a walk, one of your kitchens.",
+  groups: "You are at a social gathering with the user — a party, a dinner, a room with more people in it than conversations.",
+  family: "You are with the user, a member of your family, in the sort of setting where this comes up — a kitchen, a car, the end of a long visit.",
+  work: "You are meeting the user in a professional setting to discuss a matter relevant to your role.",
+};
