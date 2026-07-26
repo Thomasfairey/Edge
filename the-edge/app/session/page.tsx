@@ -474,6 +474,35 @@ export default function SessionPage() {
                   onDone={() => s.router.push("/")}
                 />
               )}
+
+              {/*
+                A mission phase with no mission and nothing loading used to
+                render literally nothing — the pip row and an empty page, with
+                no error, no spinner and no retry. A user lost ten minutes of
+                conversation with no way to recover it and nothing to report.
+                The structural cause is fixed, but a silent blank is a bad
+                enough failure that it should be impossible for any reason.
+              */}
+              {!s.mission && !s.isLoading && (
+                <div className="card text-center" style={{ padding: "28px 24px" }}>
+                  <p className="text-lead font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Couldn&rsquo;t finish the session
+                  </p>
+                  <p className="mt-2 text-body leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                    Your conversation is safe. This is the last step &mdash; try it again.
+                  </p>
+                  <button onClick={() => s.retry()} className="btn-primary mt-5">
+                    Try again
+                  </button>
+                  <button
+                    onClick={() => s.router.push("/")}
+                    className="mt-3 text-caption underline"
+                    style={{ color: "var(--text-tertiary)", background: "none", border: "none" }}
+                  >
+                    Back to home
+                  </button>
+                </div>
+              )}
             </>
           )}
 

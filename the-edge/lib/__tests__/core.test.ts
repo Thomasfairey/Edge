@@ -1865,6 +1865,46 @@ describe("Session shapes", () => {
     }
   });
 
+  it("includes the debrief in every shape, because the mission needs its scores", () => {
+    // drill shipped as lesson -> roleplay -> mission. With no debrief there
+    // were no scores, /api/mission rejected the request, and the mission phase
+    // rendered a blank page — the user lost the whole session with no error.
+    for (const shape of SESSION_SHAPES) {
+      assert.ok(
+        shape.phases.includes("debrief"),
+        `${shape.id} has no debrief, so the mission has no scores to target`
+      );
+    }
+  });
+
+  it("ends every shape with the mission, because that is what records the session", () => {
+    // review and story shipped ending at the debrief. The ledger write happens
+    // in the mission phase, so those sessions would have completed and then
+    // silently not counted.
+    for (const shape of SESSION_SHAPES) {
+      assert.equal(
+        shape.phases[shape.phases.length - 1],
+        "mission",
+        `${shape.id} does not end with the mission, so it never writes a ledger row`
+      );
+    }
+  });
+
+  it("orders the phases so each one has what the next depends on", () => {
+    // The general form of both bugs above: a phase running before the phase
+    // whose output it consumes.
+    for (const shape of SESSION_SHAPES) {
+      const at = (p: string) => shape.phases.indexOf(p as never);
+      assert.ok(at("lesson") < at("roleplay"), `${shape.id}: roleplay before lesson`);
+      assert.ok(at("roleplay") < at("debrief"), `${shape.id}: debrief before roleplay`);
+      assert.ok(at("debrief") < at("mission"), `${shape.id}: mission before debrief`);
+      if (shape.phases.includes("retrieval")) {
+        assert.ok(at("lesson") < at("retrieval"), `${shape.id}: retrieval before lesson`);
+        assert.ok(at("retrieval") < at("roleplay"), `${shape.id}: roleplay before retrieval`);
+      }
+    }
+  });
+
   it("varies on what comes after the lesson, not on whether there is one", () => {
     // The shapes must still differ from each other, or there is no variety.
     const signatures = new Set(SESSION_SHAPES.map((s) => s.phases.join(">") + `:${s.minTurns}-${s.maxTurns}`));
@@ -1915,8 +1955,11 @@ describe("Session shapes", () => {
     });
 
     it("returns null at the end of the shape", () => {
-      assert.equal(nextPhase(shapeById("full"), "mission"), null);
-      assert.equal(nextPhase(shapeById("review"), "debrief"), null);
+      // Every shape now ends with the mission, so that is the terminal phase
+      // for all of them.
+      for (const shape of SESSION_SHAPES) {
+        assert.equal(nextPhase(shape, "mission"), null, `${shape.id} continues past the mission`);
+      }
     });
 
     it("returns null for a phase the shape does not contain", () => {
@@ -1924,8 +1967,10 @@ describe("Session shapes", () => {
       assert.equal(nextPhase(shapeById("drill"), "retrieval"), null);
     });
 
-    it("sends a drill from roleplay straight to the mission, skipping debrief", () => {
-      assert.equal(nextPhase(shapeById("drill"), "roleplay"), "mission");
+    it("sends a drill from roleplay to the debrief, not straight to the mission", () => {
+      // It used to skip the debrief, which left the mission with no scores.
+      assert.equal(nextPhase(shapeById("drill"), "roleplay"), "debrief");
+      assert.equal(nextPhase(shapeById("drill"), "debrief"), "mission");
     });
   });
 
