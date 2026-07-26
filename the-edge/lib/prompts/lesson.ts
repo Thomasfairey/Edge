@@ -62,7 +62,7 @@ YOUR TASK:
 Deliver a condensed review lesson in this EXACT two-part structure. Use these headers exactly as written.
 
 ## The Refresher
-120-150 words. Skip the basics — the user knows the theory. Instead, deliver the ADVANCED nuance they probably missed the first time. The subtle distinction, the edge case, the counter-intuitive application. Reference the original source author but go deeper than the textbook explanation.
+120-150 words. Skip the basics — the user knows the theory. Restate the underlying mechanism in one sentence so it is fresh before they practise, then deliver the ADVANCED nuance they probably missed the first time. The subtle distinction, the edge case, the counter-intuitive application. Reference the original source author but go deeper than the textbook explanation.
 
 ## The Advanced Play
 130-200 words. ${advancedPlayGuidance}
@@ -86,7 +86,14 @@ YOUR TASK:
 Deliver a micro-lesson on this concept following this EXACT three-part structure. Use these headers exactly as written.
 
 ## The Principle
-100-150 words. Explain what this concept is and WHY it works — the psychological or social mechanism, not just the tactic. Attribution to the source author is mandatory. ${audienceLine}
+120-180 words. This section is the point of the whole session — the reader is about to practise this in a conversation, and they need to understand the mechanism before they do, not just the move.
+
+Cover, in this order:
+1. What the technique actually is, in one sentence.
+2. WHY IT WORKS — the psychological or social mechanism underneath it. Name what is happening in the other person: what they are processing, what they cannot help responding to, what it costs them. This is mandatory and it is the part readers remember. "It builds rapport" is not a mechanism; "naming an emotion out loud engages the part of the brain that regulates it, so the feeling loses intensity the moment it is accurately labelled" is.
+3. The evidence, attributed to ${concept.source} — the study, the finding, the observed pattern, or the body of work it comes from. Be specific about what was actually found where that is known.
+
+${audienceLine}
 
 ## The Play
 150-200 words. A vivid, SPECIFIC real-world example of this technique deployed effectively. Requirements:

@@ -11,6 +11,16 @@
  * The session machinery derives its transitions from the shape rather than
  * from a hardcoded map, so adding a shape is a data change.
  *
+ * EVERY SHAPE STARTS WITH THE LESSON. You cannot practise a technique you have
+ * not been taught, and the psychology behind it is the point — the roleplay is
+ * where you find out whether you understood it, not where you meet it. Earlier
+ * versions of `drill` and `deep` opened straight into the conversation; that
+ * was the wrong axis to vary on.
+ *
+ * Variation comes from everything after the lesson instead: whether there is a
+ * recall check, whether there is a debrief, whether there is a mission, and how
+ * long the scene runs (2-6 turns for a drill, 8-20 for a deep scene).
+ *
  * Check-in is not part of any shape. It is a conditional prelude that runs when
  * the previous session left a mission outstanding, and it precedes whatever
  * shape the day has.
@@ -36,7 +46,7 @@ export const SESSION_SHAPES: SessionShape[] = [
   {
     id: "full",
     label: "Full session",
-    description: "Learn something, practise it, get it pulled apart, take it into the world.",
+    description: "Learn the idea, check you have it, practise it, get it pulled apart, take it into the world.",
     phases: ["lesson", "retrieval", "roleplay", "debrief", "mission"],
     minTurns: 4,
     maxTurns: 12,
@@ -44,23 +54,23 @@ export const SESSION_SHAPES: SessionShape[] = [
   {
     id: "drill",
     label: "Quick drill",
-    description: "Straight into it. A short scene and one thing to try today.",
-    phases: ["roleplay", "mission"],
+    description: "The idea, a short scene to try it in, and one thing to take into today.",
+    phases: ["lesson", "roleplay", "mission"],
     minTurns: 2,
     maxTurns: 6,
   },
   {
     id: "deep",
     label: "Deep scene",
-    description: "One long conversation, played out properly, then taken apart in detail.",
-    phases: ["roleplay", "debrief", "mission"],
+    description: "The idea, then one long conversation played out properly and taken apart in detail.",
+    phases: ["lesson", "roleplay", "debrief", "mission"],
     minTurns: 8,
     maxTurns: 20,
   },
   {
     id: "review",
     label: "Review",
-    description: "Something you've done before, revisited at a level you weren't ready for the first time.",
+    description: "Something you've done before, at a depth you weren't ready for the first time.",
     phases: ["lesson", "roleplay", "debrief"],
     minTurns: 4,
     maxTurns: 12,
@@ -68,7 +78,7 @@ export const SESSION_SHAPES: SessionShape[] = [
   {
     id: "story",
     label: "Storytelling",
-    description: "You tell it, someone real reacts, and then it gets rebuilt.",
+    description: "The idea, then you tell it, someone real reacts, and it gets rebuilt.",
     phases: ["lesson", "roleplay", "debrief"],
     minTurns: 3,
     maxTurns: 10,

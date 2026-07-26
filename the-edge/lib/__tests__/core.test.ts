@@ -1855,6 +1855,22 @@ describe("Session shapes", () => {
     }
   });
 
+  it("starts every shape with the lesson", () => {
+    // You cannot practise a technique you have not been taught, and the
+    // psychology behind it is the point — the roleplay is where you find out
+    // whether you understood it, not where you meet it. drill and deep used to
+    // open straight into the conversation; that was the wrong axis to vary on.
+    for (const shape of SESSION_SHAPES) {
+      assert.equal(shape.phases[0], "lesson", `${shape.id} does not start with the lesson`);
+    }
+  });
+
+  it("varies on what comes after the lesson, not on whether there is one", () => {
+    // The shapes must still differ from each other, or there is no variety.
+    const signatures = new Set(SESSION_SHAPES.map((s) => s.phases.join(">") + `:${s.minTurns}-${s.maxTurns}`));
+    assert.equal(signatures.size, SESSION_SHAPES.length, "two shapes are identical");
+  });
+
   it("never puts checkin in a shape — it is a prelude to all of them", () => {
     for (const shape of SESSION_SHAPES) {
       assert.equal(shape.phases.includes("checkin"), false, `${shape.id} contains checkin`);
@@ -1904,7 +1920,8 @@ describe("Session shapes", () => {
     });
 
     it("returns null for a phase the shape does not contain", () => {
-      assert.equal(nextPhase(shapeById("drill"), "lesson"), null);
+      // drill is lesson -> roleplay -> mission, so it has no retrieval step.
+      assert.equal(nextPhase(shapeById("drill"), "retrieval"), null);
     });
 
     it("sends a drill from roleplay straight to the mission, skipping debrief", () => {
@@ -1920,14 +1937,23 @@ describe("Session shapes", () => {
       assert.equal(isValidTransition(full, "roleplay", "lesson"), false, "allowed going backwards");
     });
 
-    it("lets check-in lead into whatever the shape starts with", () => {
-      assert.ok(isValidTransition(shapeById("full"), "checkin", "lesson"));
-      assert.ok(isValidTransition(shapeById("deep"), "checkin", "roleplay"));
-      assert.equal(
-        isValidTransition(shapeById("deep"), "checkin", "lesson"),
-        false,
-        "let check-in enter a phase this shape does not have"
-      );
+    it("lets check-in lead into the lesson, which every shape starts with", () => {
+      for (const shape of SESSION_SHAPES) {
+        assert.ok(
+          isValidTransition(shape, "checkin", "lesson"),
+          `${shape.id} does not accept check-in -> lesson`
+        );
+      }
+    });
+
+    it("does not let check-in skip the lesson and jump into the roleplay", () => {
+      for (const shape of SESSION_SHAPES) {
+        assert.equal(
+          isValidTransition(shape, "checkin", "roleplay"),
+          false,
+          `${shape.id} lets check-in skip straight to the roleplay`
+        );
+      }
     });
   });
 

@@ -580,12 +580,14 @@ export function useSession() {
   }
 
   /**
-   * Get the session's concept, fetching it if no lesson phase has run.
+   * Get the session's concept, fetching it if it is somehow missing.
    *
-   * Shapes that skip the lesson (drill, deep) still need a concept and a
-   * context before the roleplay can start. Without this, startRoleplay bailed
-   * on its `!concept` guard and left the user on a permanently blank screen
-   * with no error and no way out.
+   * Every shape now starts with the lesson, which selects the concept, so this
+   * is a safety net rather than the main path: a resumed session whose concept
+   * failed to restore, or a retry after the lesson errored. It exists because
+   * startRoleplay used to bail on a bare `!concept` guard and leave the user on
+   * a permanently blank screen with no error and no way out — better to refetch
+   * cheaply, and to surface a retryable error if even that fails.
    */
   async function resolveConcept(): Promise<Concept | null> {
     if (concept) return concept;
