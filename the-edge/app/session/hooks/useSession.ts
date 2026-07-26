@@ -1390,6 +1390,7 @@ export function useSession() {
     dismissCoach: () => { setCoachAdvice(null); setCoachLoading(false); },
     turnCount,
     dimensionSet,
+    sessionContext,
     shape,
     debriefContent,
     scores,

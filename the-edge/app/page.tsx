@@ -62,9 +62,16 @@ function scoreTextColor(score: number): string {
   return "var(--score-low-text)";
 }
 
-function averageDescriptor(avg: number): string {
-  if (avg >= 4.8) return "Master";
-  if (avg >= 4.0) return "Elite";
+/**
+ * The top labels are gated on having enough sessions to mean anything. A 4.0
+ * on your second ever session is not evidence of being elite, and awarding it
+ * cheapens the honest scoring everywhere else — the debrief is deliberately
+ * hard to please, so the summary label should be too.
+ */
+function averageDescriptor(avg: number, sessionCount: number): string {
+  if (sessionCount >= 10 && avg >= 4.8) return "Master";
+  if (sessionCount >= 5 && avg >= 4.0) return "Elite";
+  if (avg >= 4.0) return "Strong start";
   if (avg >= 3.5) return "Sharp";
   if (avg >= 2.5) return "Building";
   return "Developing";
@@ -74,7 +81,7 @@ function averageDescriptor(avg: number): string {
 // Progress Ring — SVG circle showing overall average
 // ---------------------------------------------------------------------------
 
-function ProgressRing({ average, hasData }: { average: number; hasData: boolean }) {
+function ProgressRing({ average, hasData, sessionCount }: { average: number; hasData: boolean; sessionCount: number }) {
   const size = 172;
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
@@ -137,7 +144,7 @@ function ProgressRing({ average, hasData }: { average: number; hasData: boolean 
             }}
           >
             {average >= 4.0 && <span aria-hidden="true">&#9733;</span>}
-            {averageDescriptor(average)}
+            {averageDescriptor(average, sessionCount)}
           </span>
           {average < 3 && (
             <span className="text-caption mt-0.5" style={{ color: "var(--text-secondary)" }}>
@@ -504,7 +511,7 @@ export default function Home() {
         )}
 
         {/* Progress ring */}
-        <ProgressRing average={average} hasData={hasData} />
+        <ProgressRing average={average} hasData={hasData} sessionCount={allScores.length} />
 
         {/* Score circles row */}
         <div

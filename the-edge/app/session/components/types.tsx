@@ -258,7 +258,12 @@ export function renderMarkdown(text: string, context: "lesson" | "debrief" | "de
 
 export function splitLessonSections(text: string): { title: string; content: string }[] {
   const raw: { title: string; content: string }[] = [];
-  const pattern = /^## (The (?:Principle|Play|Counter|Refresher|Advanced Play))/gm;
+  // "The Pitfall" is the social-context name for "The Counter" (see
+  // lib/prompts/lesson.ts). Omitting it here meant social lessons found only
+  // two headings, so the entire final section was swallowed into "The Play"
+  // and the character-count splitter below sliced it into cards that rendered
+  // with a heading and no body.
+  const pattern = /^## (The (?:Principle|Play|Counter|Pitfall|Refresher|Advanced Play))/gm;
   const headings: { title: string; index: number }[] = [];
   let match;
 

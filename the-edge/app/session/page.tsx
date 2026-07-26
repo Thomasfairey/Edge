@@ -387,6 +387,7 @@ export default function SessionPage() {
               lessonContent={s.lessonContent}
               lessonStreaming={s.lessonStreaming}
               concept={s.concept}
+              sessionContext={s.sessionContext}
               isReviewSession={s.isReviewSession}
               onboardingNeeded={s.onboardingNeeded}
               onLessonCardChange={s.onLessonCardChange}

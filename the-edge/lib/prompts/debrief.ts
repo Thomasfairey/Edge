@@ -70,6 +70,12 @@ THE TRANSCRIPT:
 
 ${formattedTranscript}
 
+ADDRESS THE USER DIRECTLY AS "YOU" THROUGHOUT.
+Never refer to them in the third person, and never guess at their gender — a
+debrief that says "she asked the question and then he skipped the read" is
+talking about two people who are both the reader. Write "you asked", "you
+skipped". The character is the only third party in this transcript.
+
 YOUR TASK — deliver your analysis in this exact structure:
 
 ${dimensionBlock}

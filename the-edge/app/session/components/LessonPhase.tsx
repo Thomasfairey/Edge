@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { Concept, VoiceProps } from "./types";
 import { splitLessonSections, renderMarkdown, LoadingDots } from "./types";
+import { CONTEXT_LABELS, LIFE_CONTEXTS, type LifeContext } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // LessonCards — swipeable card stack
@@ -251,6 +252,8 @@ interface LessonPhaseProps {
   lessonContent: string | null;
   lessonStreaming: boolean;
   concept: Concept | null;
+  /** The life context this session runs in — shown instead of the domain. */
+  sessionContext: string | null;
   isReviewSession: boolean;
   onboardingNeeded: boolean;
   onLessonCardChange: (current: number, total: number) => void;
@@ -263,6 +266,7 @@ export default function LessonPhase({
   lessonContent,
   lessonStreaming,
   concept,
+  sessionContext,
   isReviewSession,
   onboardingNeeded,
   onLessonCardChange,
@@ -285,8 +289,17 @@ export default function LessonPhase({
           {concept && (
             <div className="mb-5">
               <div className="flex items-center gap-2.5">
+                {/*
+                  Shows the life context, not concept.domain. A dating session
+                  drawing on a Voss concept was labelled "Negotiation", which
+                  reads as the old work framing to someone who chose romance.
+                  The domain is internal taxonomy; the context is what the user
+                  actually asked for.
+                */}
                 <span className="badge" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>
-                  {concept.domain}
+                  {sessionContext && (LIFE_CONTEXTS as string[]).includes(sessionContext)
+                    ? CONTEXT_LABELS[sessionContext as LifeContext]
+                    : concept.domain}
                 </span>
                 {isReviewSession && (
                   <span className="badge" style={{ backgroundColor: "var(--score-mid-bg)", color: "var(--score-mid-text)" }}>
