@@ -1,14 +1,20 @@
 /**
  * Layer 1: Persistent user context — injected into every API call.
  * Dynamically loads user profile from Supabase.
- * Falls back to a generic professional context if no profile_data exists,
- * and signals that onboarding is incomplete so the session can prompt for it.
+ * Falls back to a generic description keyed off the user's life contexts if no
+ * profile_data exists, and signals that onboarding is incomplete so the session
+ * can prompt for it.
  * Reference: PRD Section 4.2 — Layer 1
  */
 
 import { serialiseForPrompt, getCompletedConcepts } from "@/lib/ledger";
 import { supabase } from "@/lib/supabase";
-import { TrackId } from "@/lib/types";
+import {
+  LifeContext,
+  CONTEXT_LABELS,
+  SOCIAL_CONTEXTS,
+  normaliseContexts,
+} from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Profile data types
@@ -17,8 +23,10 @@ import { TrackId } from "@/lib/types";
 export interface ProfileData {
   bio: string;
   feedbackStyle: "direct" | "balanced" | "supportive";
-  /** Which training track the user has chosen. Defaults to "professional". */
-  track?: TrackId;
+  /** The life contexts the user wants to train in. Defaults to the social four. */
+  contexts?: LifeContext[];
+  /** Pre-context field, read only so existing profiles migrate cleanly. */
+  track?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,13 +51,13 @@ async function getUserProfile(userId?: string | null): Promise<{ displayName: st
 }
 
 /**
- * Resolve just the user's chosen track for concept selection.
- * Defaults to "professional" for anonymous or legacy users.
+ * Resolve the user's active life contexts for concept selection.
+ * Anonymous users, and profiles predating the context model, get the social four.
  */
-export async function getUserTrack(userId?: string | null): Promise<TrackId> {
-  if (!userId) return "professional";
+export async function getUserContexts(userId?: string | null): Promise<LifeContext[]> {
+  if (!userId) return [...SOCIAL_CONTEXTS];
   const { profileData } = await getUserProfile(userId);
-  return profileData?.track ?? "professional";
+  return resolveContexts(profileData);
 }
 
 // ---------------------------------------------------------------------------
@@ -77,12 +85,13 @@ ${profileData.bio}`;
 // Generic fallback — used when user has not completed profile setup
 // ---------------------------------------------------------------------------
 
-function buildGenericFallback(displayName: string, track: TrackId): string {
+function buildGenericFallback(displayName: string, contexts: LifeContext[]): string {
   const nameClause = displayName ? `- Name: ${displayName}\n` : "";
-  const applicability = track === "social"
-    ? `broadly applicable to someone navigating real social life — dinners, parties, dates,
-new friendships — who wants to be more charismatic, interesting, and memorable.`
-    : `broadly applicable to a senior professional navigating high-stakes business conversations.`;
+  const onlyWork = contexts.length === 1 && contexts[0] === "work";
+  const applicability = onlyWork
+    ? `broadly applicable to someone navigating high-stakes conversations at work.`
+    : `broadly applicable to an adult navigating real relationships — the people they date,
+their friends, the rooms they walk into, and the family they can't walk away from.`;
   return `YOUR USER:
 ${nameClause}- Profile: Not yet completed. The user has not provided their bio or context.
 - Feedback style: Direct and blunt. No softening, no reassurance. Values candour over diplomacy.
@@ -93,19 +102,31 @@ Avoid assumptions about their industry, role, or company. If the session feels g
 that is expected — prompt the user to complete their profile for personalised sessions.`;
 }
 
-/** Resolve the user's chosen track, defaulting to professional for legacy profiles. */
-function resolveTrack(profileData: ProfileData | null): TrackId {
-  return profileData?.track ?? "professional";
+/** Resolve active contexts, migrating pre-context profiles on read. */
+function resolveContexts(profileData: ProfileData | null): LifeContext[] {
+  return normaliseContexts(profileData?.contexts, profileData?.track);
 }
 
-const TRACK_INTRO: Record<TrackId, string> = {
-  professional:
-    "You are part of The Edge, an AI-powered daily influence training system for elite professionals.",
-  social:
-    "You are part of The Edge, an AI-powered daily training system for charisma, storytelling, and social presence — helping the user become more captivating, interesting, and memorable in real social life.",
-  both:
-    "You are part of The Edge, an AI-powered daily training system for both professional influence and social charisma — helping the user become more effective in high-stakes conversations and more captivating in social life.",
-};
+/**
+ * The opening line of every prompt. The Edge is a system for being good with
+ * people; work is one of the rooms that happens in, not the premise.
+ */
+function buildIntro(contexts: LifeContext[]): string {
+  const base =
+    "You are part of The Edge, a daily training system for being genuinely good with people — presence, conversation, storytelling, reading others, and handling the conversations that matter.";
+
+  if (contexts.length === 1 && contexts[0] === "work") {
+    return `${base}\n\nThis user is training specifically for professional situations: negotiation, stakeholders, pitching, and difficult colleagues.`;
+  }
+
+  const labels = contexts.map((c) => CONTEXT_LABELS[c].toLowerCase());
+  const list =
+    labels.length > 1
+      ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`
+      : labels[0];
+
+  return `${base}\n\nThis user is training for: ${list}. Keep scenarios, examples, and language rooted in those settings.`;
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -114,7 +135,7 @@ const TRACK_INTRO: Record<TrackId, string> = {
 /**
  * Build the full persistent context string.
  * Dynamically loads user profile from Supabase.
- * Falls back to a generic professional context if no profile_data exists.
+ * Falls back to a generic, context-aware description if no profile_data exists.
  */
 export async function buildPersistentContext(userId?: string | null): Promise<string> {
   const [ledgerSummary, completedConcepts, profile] = await Promise.all([
@@ -128,12 +149,12 @@ export async function buildPersistentContext(userId?: string | null): Promise<st
       ? completedConcepts.join(", ")
       : "None — this is Day 1.";
 
-  const track = resolveTrack(profile.profileData);
+  const contexts = resolveContexts(profile.profileData);
   const userSection = profile.profileData
     ? buildUserSection(profile.displayName, profile.profileData)
-    : buildGenericFallback(profile.displayName, track);
+    : buildGenericFallback(profile.displayName, contexts);
 
-  return `${TRACK_INTRO[track]}
+  return `${buildIntro(contexts)}
 
 ${userSection}
 

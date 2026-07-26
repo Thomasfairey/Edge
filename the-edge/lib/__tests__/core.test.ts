@@ -31,13 +31,22 @@ import {
   validateTranscript as validateTranscriptSoft,
   truncate,
   SCORE_KEYS as _SCORE_KEYS,
-  DOMAIN_TRACK,
-  TRACK_IDS,
-  trackForDomain,
-  domainMatchesTrack,
+  LIFE_CONTEXTS,
+  SOCIAL_CONTEXTS,
+  CONTEXT_LABELS,
+  CONTEXT_BLURBS,
+  DOMAIN_DEFAULT_CONTEXTS,
+  isSocialContext,
+  contextsForDomain,
+  contextsForConcept,
+  primaryContextForConcept,
+  matchesContexts,
+  resolveSessionContext,
+  migrateLegacyTrack,
+  normaliseContexts,
   type SessionScores,
   type Message,
-  type TrackId,
+  type LifeContext,
 } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -1040,91 +1049,173 @@ describe("SM-2 date math", () => {
 });
 
 // ===========================================================================
-// 5. Track model (professional vs social)
+// 5. Life contexts (dating / friends / groups / family / work)
 // ===========================================================================
 
-describe("Tracks", () => {
-  describe("DOMAIN_TRACK", () => {
-    it("maps every domain to either professional or social", () => {
-      for (const [domain, track] of Object.entries(DOMAIN_TRACK)) {
-        assert.ok(
-          track === "professional" || track === "social",
-          `${domain} mapped to unexpected track ${track}`
-        );
+describe("Life contexts", () => {
+  describe("LIFE_CONTEXTS and SOCIAL_CONTEXTS", () => {
+    it("contains exactly the five selectable contexts", () => {
+      assert.deepEqual(
+        [...LIFE_CONTEXTS].sort(),
+        ["dating", "family", "friends", "groups", "work"]
+      );
+    });
+
+    it("treats social contexts as everything except work", () => {
+      assert.deepEqual([...SOCIAL_CONTEXTS].sort(), ["dating", "family", "friends", "groups"]);
+      assert.ok(SOCIAL_CONTEXTS.every(isSocialContext));
+      assert.equal(isSocialContext("work"), false);
+    });
+
+    it("gives every context a label and a blurb", () => {
+      for (const c of LIFE_CONTEXTS) {
+        assert.ok(CONTEXT_LABELS[c]?.length > 0, `${c} has no label`);
+        assert.ok(CONTEXT_BLURBS[c]?.length > 0, `${c} has no blurb`);
+      }
+    });
+  });
+
+  describe("DOMAIN_DEFAULT_CONTEXTS", () => {
+    it("maps every domain to at least one valid context", () => {
+      for (const [domain, contexts] of Object.entries(DOMAIN_DEFAULT_CONTEXTS)) {
+        assert.ok(contexts.length > 0, `${domain} has no contexts`);
+        for (const c of contexts) {
+          assert.ok(LIFE_CONTEXTS.includes(c), `${domain} maps to unknown context ${c}`);
+        }
       }
     });
 
-    it("classifies the seven original domains as professional", () => {
-      assert.equal(DOMAIN_TRACK["Influence & Persuasion"], "professional");
-      assert.equal(DOMAIN_TRACK["Negotiation"], "professional");
-      assert.equal(DOMAIN_TRACK["Dark Psychology & Coercive Technique Recognition"], "professional");
+    it("no longer confines the relational domains to a social ghetto", () => {
+      // These used to be track: "social" and so were invisible to work users.
+      assert.ok(DOMAIN_DEFAULT_CONTEXTS["Charisma & Presence"].includes("work"));
+      assert.ok(DOMAIN_DEFAULT_CONTEXTS["Storytelling & Narrative"].includes("work"));
     });
 
-    it("classifies the three social domains as social", () => {
-      assert.equal(DOMAIN_TRACK["Charisma & Presence"], "social");
-      assert.equal(DOMAIN_TRACK["Storytelling & Narrative"], "social");
-      assert.equal(DOMAIN_TRACK["Conversation & Memorability"], "social");
-    });
-  });
-
-  describe("trackForDomain", () => {
-    it("returns the mapped track for known domains", () => {
-      assert.equal(trackForDomain("Negotiation"), "professional");
-      assert.equal(trackForDomain("Storytelling & Narrative"), "social");
-    });
-
-    it("defaults unknown/legacy domains to professional", () => {
-      assert.equal(trackForDomain("Some Old Domain"), "professional");
-      assert.equal(trackForDomain(""), "professional");
+    it("opens the rapport and negotiation canon up to personal life", () => {
+      // Carnegie and Voss are not work-only skills.
+      assert.ok(DOMAIN_DEFAULT_CONTEXTS["Rapport & Relationship Engineering"].includes("family"));
+      assert.ok(DOMAIN_DEFAULT_CONTEXTS["Negotiation"].includes("family"));
     });
   });
 
-  describe("domainMatchesTrack", () => {
-    it("'both' accepts every domain", () => {
-      assert.ok(domainMatchesTrack("Negotiation", "both"));
-      assert.ok(domainMatchesTrack("Charisma & Presence", "both"));
-      assert.ok(domainMatchesTrack("Unknown", "both"));
+  describe("contextsForDomain", () => {
+    it("returns the mapped contexts for known domains", () => {
+      assert.deepEqual(contextsForDomain("Influence & Persuasion"), ["work"]);
     });
 
-    it("'social' accepts only social domains", () => {
-      assert.ok(domainMatchesTrack("Charisma & Presence", "social"));
-      assert.equal(domainMatchesTrack("Negotiation", "social"), false);
-    });
-
-    it("'professional' accepts only professional domains", () => {
-      assert.ok(domainMatchesTrack("Negotiation", "professional"));
-      assert.equal(domainMatchesTrack("Storytelling & Narrative", "professional"), false);
-      // legacy/unknown domains fall through to professional
-      assert.ok(domainMatchesTrack("Legacy Domain", "professional"));
+    it("defaults unknown/legacy domains to work so old ledger rows still select", () => {
+      assert.deepEqual(contextsForDomain("Some Old Domain"), ["work"]);
+      assert.deepEqual(contextsForDomain(""), ["work"]);
     });
   });
 
-  describe("track-filter predicate (mirrors selectNewConcept)", () => {
-    // A miniature concept pool spanning both tracks.
+  describe("contextsForConcept", () => {
+    it("prefers the concept's own contexts over the domain default", () => {
+      const concept = { domain: "Negotiation" as const, contexts: ["dating" as const] };
+      assert.deepEqual(contextsForConcept(concept), ["dating"]);
+    });
+
+    it("falls back to the domain default when contexts are absent or empty", () => {
+      assert.deepEqual(contextsForConcept({ domain: "Power Dynamics" }), ["work"]);
+      assert.deepEqual(contextsForConcept({ domain: "Power Dynamics", contexts: [] }), ["work"]);
+    });
+  });
+
+  describe("primaryContextForConcept", () => {
+    it("returns the first (representative) context", () => {
+      assert.equal(primaryContextForConcept({ domain: "Charisma & Presence" }), "groups");
+      assert.equal(primaryContextForConcept({ domain: "Negotiation" }), "work");
+    });
+
+    it("never returns undefined for unknown domains", () => {
+      assert.equal(primaryContextForConcept({ domain: "Nonsense" as never }), "work");
+    });
+  });
+
+  describe("matchesContexts (mirrors selectNewConcept's filter)", () => {
     const pool = [
-      { id: "a", domain: "Negotiation" },
-      { id: "b", domain: "Influence & Persuasion" },
-      { id: "c", domain: "Charisma & Presence" },
-      { id: "d", domain: "Storytelling & Narrative" },
+      { id: "a", domain: "Negotiation" as const },
+      { id: "b", domain: "Influence & Persuasion" as const },
+      { id: "c", domain: "Charisma & Presence" as const },
+      { id: "d", domain: "Storytelling & Narrative" as const },
     ];
-    const inTrack = (track: TrackId) => pool.filter((c) => domainMatchesTrack(c.domain, track));
+    const inContext = (active: LifeContext[]) =>
+      pool.filter((c) => matchesContexts(contextsForConcept(c), active));
 
-    it("social preference surfaces only social concepts", () => {
-      assert.deepEqual(inTrack("social").map((c) => c.id), ["c", "d"]);
+    it("a groups-only user sees the relational concepts, not the boardroom ones", () => {
+      assert.deepEqual(inContext(["groups"]).map((c) => c.id), ["c", "d"]);
     });
 
-    it("professional preference surfaces only professional concepts", () => {
-      assert.deepEqual(inTrack("professional").map((c) => c.id), ["a", "b"]);
+    it("a work-only user sees everything practisable at work", () => {
+      assert.deepEqual(inContext(["work"]).map((c) => c.id), ["a", "b", "c", "d"]);
     });
 
-    it("both preference surfaces the whole pool", () => {
-      assert.equal(inTrack("both").length, pool.length);
+    it("a family user sees negotiation but not Cialdini persuasion", () => {
+      assert.deepEqual(inContext(["family"]).map((c) => c.id), ["a"]);
+    });
+
+    it("an empty active list is treated as no filter rather than no content", () => {
+      assert.equal(inContext([]).length, pool.length);
     });
   });
 
-  describe("TRACK_IDS", () => {
-    it("contains exactly the three selectable tracks", () => {
-      assert.deepEqual([...TRACK_IDS].sort(), ["both", "professional", "social"]);
+  describe("resolveSessionContext", () => {
+    const first = () => 0;
+
+    it("picks from the overlap between the concept and the user's contexts", () => {
+      assert.equal(resolveSessionContext(["work", "family"], ["family"], first), "family");
+    });
+
+    it("falls back to the concept's own contexts when there is no overlap", () => {
+      // Better to run a slightly off-context session than to fail to start one.
+      assert.equal(resolveSessionContext(["work"], ["dating"], first), "work");
+    });
+
+    it("never returns undefined for empty input", () => {
+      assert.ok(LIFE_CONTEXTS.includes(resolveSessionContext([], [], first)));
+      assert.ok(LIFE_CONTEXTS.includes(resolveSessionContext(undefined, ["dating"], first)));
+    });
+  });
+
+  describe("migrateLegacyTrack", () => {
+    it("maps the three old track values onto contexts", () => {
+      assert.deepEqual(migrateLegacyTrack("professional"), ["work"]);
+      assert.deepEqual([...migrateLegacyTrack("social")].sort(), [
+        "dating",
+        "family",
+        "friends",
+        "groups",
+      ]);
+      assert.equal(migrateLegacyTrack("both").length, LIFE_CONTEXTS.length);
+    });
+
+    it("defaults unknown values to the social contexts, not to work", () => {
+      assert.deepEqual(migrateLegacyTrack(undefined), [...SOCIAL_CONTEXTS]);
+      assert.deepEqual(migrateLegacyTrack("nonsense"), [...SOCIAL_CONTEXTS]);
+    });
+  });
+
+  describe("normaliseContexts", () => {
+    it("accepts a valid contexts array", () => {
+      assert.deepEqual(normaliseContexts(["dating", "work"]), ["dating", "work"]);
+    });
+
+    it("dedupes and drops unknown values", () => {
+      assert.deepEqual(normaliseContexts(["dating", "dating", "nope", 7]), ["dating"]);
+    });
+
+    it("falls back to the legacy track when contexts are missing or all invalid", () => {
+      assert.deepEqual(normaliseContexts(undefined, "professional"), ["work"]);
+      assert.deepEqual(normaliseContexts(["nope"], "professional"), ["work"]);
+    });
+
+    it("defaults to the social contexts when there is nothing to go on", () => {
+      assert.deepEqual(normaliseContexts(undefined), [...SOCIAL_CONTEXTS]);
+      assert.deepEqual(normaliseContexts(null), [...SOCIAL_CONTEXTS]);
+    });
+
+    it("never returns an empty list, which would empty the concept pool", () => {
+      assert.ok(normaliseContexts([]).length > 0);
     });
   });
 });

@@ -6,7 +6,15 @@
  * Reference: PRD Section 3.3, Appendix A
  */
 
-import { Concept, ConceptDomain, TrackId, domainMatchesTrack } from "@/lib/types";
+import {
+  Concept,
+  ConceptDomain,
+  LifeContext,
+  SOCIAL_CONTEXTS,
+  contextsForConcept,
+  matchesContexts,
+  resolveSessionContext,
+} from "@/lib/types";
 import { getDueReviews } from "@/lib/spaced-repetition";
 
 // ---------------------------------------------------------------------------
@@ -445,31 +453,36 @@ export const CONCEPTS: Concept[] = [
 
 /**
  * Select the next concept for today's session.
- * Returns { concept, isReview } — when reviews are due, 30% chance of review session.
+ * Returns { concept, isReview, context } — when reviews are due, 30% chance of
+ * review session. `context` is the single life context the session runs in, and
+ * drives scenario generation, coaching tone, and scoring dimensions downstream.
  *
  * Rules:
- * 1. Only ever surface concepts within the user's chosen track
- *    ("professional", "social", or "both").
+ * 1. Only ever surface concepts practisable in one of the user's active contexts.
  * 2. Never repeat a concept already in completedIds.
  * 3. Prefer a different domain than the most recently completed concept
  *    (enforces breadth before depth).
  * 4. If all concepts in other domains are exhausted, allow same-domain.
- * 5. If ALL concepts in the track are exhausted, reset the pool and pick randomly.
+ * 5. If ALL in-context concepts are exhausted, reset the pool and pick randomly.
  */
 export async function selectConcept(
   completedIds: string[],
   userId?: string | null,
-  track: TrackId = "professional"
-): Promise<{ concept: Concept; isReview: boolean }> {
+  contexts: LifeContext[] = SOCIAL_CONTEXTS
+): Promise<{ concept: Concept; isReview: boolean; context: LifeContext }> {
   // Check for due reviews — 30% chance of review session.
-  // Only surface a review that belongs to the active track.
+  // Only surface a review the user can actually practise right now.
   try {
     const dueReviews = await getDueReviews(userId);
     if (dueReviews.length > 0 && Math.random() < 0.3) {
       for (const review of dueReviews) {
         const reviewConcept = CONCEPTS.find((c) => c.id === review.conceptId);
-        if (reviewConcept && domainMatchesTrack(reviewConcept.domain, track)) {
-          return { concept: reviewConcept, isReview: true };
+        if (reviewConcept && matchesContexts(contextsForConcept(reviewConcept), contexts)) {
+          return {
+            concept: reviewConcept,
+            isReview: true,
+            context: resolveSessionContext(contextsForConcept(reviewConcept), contexts),
+          };
         }
       }
     }
@@ -477,22 +490,29 @@ export async function selectConcept(
     // SR not available — continue with normal selection
   }
 
-  return { concept: selectNewConcept(completedIds, track), isReview: false };
+  const concept = selectNewConcept(completedIds, contexts);
+  return {
+    concept,
+    isReview: false,
+    context: resolveSessionContext(contextsForConcept(concept), contexts),
+  };
 }
 
-function selectNewConcept(completedIds: string[], track: TrackId = "professional"): Concept {
+function selectNewConcept(completedIds: string[], contexts: LifeContext[] = SOCIAL_CONTEXTS): Concept {
   // completedIds may contain either concept IDs (e.g. "mirroring") or
   // formatted ledger names (e.g. "Mirroring (Voss)"). Match against both.
   const completedSet = new Set(completedIds);
-  // Restrict the entire pool to the active track before anything else.
-  const inTrack = CONCEPTS.filter((c) => domainMatchesTrack(c.domain, track));
-  const available = inTrack.filter(
+  // Restrict the entire pool to the active contexts before anything else.
+  const inContext = CONCEPTS.filter((c) => matchesContexts(contextsForConcept(c), contexts));
+  // Guard: a context selection with no matching content must not wedge the app.
+  const pool = inContext.length > 0 ? inContext : CONCEPTS;
+  const available = pool.filter(
     (c) => !completedSet.has(c.id) && !completedSet.has(`${c.name} (${c.source})`)
   );
 
-  // All in-track concepts exhausted — reset the pool (still within track)
+  // All in-context concepts exhausted — reset the pool (still in context)
   if (available.length === 0) {
-    return inTrack[Math.floor(Math.random() * inTrack.length)];
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   // Determine the domain of the most recently completed concept

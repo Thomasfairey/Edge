@@ -23,7 +23,7 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [feedbackStyle, setFeedbackStyle] = useState<FeedbackStyle>("direct");
-  const [track, setTrack] = useState<Track>("professional");
+  const [track, setTrack] = useState<Track>("social");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -42,7 +42,7 @@ export default function ProfilePage() {
         if (data.profileData) {
           setBio(data.profileData.bio || "");
           setFeedbackStyle(data.profileData.feedbackStyle || "direct");
-          setTrack(data.profileData.track || "professional");
+          setTrack(data.profileData.track || "social");
         }
       }
       setLoading(false);
