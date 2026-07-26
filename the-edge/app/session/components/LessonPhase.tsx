@@ -113,6 +113,30 @@ function LessonCards({
 
   const hasMore = currentCard < sections.length - 1;
 
+  // The caption under the card says "click to continue" (or "tap" on touch),
+  // but the card only ever had touch handlers — on desktop the only way
+  // forward was the row of small dots, which testers did not find. Advancing
+  // on click makes the caption true. Clicks on the controls inside the card
+  // are excluded so the listen buttons still work.
+  const advance = () => {
+    if (hasMore) setCurrentCard((c) => c + 1);
+  };
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    advance();
+  };
+
+  const handleCardKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowRight" || e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      advance();
+    } else if (e.key === "ArrowLeft" && currentCard > 0) {
+      e.preventDefault();
+      setCurrentCard((c) => c - 1);
+    }
+  };
+
   return (
     <div className="relative">
       {hasMore && (
@@ -136,6 +160,11 @@ function LessonCards({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onClick={handleCardClick}
+        onKeyDown={handleCardKeyDown}
+        role={hasMore ? "button" : undefined}
+        tabIndex={0}
+        aria-label={hasMore ? `Lesson card ${currentCard + 1} of ${sections.length} — activate for the next card` : undefined}
       >
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">

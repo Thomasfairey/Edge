@@ -219,6 +219,12 @@ export default function SessionPage() {
                     })}
                   </div>
 
+                  {s.contextFloorHit && (
+                    <p className="mt-3 text-caption" style={{ color: "var(--text-tertiary)" }} role="status">
+                      Keep at least one — it decides what you practise.
+                    </p>
+                  )}
+
                   <button
                     onClick={() => { haptic(); s.setOnboardingStep("bio"); }}
                     className="btn-primary w-full mt-5"

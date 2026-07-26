@@ -26,6 +26,7 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [feedbackStyle, setFeedbackStyle] = useState<FeedbackStyle>("direct");
   const [contexts, setContexts] = useState<LifeContext[]>([...SOCIAL_CONTEXTS]);
+  const [floorHit, setFloorHit] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -161,13 +162,21 @@ export default function ProfilePage() {
                     key={context}
                     aria-pressed={selected}
                     onClick={() =>
-                      setContexts((prev) =>
-                        prev.includes(context)
-                          // Never allow an empty selection — it would leave the
-                          // concept pool with nothing to draw from.
-                          ? (prev.length > 1 ? prev.filter((c) => c !== context) : prev)
-                          : [...prev, context]
-                      )
+                      setContexts((prev) => {
+                        if (!prev.includes(context)) {
+                          setFloorHit(false);
+                          return [...prev, context];
+                        }
+                        // Never allow an empty selection — it would leave the
+                        // concept pool with nothing to draw from. Say so rather
+                        // than ignoring the click, which reads as a bug.
+                        if (prev.length === 1) {
+                          setFloorHit(true);
+                          return prev;
+                        }
+                        setFloorHit(false);
+                        return prev.filter((c) => c !== context);
+                      })
                     }
                     className="w-full rounded-xl px-4 py-3 text-left text-sm transition-all"
                     style={{
@@ -187,6 +196,11 @@ export default function ProfilePage() {
                 );
               })}
             </div>
+            {floorHit && (
+              <p className="mt-2 text-caption" style={{ color: "var(--text-tertiary)" }} role="status">
+                Keep at least one — it decides what you practise.
+              </p>
+            )}
           </div>
 
           {/* About you */}

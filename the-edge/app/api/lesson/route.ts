@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateResponse, streamResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
+import { generateResponseViaStream, streamResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildPersistentContext, getUserContexts } from "@/lib/prompts/system-context";
 import { buildLessonPrompt } from "@/lib/prompts/lesson";
 import { CONCEPTS, selectConcept } from "@/lib/concepts";
@@ -103,7 +103,11 @@ async function handlePost(req: NextRequest, userId: string | null) {
         },
       });
     } else {
-      const lessonContent = await generateResponse(
+      // Streams internally to keep the connection alive, exactly as the debrief
+      // route does. generateResponse has a 25s timeout and a lesson reliably
+      // takes longer, so this path failed every single time — silently, since
+      // its only caller swallowed the error.
+      const lessonContent = await generateResponseViaStream(
         systemPrompt,
         [userMessage],
         PHASE_CONFIG.lesson
@@ -126,5 +130,5 @@ async function handlePost(req: NextRequest, userId: string | null) {
   }
 }
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 export const POST = withRateLimit(withAuth(handlePost), 5);

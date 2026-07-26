@@ -220,14 +220,25 @@ export function useSession() {
   // four — work is one context among five, not the premise.
   const [onboardingContexts, setOnboardingContexts] = useState<LifeContext[]>([...SOCIAL_CONTEXTS]);
 
+  // Set when someone tries to turn off their last remaining context, so the UI
+  // can say why nothing happened. Silently ignoring the click reads as a bug.
+  const [contextFloorHit, setContextFloorHit] = useState(false);
+
   function toggleOnboardingContext(context: LifeContext) {
-    setOnboardingContexts((prev) =>
-      prev.includes(context)
-        ? // Never let the user deselect everything — an empty selection would
-          // leave the concept pool with nothing to draw from.
-          prev.length > 1 ? prev.filter((c) => c !== context) : prev
-        : [...prev, context]
-    );
+    setOnboardingContexts((prev) => {
+      if (!prev.includes(context)) {
+        setContextFloorHit(false);
+        return [...prev, context];
+      }
+      // Never let the selection empty out — the concept pool would have
+      // nothing to draw from and the session could not start.
+      if (prev.length === 1) {
+        setContextFloorHit(true);
+        return prev;
+      }
+      setContextFloorHit(false);
+      return prev.filter((c) => c !== context);
+    });
   }
   const [onboardingDisplayName, setOnboardingDisplayName] = useState("");
 
@@ -502,11 +513,20 @@ export function useSession() {
                 concept: data.concept,
                 lessonContent: data.lessonContent,
                 isReview: data.isReview ?? false,
+                // Without this the restored lesson has no context, so the
+                // debrief and the scoring dimensions fall back to the concept's
+                // representative context instead of the one the session was
+                // actually selected for.
+                context: data.context ?? null,
               })
             );
           }
         })
-        .catch(() => {});
+        .catch((e) => {
+          // Best-effort, but not invisible: this failing silently for weeks is
+          // why nobody noticed the generator behind it was timing out.
+          console.warn("[session] Pre-generating tomorrow's lesson failed", e);
+        });
     } catch {}
   }
 
@@ -1438,6 +1458,7 @@ export function useSession() {
     setOnboardingBio,
     onboardingContexts,
     toggleOnboardingContext,
+    contextFloorHit,
     onboardingDisplayName,
 
     // Debrief
