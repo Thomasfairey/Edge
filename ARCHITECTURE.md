@@ -109,6 +109,21 @@ The repository contains two server-side codebases that serve different deploymen
 
 **Keeping content in sync:** When curriculum changes (new concepts, updated character archetypes, scoring rubric adjustments), both codebases should be updated in the same PR where practical. A quick diff between `the-edge/lib/` and `backend/src/content/` will surface any drift.
 
+### ⚠️ Known divergence: `backend/` and `ios/` are behind
+
+As of the life-contexts reframe (July 2026), `the-edge/` and `backend/` have **deliberately** diverged, and the drift is expected rather than a bug to be fixed opportunistically. `the-edge/` alone received:
+
+- **Life contexts** replacing the `professional | social | both` track model. `backend/` still speaks the track vocabulary.
+- **Curriculum and cast expansion** — 50 → 76 concepts, 9 → 32 characters, five new relational domains. `backend/src/content/` still holds the original 50 and 9.
+- **Context-specific scoring dimensions.** `the-edge/` stores scores as JSONB keyed by a per-context dimension set; `backend/` and the native app are pinned to the original five-column rubric (`technique_application`, `tactical_awareness`, `frame_control`, `emotional_regulation`, `strategic_outcome`).
+- **Generated scenarios** and **variable session shapes**, neither of which exists in the native flow.
+
+The native SwiftUI app (`ios/TheEdge/Models/Domain.swift`) hardcodes the five original score keys and `SessionFlowView` assumes the fixed five-phase order, so it cannot consume the new ledger shape without changes of its own.
+
+**The `ledger` table is now shaped for `the-edge/`.** The five `score_*` columns are gone. Any `backend/` code reading them will fail against the current schema — that is the sharp edge to know about before picking the native app back up.
+
+**Before resuming native app work,** decide whether to port the context model across or to fork the schema. Do not treat the differences above as drift to be quietly reconciled; they are a product decision that `the-edge/` made and `backend/` has not.
+
 ---
 
 ## Architecture Decisions

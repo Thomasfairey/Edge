@@ -1,5 +1,6 @@
 import { Concept, SessionScores } from '../types';
 import { LifeContext, isSocialContext, primaryContextForConcept } from '../types';
+import { weakestDimension } from '@/lib/scoring-dimensions';
 
 export function buildMissionPrompt(
   concept: Concept,
@@ -7,9 +8,11 @@ export function buildMissionPrompt(
   serialisedLedger: string,
   context?: LifeContext
 ): string {
-  const weakestDimension = Object.entries(scores).reduce((a, b) =>
-    a[1] <= b[1] ? a : b
-  );
+  // The set names the keys in `scores`; the weakest one is what the mission
+  // should exercise.
+  const weakest = weakestDimension(scores, context ?? primaryContextForConcept(concept));
+  const weakestLabel = weakest?.label ?? "overall execution";
+  const weakestScore = weakest?.score ?? 3;
 
   const isSocial = isSocialContext(context ?? primaryContextForConcept(concept));
 
@@ -38,7 +41,7 @@ export function buildMissionPrompt(
 TODAY'S CONCEPT: ${concept.name} (${concept.source})
 ${concept.description}
 
-USER'S WEAKEST DIMENSION TODAY: ${weakestDimension[0].replace(/_/g, ' ')} (scored ${weakestDimension[1]}/5)
+USER'S WEAKEST DIMENSION TODAY: ${weakestLabel} (scored ${weakestScore}/5)
 
 SESSION HISTORY:
 ${serialisedLedger}
@@ -51,7 +54,7 @@ THE MISSION MUST BE:
 2. TIED TO A SPECIFIC INTERACTION TYPE — ${interactionTypes}
 3. OBSERVABLE — define what success looks like in terms of the OTHER PERSON'S reaction. ${observableExample}
 4. LOW-RISK — ${lowRiskLine}
-5. TARGETED — if the user scored low on ${weakestDimension[0].replace(/_/g, ' ')}, the mission should specifically exercise that dimension.
+5. TARGETED — if the user scored low on ${weakestLabel}, the mission should specifically exercise that dimension.
 
 CONSTRAINTS:
 - Maximum 80 words for the mission.

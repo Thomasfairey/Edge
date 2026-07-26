@@ -26,11 +26,10 @@ import {
 // ---------------------------------------------------------------------------
 import {
   clampScore,
-  validateScores as validateScoresSoft,
+  validateScoresForSet as validateScoresSoft,
   isValidMessage,
   validateTranscript as validateTranscriptSoft,
   truncate,
-  SCORE_KEYS as _SCORE_KEYS,
   LIFE_CONTEXTS,
   SOCIAL_CONTEXTS,
   CONTEXT_LABELS,
@@ -46,8 +45,40 @@ import {
   normaliseContexts,
   type SessionScores,
   type Message,
+  DISPOSITIONS,
   type LifeContext,
 } from "../types";
+import { CONCEPTS, selectNewConcept, conceptFromLedgerValue } from "../concepts";
+import {
+  chooseWithHistory,
+  nextDisposition,
+  type Picker,
+} from "../selection";
+import { buildScenarioPrompt, fallbackScenario } from "../prompts/scenario";
+import {
+  SESSION_SHAPES,
+  shapeById,
+  nextPhase,
+  isValidTransition,
+  shapeIncludes,
+  selectShape,
+} from "../session-shapes";
+import {
+  DIMENSION_SETS,
+  dimensionSetFor,
+  dimensionKeys,
+  averageScore,
+  weakestDimension,
+} from "../scoring-dimensions";
+import {
+  CHARACTERS,
+  characterContexts,
+  characterDisposition,
+  charactersForContext,
+  selectCharacter,
+  characterIdFromName,
+  dispositionsForNames,
+} from "../characters";
 
 // ---------------------------------------------------------------------------
 // Non-exported functions copied from app/api/debrief/route.ts for testing
@@ -570,7 +601,7 @@ describe("types.ts", () => {
   // -----------------------------------------------------------------------
   // validateScores (soft — returns null on invalid)
   // -----------------------------------------------------------------------
-  describe("validateScores (soft)", () => {
+  describe("validateScoresForSet (soft)", () => {
     const valid = {
       technique_application: 4,
       tactical_awareness: 3,
@@ -600,6 +631,40 @@ describe("types.ts", () => {
         // missing frame_control, emotional_regulation, strategic_outcome
       };
       assert.equal(validateScoresSoft(partial), null);
+    });
+
+    it("validates against the named set, not a fixed list of keys", () => {
+      // A family session is scored on regulation/listening/ownership/...
+      const familyScores = {
+        regulation: 4,
+        listening: 3,
+        ownership: 5,
+        boundary_clarity: 2,
+        repair: 1,
+      };
+      const result = validateScoresSoft(familyScores, "family");
+      assert.ok(result !== null);
+      assert.equal(result!.regulation, 4);
+      assert.equal(result!.repair, 1);
+    });
+
+    it("rejects a work rubric submitted for a family session", () => {
+      assert.equal(validateScoresSoft(valid, "family"), null);
+    });
+
+    it("defaults to the work set for an unknown or missing set id", () => {
+      assert.ok(validateScoresSoft(valid, "nonsense") !== null);
+      assert.ok(validateScoresSoft(valid) !== null);
+    });
+
+    it("ignores extra keys not in the set", () => {
+      const result = validateScoresSoft({ ...valid, invented_dimension: 5 }, "work");
+      assert.ok(result !== null);
+      assert.equal("invented_dimension" in result!, false);
+    });
+
+    it("returns null for an array, which is technically an object", () => {
+      assert.equal(validateScoresSoft([1, 2, 3, 4, 5]), null);
     });
 
     it("clamps out-of-range values instead of rejecting", () => {
@@ -1269,5 +1334,661 @@ describe("stripStageDirections (roleplay voice)", () => {
 
   it("leaves ordinary dialogue untouched", () => {
     assert.equal(stripStageDirections("Yeah, whatever. You?"), "Yeah, whatever. You?");
+  });
+});
+
+// ===========================================================================
+// 7. Content library integrity and coverage
+//
+// The library is data, and data rots quietly: a duplicate id, a context with no
+// characters in it, a domain nothing maps to. These are the checks that fail
+// loudly when someone adds content by copy-paste.
+// ===========================================================================
+
+describe("Content library", () => {
+  describe("concepts", () => {
+    it("has unique ids", () => {
+      const ids = CONCEPTS.map((c) => c.id);
+      assert.equal(new Set(ids).size, ids.length, "duplicate concept id");
+    });
+
+    it("has a name, source and description on every concept", () => {
+      for (const c of CONCEPTS) {
+        assert.ok(c.name?.length > 0, `${c.id} has no name`);
+        assert.ok(c.source?.length > 0, `${c.id} has no source`);
+        assert.ok(c.description?.length > 40, `${c.id} has a thin description`);
+      }
+    });
+
+    it("resolves every concept to at least one valid context", () => {
+      for (const c of CONCEPTS) {
+        const ctx = contextsForConcept(c);
+        assert.ok(ctx.length > 0, `${c.id} resolves to no contexts`);
+        for (const one of ctx) {
+          assert.ok(LIFE_CONTEXTS.includes(one), `${c.id} declares unknown context ${one}`);
+        }
+      }
+    });
+
+    it("gives every life context something to teach", () => {
+      for (const context of LIFE_CONTEXTS) {
+        const available = CONCEPTS.filter((c) => contextsForConcept(c).includes(context));
+        assert.ok(available.length >= 10, `${context} has only ${available.length} concepts`);
+      }
+    });
+
+    it("is no longer majority-work — social life is the bulk of the curriculum", () => {
+      const social = CONCEPTS.filter((c) =>
+        contextsForConcept(c).some((ctx) => ctx !== "work")
+      );
+      assert.ok(
+        social.length > CONCEPTS.length / 2,
+        `only ${social.length}/${CONCEPTS.length} concepts are practisable outside work`
+      );
+    });
+
+    it("covers the four social contexts deeply enough not to loop in a fortnight", () => {
+      // 15 social concepts was the old ceiling and the reason it felt repetitive.
+      for (const context of SOCIAL_CONTEXTS) {
+        const available = CONCEPTS.filter((c) => contextsForConcept(c).includes(context));
+        assert.ok(available.length > 15, `${context} has only ${available.length} concepts`);
+      }
+    });
+  });
+
+  describe("characters", () => {
+    it("has unique ids", () => {
+      const ids = CHARACTERS.map((c) => c.id);
+      assert.equal(new Set(ids).size, ids.length, "duplicate character id");
+    });
+
+    it("gives every character a usable brief for the roleplay prompt", () => {
+      for (const c of CHARACTERS) {
+        assert.ok(c.personality?.length > 200, `${c.id} has a thin personality brief`);
+        assert.ok(c.communication_style?.length > 0, `${c.id} has no communication style`);
+        assert.ok(c.hidden_motivation?.length > 0, `${c.id} has no hidden motivation`);
+        assert.ok(c.pressure_points?.length >= 3, `${c.id} has too few pressure points`);
+        assert.ok(c.tactics?.length >= 3, `${c.id} has too few tactics`);
+      }
+    });
+
+    it("declares a valid disposition and valid contexts", () => {
+      for (const c of CHARACTERS) {
+        assert.ok(
+          DISPOSITIONS.includes(characterDisposition(c)),
+          `${c.id} has unknown disposition`
+        );
+        for (const one of characterContexts(c)) {
+          assert.ok(LIFE_CONTEXTS.includes(one), `${c.id} declares unknown context ${one}`);
+        }
+      }
+    });
+
+    it("populates every life context with enough cast to avoid repeats", () => {
+      for (const context of LIFE_CONTEXTS) {
+        const cast = charactersForContext(context);
+        assert.ok(cast.length >= 5, `${context} has only ${cast.length} characters`);
+      }
+    });
+
+    it("is not uniformly hostile — every social context has a warm character", () => {
+      // Connecting with someone warm is a different skill from winning against
+      // someone hostile, and the old cast could only train the second.
+      for (const context of SOCIAL_CONTEXTS) {
+        const warm = charactersForContext(context).filter(
+          (c) => characterDisposition(c) === "warm"
+        );
+        assert.ok(warm.length > 0, `${context} has no warm characters`);
+      }
+    });
+
+    it("still offers resistance in every social context", () => {
+      for (const context of SOCIAL_CONTEXTS) {
+        const hard = charactersForContext(context).filter(
+          (c) => characterDisposition(c) !== "warm"
+        );
+        assert.ok(hard.length > 0, `${context} has no resistant or neutral characters`);
+      }
+    });
+  });
+
+  describe("selectCharacter", () => {
+    const conceptIn = (context: LifeContext) =>
+      CONCEPTS.find((c) => contextsForConcept(c).includes(context))!;
+
+    it("only ever returns a character that belongs in the session's context", () => {
+      for (const context of LIFE_CONTEXTS) {
+        for (let i = 0; i < 40; i++) {
+          const chosen = selectCharacter(conceptIn(context), context);
+          assert.ok(
+            characterContexts(chosen).includes(context),
+            `${chosen.id} is not a ${context} character`
+          );
+        }
+      }
+    });
+
+    it("avoids recently used characters", () => {
+      const cast = charactersForContext("groups");
+      const avoid = cast.slice(0, cast.length - 1).map((c) => c.id);
+      const chosen = selectCharacter(conceptIn("groups"), "groups", { avoidIds: avoid });
+      assert.equal(chosen.id, cast[cast.length - 1].id);
+    });
+
+    it("relaxes the avoid list rather than failing when it would empty the pool", () => {
+      const all = CHARACTERS.map((c) => c.id);
+      const chosen = selectCharacter(conceptIn("family"), "family", { avoidIds: all });
+      assert.ok(chosen, "returned nothing when everything was excluded");
+      assert.ok(characterContexts(chosen).includes("family"));
+    });
+
+    it("honours a preferred disposition when the context offers one", () => {
+      for (let i = 0; i < 25; i++) {
+        const chosen = selectCharacter(conceptIn("dating"), "dating", {
+          preferDisposition: "warm",
+        });
+        assert.equal(characterDisposition(chosen), "warm");
+      }
+    });
+
+    it("falls back to any disposition rather than failing when none matches", () => {
+      // No warm characters exist for work; selection must still return someone.
+      const chosen = selectCharacter(conceptIn("work"), "work", { preferDisposition: "warm" });
+      assert.ok(chosen);
+      assert.ok(characterContexts(chosen).includes("work"));
+    });
+
+    it("derives the context from the concept when none is passed", () => {
+      const chosen = selectCharacter(conceptIn("work"));
+      assert.ok(chosen, "returned nothing without an explicit context");
+    });
+  });
+});
+
+// ===========================================================================
+// 8. History-aware selection
+//
+// The rule that matters most is the last one in each group: every constraint
+// relaxes rather than failing. Returning nothing here means failing to start
+// a session, which is strictly worse than a slightly repetitive one.
+// ===========================================================================
+
+describe("History-aware selection", () => {
+  const first: Picker = () => 0;
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  const idOf = (x: { id: string }) => x.id;
+
+  describe("chooseWithHistory", () => {
+    it("returns null only when there is nothing to choose from", () => {
+      assert.equal(chooseWithHistory([], { idOf, recentIds: [], window: 3, pick: first }), null);
+    });
+
+    it("never repeats the most recent selection", () => {
+      for (let i = 0; i < 50; i++) {
+        const chosen = chooseWithHistory(items, { idOf, recentIds: ["a"], window: 1 });
+        assert.notEqual(chosen!.id, "a");
+      }
+    });
+
+    it("excludes everything inside the window", () => {
+      for (let i = 0; i < 50; i++) {
+        const chosen = chooseWithHistory(items, { idOf, recentIds: ["a", "b", "c"], window: 3 });
+        assert.equal(chosen!.id, "d");
+      }
+    });
+
+    it("prefers never-used items over merely older ones", () => {
+      // "a" is outside the window but has been seen; "d" never has.
+      const chosen = chooseWithHistory(items, {
+        idOf,
+        recentIds: ["b", "c", "a"],
+        window: 2,
+        pick: first,
+      });
+      assert.equal(chosen!.id, "d");
+    });
+
+    it("shrinks the window rather than returning nothing", () => {
+      // Window of 4 would exclude the entire pool; it should relax to exclude
+      // only the most recent and still return something.
+      const chosen = chooseWithHistory(items, {
+        idOf,
+        recentIds: ["a", "b", "c", "d"],
+        window: 4,
+        pick: first,
+      });
+      assert.ok(chosen, "returned nothing when the window covered everything");
+      assert.notEqual(chosen!.id, "a", "did not even avoid the most recent");
+    });
+
+    it("still returns something when the pool is a single item", () => {
+      const one = [{ id: "only" }];
+      const chosen = chooseWithHistory(one, { idOf, recentIds: ["only"], window: 3, pick: first });
+      assert.equal(chosen!.id, "only");
+    });
+
+    it("ignores history entries that are not in the candidate pool", () => {
+      const chosen = chooseWithHistory(items, {
+        idOf,
+        recentIds: ["gone", "retired"],
+        window: 3,
+        pick: first,
+      });
+      assert.equal(chosen!.id, "a");
+    });
+  });
+
+  describe("nextDisposition", () => {
+    it("prefers a disposition not seen in recent sessions", () => {
+      const chosen = nextDisposition(["resistant", "resistant"], DISPOSITIONS, first);
+      assert.notEqual(chosen, "resistant");
+    });
+
+    it("steers away from the most recent when all have been used", () => {
+      for (let i = 0; i < 30; i++) {
+        const chosen = nextDisposition(["warm", "neutral", "resistant"]);
+        assert.notEqual(chosen, "warm", "repeated the most recent disposition");
+      }
+    });
+
+    it("returns undefined only when nothing is available", () => {
+      assert.equal(nextDisposition(["warm"], [], first), undefined);
+    });
+
+    it("copes with a single available disposition", () => {
+      assert.equal(nextDisposition(["warm"], ["warm"], first), "warm");
+    });
+  });
+
+  describe("selectNewConcept", () => {
+    it("avoids the domains of the last few sessions", () => {
+      const recent = CONCEPTS.filter((c) => c.domain === "Influence & Persuasion")
+        .slice(0, 2)
+        .map((c) => c.id);
+      for (let i = 0; i < 30; i++) {
+        const chosen = selectNewConcept(recent, ["work"]);
+        assert.notEqual(chosen.domain, "Influence & Persuasion");
+      }
+    });
+
+    it("only returns concepts practisable in the active contexts", () => {
+      for (let i = 0; i < 40; i++) {
+        const chosen = selectNewConcept([], ["dating"]);
+        assert.ok(contextsForConcept(chosen).includes("dating"), `${chosen.id} is not a dating concept`);
+      }
+    });
+
+    it("resets rather than failing once every in-context concept is used", () => {
+      const allDating = CONCEPTS.filter((c) => contextsForConcept(c).includes("dating")).map(
+        (c) => c.id
+      );
+      const chosen = selectNewConcept(allDating, ["dating"]);
+      assert.ok(chosen, "returned nothing when the curriculum was exhausted");
+      assert.ok(contextsForConcept(chosen).includes("dating"));
+    });
+  });
+
+  describe("conceptFromLedgerValue", () => {
+    it("resolves both concept ids and formatted ledger names", () => {
+      assert.equal(conceptFromLedgerValue("mirroring")?.id, "mirroring");
+      assert.equal(conceptFromLedgerValue("Mirroring (Voss)")?.id, "mirroring");
+    });
+
+    it("returns undefined for retired or unknown values", () => {
+      assert.equal(conceptFromLedgerValue("no-such-concept"), undefined);
+    });
+  });
+
+  describe("characterIdFromName", () => {
+    it("maps a ledger character name back to its id", () => {
+      assert.equal(characterIdFromName("The Sceptical Investor"), "sceptical-investor");
+    });
+
+    it("returns null for retired archetypes rather than throwing", () => {
+      assert.equal(characterIdFromName("The Archetype That Was Deleted"), null);
+    });
+
+    it("silently drops unknown names when deriving dispositions", () => {
+      assert.deepEqual(dispositionsForNames(["Nobody At All"]), []);
+    });
+  });
+});
+
+// ===========================================================================
+// 9. Scenario generation
+//
+// The generator itself needs a model call, so these cover the parts that must
+// hold without one: the prompt actually carries the avoid-list and the concept
+// stays hidden, the parser tolerates whatever comes back, and the fallback is
+// always usable.
+// ===========================================================================
+
+describe("Scenario generation", () => {
+  const concept = CONCEPTS.find((c) => c.id === "reading-interest")!;
+  const character = CHARACTERS.find((c) => c.id === "nervous-first-date")!;
+
+  describe("buildScenarioPrompt", () => {
+    it("names the character and the setting", () => {
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.ok(prompt.includes(character.name));
+      assert.ok(prompt.includes(character.hidden_motivation));
+      assert.ok(prompt.includes(CONTEXT_LABELS.dating));
+    });
+
+    it("tells the model the concept must stay hidden", () => {
+      // A scenario that telegraphs the skill being practised defeats the point.
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.ok(prompt.includes(concept.name));
+      assert.ok(/must NOT know/i.test(prompt));
+    });
+
+    it("passes recent scenarios through as an explicit avoid list", () => {
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", [
+        "rooftop bar, character just left a bad meeting",
+        "coffee shop, raining, character running late",
+      ]);
+      assert.ok(prompt.includes("rooftop bar, character just left a bad meeting"));
+      assert.ok(prompt.includes("coffee shop, raining, character running late"));
+      assert.ok(/do not repeat/i.test(prompt));
+    });
+
+    it("omits the avoid block entirely when there is no history", () => {
+      const prompt = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.equal(/do not repeat/i.test(prompt), false);
+    });
+
+    it("includes the bio when present and omits the section when not", () => {
+      const withBio = buildScenarioPrompt(concept, character, "dating", "I'm a vet in Leeds.", []);
+      assert.ok(withBio.includes("I'm a vet in Leeds."));
+      const withoutBio = buildScenarioPrompt(concept, character, "dating", "", []);
+      assert.equal(/ABOUT THE USER/.test(withoutBio), false);
+    });
+
+    it("varies its guidance by context rather than emitting one generic brief", () => {
+      const prompts = LIFE_CONTEXTS.map((ctx) =>
+        buildScenarioPrompt(concept, character, ctx, "", [])
+      );
+      assert.equal(new Set(prompts).size, LIFE_CONTEXTS.length);
+    });
+  });
+
+  describe("fallbackScenario", () => {
+    it("produces a usable scenario and summary for every context", () => {
+      for (const context of LIFE_CONTEXTS) {
+        const { scenario, summary } = fallbackScenario(concept, character, context);
+        assert.ok(scenario.length > 80, `${context} fallback is too thin`);
+        assert.ok(scenario.includes(character.name));
+        assert.ok(summary.includes(context));
+      }
+    });
+
+    it("derives a context from the concept when none is given", () => {
+      const { scenario } = fallbackScenario(concept, character);
+      assert.ok(scenario.length > 80);
+    });
+  });
+});
+
+// ===========================================================================
+// 10. Scoring dimension sets
+//
+// The old rubric scored a friend in crisis on "frame control" and "strategic
+// outcome". These check each context gets its own five, that work is preserved
+// exactly, and that unknown sets degrade to work rather than blowing up the
+// dashboard.
+// ===========================================================================
+
+describe("Scoring dimensions", () => {
+  it("gives every life context exactly five dimensions", () => {
+    for (const context of LIFE_CONTEXTS) {
+      const set = DIMENSION_SETS[context];
+      assert.equal(set.dimensions.length, 5, `${context} has ${set.dimensions.length}`);
+    }
+  });
+
+  it("gives every dimension a key, label, short code and prompt", () => {
+    for (const context of LIFE_CONTEXTS) {
+      for (const d of DIMENSION_SETS[context].dimensions) {
+        assert.ok(/^[a-z_]+$/.test(d.key), `${context}.${d.key} is not snake_case`);
+        assert.ok(d.label.length > 0);
+        assert.ok(d.short.length === 2, `${context}.${d.key} short code is not 2 chars`);
+        assert.ok(d.prompt.length > 30, `${context}.${d.key} prompt is too thin`);
+      }
+    }
+  });
+
+  it("uses unique keys within each set", () => {
+    for (const context of LIFE_CONTEXTS) {
+      const keys = DIMENSION_SETS[context].dimensions.map((d) => d.key);
+      assert.equal(new Set(keys).size, keys.length, `${context} has duplicate keys`);
+    }
+  });
+
+  it("preserves the work rubric exactly, so professional sessions are unchanged", () => {
+    assert.deepEqual(dimensionKeys("work"), [
+      "technique_application",
+      "tactical_awareness",
+      "frame_control",
+      "emotional_regulation",
+      "strategic_outcome",
+    ]);
+  });
+
+  it("does not score personal contexts on frame control or strategic outcome", () => {
+    // The whole point: these are the wrong questions to ask about a friend.
+    for (const context of SOCIAL_CONTEXTS) {
+      const keys = dimensionKeys(context);
+      assert.equal(keys.includes("frame_control"), false, `${context} scores frame control`);
+      assert.equal(keys.includes("strategic_outcome"), false, `${context} scores strategic outcome`);
+    }
+  });
+
+  describe("dimensionSetFor", () => {
+    it("resolves known contexts", () => {
+      assert.equal(dimensionSetFor("dating").id, "dating");
+      assert.equal(dimensionSetFor("family").id, "family");
+    });
+
+    it("falls back to work for unknown, empty, or missing values", () => {
+      assert.equal(dimensionSetFor("nonsense").id, "work");
+      assert.equal(dimensionSetFor("").id, "work");
+      assert.equal(dimensionSetFor(null).id, "work");
+      assert.equal(dimensionSetFor(undefined).id, "work");
+    });
+  });
+
+  describe("averageScore", () => {
+    it("averages whatever dimensions are present", () => {
+      assert.equal(averageScore({ a: 2, b: 4 }), 3);
+    });
+
+    it("returns 0 rather than NaN for an empty object", () => {
+      assert.equal(averageScore({}), 0);
+    });
+  });
+
+  describe("weakestDimension", () => {
+    it("returns the lowest-scoring dimension with its label", () => {
+      const worst = weakestDimension(
+        { regulation: 4, listening: 2, ownership: 5, boundary_clarity: 3, repair: 4 },
+        "family"
+      );
+      assert.equal(worst?.key, "listening");
+      assert.equal(worst?.label, "Listening");
+      assert.equal(worst?.score, 2);
+    });
+
+    it("breaks ties toward the set's declared order", () => {
+      const worst = weakestDimension(
+        { regulation: 1, listening: 1, ownership: 5, boundary_clarity: 5, repair: 5 },
+        "family"
+      );
+      assert.equal(worst?.key, "regulation");
+    });
+
+    it("ignores keys that are not in the set", () => {
+      const worst = weakestDimension({ regulation: 4, not_a_dimension: 1 }, "family");
+      assert.equal(worst?.key, "regulation");
+    });
+
+    it("returns null when nothing in the set was scored", () => {
+      assert.equal(weakestDimension({}, "family"), null);
+      assert.equal(weakestDimension({ frame_control: 1 }, "family"), null);
+    });
+  });
+});
+
+// ===========================================================================
+// 11. Session shapes
+//
+// The transition rules are the load-bearing part: a shape that lets you skip
+// a phase, or that accepts a phase it doesn't contain, wedges a live session
+// with no way forward. The resume path depends on shapeIncludes specifically.
+// ===========================================================================
+
+describe("Session shapes", () => {
+  it("gives every shape a non-empty ordered phase list", () => {
+    for (const shape of SESSION_SHAPES) {
+      assert.ok(shape.phases.length > 0, `${shape.id} has no phases`);
+      assert.ok(shape.label.length > 0);
+      assert.ok(shape.description.length > 20, `${shape.id} has a thin description`);
+    }
+  });
+
+  it("never puts checkin in a shape — it is a prelude to all of them", () => {
+    for (const shape of SESSION_SHAPES) {
+      assert.equal(shape.phases.includes("checkin"), false, `${shape.id} contains checkin`);
+    }
+  });
+
+  it("gives every shape sane turn bounds", () => {
+    for (const shape of SESSION_SHAPES) {
+      assert.ok(shape.minTurns >= 1, `${shape.id} minTurns`);
+      assert.ok(shape.maxTurns > shape.minTurns, `${shape.id} maxTurns <= minTurns`);
+    }
+  });
+
+  it("actually differs in length — a drill is shorter than a deep scene", () => {
+    assert.ok(shapeById("drill").maxTurns < shapeById("deep").minTurns);
+    assert.ok(shapeById("drill").phases.length < shapeById("full").phases.length);
+  });
+
+  it("preserves the original loop as the full shape", () => {
+    assert.deepEqual(shapeById("full").phases, [
+      "lesson",
+      "retrieval",
+      "roleplay",
+      "debrief",
+      "mission",
+    ]);
+  });
+
+  describe("shapeById", () => {
+    it("falls back to the full loop for unknown ids", () => {
+      assert.equal(shapeById("nonsense").id, "full");
+      assert.equal(shapeById(null).id, "full");
+      assert.equal(shapeById(undefined).id, "full");
+    });
+  });
+
+  describe("nextPhase", () => {
+    it("walks the shape in order", () => {
+      const full = shapeById("full");
+      assert.equal(nextPhase(full, "lesson"), "retrieval");
+      assert.equal(nextPhase(full, "roleplay"), "debrief");
+    });
+
+    it("returns null at the end of the shape", () => {
+      assert.equal(nextPhase(shapeById("full"), "mission"), null);
+      assert.equal(nextPhase(shapeById("review"), "debrief"), null);
+    });
+
+    it("returns null for a phase the shape does not contain", () => {
+      assert.equal(nextPhase(shapeById("drill"), "lesson"), null);
+    });
+
+    it("sends a drill from roleplay straight to the mission, skipping debrief", () => {
+      assert.equal(nextPhase(shapeById("drill"), "roleplay"), "mission");
+    });
+  });
+
+  describe("isValidTransition", () => {
+    it("allows only the shape's own next step", () => {
+      const full = shapeById("full");
+      assert.ok(isValidTransition(full, "lesson", "retrieval"));
+      assert.equal(isValidTransition(full, "lesson", "roleplay"), false, "allowed a skipped phase");
+      assert.equal(isValidTransition(full, "roleplay", "lesson"), false, "allowed going backwards");
+    });
+
+    it("lets check-in lead into whatever the shape starts with", () => {
+      assert.ok(isValidTransition(shapeById("full"), "checkin", "lesson"));
+      assert.ok(isValidTransition(shapeById("deep"), "checkin", "roleplay"));
+      assert.equal(
+        isValidTransition(shapeById("deep"), "checkin", "lesson"),
+        false,
+        "let check-in enter a phase this shape does not have"
+      );
+    });
+  });
+
+  describe("shapeIncludes", () => {
+    it("accepts check-in for every shape", () => {
+      for (const shape of SESSION_SHAPES) {
+        assert.ok(shapeIncludes(shape, "checkin"));
+      }
+    });
+
+    it("rejects a phase the shape does not run", () => {
+      // This is what stops a resumed drill restoring into a retrieval phase
+      // it has no way to leave.
+      assert.equal(shapeIncludes(shapeById("drill"), "retrieval"), false);
+      assert.ok(shapeIncludes(shapeById("full"), "retrieval"));
+    });
+  });
+
+  describe("selectShape", () => {
+    const first: Picker = () => 0;
+
+    it("always runs the full loop on day 1", () => {
+      for (let i = 0; i < 20; i++) {
+        assert.equal(selectShape({ dayNumber: 1, hasDueReview: true }).id, "full");
+      }
+    });
+
+    it("only offers review when spaced repetition has something due", () => {
+      for (let i = 0; i < 40; i++) {
+        const shape = selectShape({ dayNumber: 5, hasDueReview: false });
+        assert.notEqual(shape.id, "review");
+      }
+    });
+
+    it("only offers a story session for a storytelling concept", () => {
+      for (let i = 0; i < 40; i++) {
+        const shape = selectShape({ dayNumber: 5, isStorytellingConcept: false });
+        assert.notEqual(shape.id, "story");
+      }
+    });
+
+    it("avoids repeating recent shapes", () => {
+      for (let i = 0; i < 40; i++) {
+        const shape = selectShape({ dayNumber: 5, recentShapeIds: ["full", "drill"] });
+        assert.notEqual(shape.id, "full");
+        assert.notEqual(shape.id, "drill");
+      }
+    });
+
+    it("still returns a shape when history covers everything eligible", () => {
+      const shape = selectShape({
+        dayNumber: 5,
+        recentShapeIds: SESSION_SHAPES.map((s) => s.id),
+        pick: first,
+      });
+      assert.ok(shape, "returned nothing rather than relaxing");
+    });
+
+    it("returns a usable shape with no options at all", () => {
+      const shape = selectShape();
+      assert.ok(shape.phases.length > 0);
+    });
   });
 });

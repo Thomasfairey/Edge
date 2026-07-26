@@ -1,11 +1,41 @@
 # THE EDGE
-## AI-Powered Influence Mastery System
-### Product Requirements Document — v0.3 (Final)
+## Daily practice at being good with people
+### Product Requirements Document — v0.4
 
-**Version:** 0.3 (V0 — Personal Prototype) — Approved for Development
+**Version:** 0.4 (V0 — Personal Prototype) — see §0 for what changed from v0.3
 **Author:** Tom Fairey, CRO — UnlikelyAI
 **Date:** February 2026
 **Classification:** Confidential
+
+---
+
+## 0. v0.4 — The social reframe
+
+**What changed and why.** v0.3 described an influence training system for elite professionals. In use, two problems dominated:
+
+1. **It was repetitive.** The same five phases in the same order every day; 12 possible roleplay openings on the social track; a 15-concept social curriculum that looped inside a fortnight; and bare `Math.random()` selection with no memory, so the same character could appear twice running.
+2. **It was corporate.** 35 of 50 concepts were business-sourced, 6 of 9 characters were investor/procurement/consultancy archetypes, and the scoring rubric — frame control, strategic outcome, tactical awareness — is the wrong lens for a friend, a date, or a parent.
+
+**The reframe.** The Edge is now a system for being good with people. Professional influence is one setting among several rather than the organising principle.
+
+| v0.3 | v0.4 |
+|---|---|
+| Tracks: `professional` / `social` / `both` | Life contexts: `dating`, `friends`, `groups`, `family`, `work` — chosen as a multi-select, not a either/or |
+| A concept belongs to one track | A concept's **domain** says what it is; its **contexts** say where it's practised. Independent. |
+| 50 concepts, 10 domains | 76 concepts, 15 domains — adding Empathy & Attunement, Vulnerability & Intimacy, Conflict & Repair, Flirtation & Signalling, Group Dynamics & Inclusion |
+| 9 characters, all resistant | 32 characters across a `resistant` / `neutral` / `warm` axis |
+| ~20 hardcoded scenario strings | Scenarios composed per session, avoiding recent ones |
+| One fixed 5-phase loop | Five session shapes: full, drill, deep, review, story |
+| Five fixed combat dimensions | Five dimensions **per context**; work's five unchanged |
+| `Math.random()` selection | History-aware selection that avoids recent concepts, domains, characters, dispositions and shapes |
+
+**Notably new: Conflict & Repair.** v0.3 had nothing about apologising properly, holding a boundary, recognising flooding, or de-escalating with someone you can't walk away from. Hard conversations with family were not something the product could teach.
+
+**§2.1 is no longer accurate.** v0.3 hardcoded a single user's professional context. v0.4 personalises from a user-supplied bio and their chosen contexts; nothing about a specific employer, role, or industry is baked in.
+
+**Not built.** The `field` session shape — reflect on a real interaction rather than roleplay one — is specified but not implemented; it needs a reflection input the UI doesn't have.
+
+**Scope.** The reframe landed in `the-edge/` (the Next.js app) only. `backend/` and the native SwiftUI app remain on the v0.3 model — see ARCHITECTURE.md for the divergence and the sharp edges.
 
 ---
 
@@ -21,6 +51,11 @@
 | **v0.3** | **Phase 0: The Accountability Gate** | **3.1, 3.6** | **Added mandatory mission accountability check before new content unlocks. Operant conditioning friction.** |
 | **v0.3** | **Nuance Ledger Prompt Serialisation** | **4.4** | **Backend serialises ledger to clean markdown before injection. Eliminates token waste and formatting noise.** |
 | **v0.3** | **Cold Start Hallucination Guard** | **3.4, 4.2** | **Conditional debrief instruction: no longitudinal pattern analysis until Day 4 (≥3 ledger entries).** |
+| **v0.4** | **Life contexts replace tracks** | **0, 2, 3.3** | **`professional`/`social`/`both` becomes a five-context multi-select. Domain and context are independent.** |
+| **v0.4** | **Curriculum and cast expansion** | **0, 3.3, 3.4** | **50 → 76 concepts across 15 domains; 9 → 32 characters with a warm/neutral/resistant axis.** |
+| **v0.4** | **Generated scenarios** | **0, 3.4** | **Scenarios composed per session from concept, character, bio and recent history instead of ~20 fixed strings.** |
+| **v0.4** | **Variable session shapes** | **0, 3.1** | **Five shapes replace the single fixed five-phase loop.** |
+| **v0.4** | **Context-specific scoring** | **0, 4.4** | **Five dimensions per context. The combat rubric is retained for work only.** |
 
 ---
 

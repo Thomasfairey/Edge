@@ -82,6 +82,12 @@ export const PHASE_CONFIG = {
   lesson: { model: MODELS.PRIMARY, max_tokens: 1200, temperature: 0.8 },
   roleplay: { model: MODELS.PRIMARY, max_tokens: 300, temperature: 0.9 },
   coach: { model: MODELS.FAST, max_tokens: 300, temperature: 0.7 },
+  // Scenario generation sits on the critical path for starting a roleplay, so
+  // it runs on the fast model. High temperature is the point — the whole
+  // purpose is that two sessions never open the same way.
+  // NOTE: getPhaseLabel keys on `${model}:${max_tokens}`, so this pair must stay
+  // distinct from coach's FAST:300.
+  scenario: { model: MODELS.FAST, max_tokens: 400, temperature: 1.0 },
   debrief: { model: MODELS.PRIMARY, max_tokens: 1500, temperature: 0.6 },
   mission: { model: MODELS.PRIMARY, max_tokens: 400, temperature: 0.7 },
 } as const;

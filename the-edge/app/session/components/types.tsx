@@ -4,6 +4,7 @@
 
 import type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message } from "@/lib/types";
 import type { VoiceState } from "@/app/hooks/useVoice";
+import { dimensionSetFor } from "@/lib/scoring-dimensions";
 
 // Re-export lib types used across session components
 export type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message };
@@ -12,13 +13,32 @@ export type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message 
 // Constants shared across components
 // ---------------------------------------------------------------------------
 
-export const PHASES: { key: SessionPhase; label: string; color: string }[] = [
-  { key: "checkin", label: "Gate", color: "#B8E0C8" },
-  { key: "lesson", label: "Learn", color: "#B8D4E3" },
-  { key: "roleplay", label: "Sim", color: "#F2C4C4" },
-  { key: "debrief", label: "Brief", color: "#C5B8E8" },
-  { key: "mission", label: "Deploy", color: "#B8E0C8" },
-];
+const PHASE_META: Record<SessionPhase, { label: string; color: string }> = {
+  checkin: { label: "Gate", color: "#B8E0C8" },
+  lesson: { label: "Learn", color: "#B8D4E3" },
+  // Retrieval is a beat within Learn and has never had its own pip.
+  retrieval: { label: "Learn", color: "#B8D4E3" },
+  roleplay: { label: "Sim", color: "#F2C4C4" },
+  debrief: { label: "Brief", color: "#C5B8E8" },
+  mission: { label: "Deploy", color: "#B8E0C8" },
+};
+
+/**
+ * The pips to show for a session, derived from its shape — a drill shows two,
+ * the full loop shows four. Retrieval is folded into Learn, and check-in only
+ * appears when the session actually has one.
+ */
+export function phasesForShape(
+  shapePhases: SessionPhase[],
+  checkinNeeded: boolean
+): { key: SessionPhase; label: string; color: string }[] {
+  const keys: SessionPhase[] = checkinNeeded ? ["checkin"] : [];
+  for (const phase of shapePhases) {
+    if (phase === "retrieval") continue; // shown as part of Learn
+    keys.push(phase);
+  }
+  return keys.map((key) => ({ key, ...PHASE_META[key] }));
+}
 
 export const PHASE_BG: Record<string, string> = {
   checkin: "#F0FAF4",
@@ -29,13 +49,20 @@ export const PHASE_BG: Record<string, string> = {
   mission: "#F0FAF4",
 };
 
-export const SCORE_DIMS: { key: keyof SessionScores; label: string; fullName: string }[] = [
-  { key: "technique_application", label: "TA", fullName: "Technique" },
-  { key: "tactical_awareness", label: "TW", fullName: "Tactical" },
-  { key: "frame_control", label: "FC", fullName: "Frame" },
-  { key: "emotional_regulation", label: "ER", fullName: "Regulation" },
-  { key: "strategic_outcome", label: "SO", fullName: "Outcome" },
-];
+/**
+ * The score chips for a session, derived from its dimension set rather than
+ * hardcoded — a family session shows Regulation/Listening/Ownership, a dating
+ * session shows Presence/Playfulness/Spark.
+ */
+export function scoreDimsFor(
+  setId?: string | null
+): { key: string; label: string; fullName: string }[] {
+  return dimensionSetFor(setId).dimensions.map((d) => ({
+    key: d.key,
+    label: d.short,
+    fullName: d.label,
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Voice props — subset of useVoice return passed to phase components

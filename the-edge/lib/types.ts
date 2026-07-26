@@ -8,21 +8,12 @@
 // Scoring
 // ---------------------------------------------------------------------------
 
-export interface SessionScores {
-  technique_application: number; // 1-5
-  tactical_awareness: number; // 1-5
-  frame_control: number; // 1-5
-  emotional_regulation: number; // 1-5
-  strategic_outcome: number; // 1-5
-}
-
-export const SCORE_KEYS: (keyof SessionScores)[] = [
-  "technique_application",
-  "tactical_awareness",
-  "frame_control",
-  "emotional_regulation",
-  "strategic_outcome",
-];
+/**
+ * Scores for one session, keyed by the dimensions of whichever set the session
+ * ran under. The keys are not fixed — see lib/scoring-dimensions.ts, which owns
+ * the per-context sets and the validation that goes with them.
+ */
+export type SessionScores = Record<string, number>;
 
 // ---------------------------------------------------------------------------
 // Nuance Ledger (PRD Section 4.4, Appendix B)
@@ -36,12 +27,18 @@ export interface LedgerEntry {
   character: string; // archetype name
   difficulty: number; // 1-5
   scores: SessionScores;
+  dimension_set: string; // names the keys in `scores`
   behavioral_weakness_summary: string; // 2 sentences, AI-generated
   key_moment: string; // most important roleplay turn
   mission: string; // the deployed mission
   mission_outcome: string; // qualitative extraction or "NOT EXECUTED"
   commands_used: string[]; // /coach, /reset, /skip
   session_completed: boolean;
+  // Session provenance — all optional so pre-migration rows still map cleanly.
+  character_id?: string | null; // stable id; `character` holds the display name
+  context?: LifeContext | null; // which life context the session ran in
+  scenario_summary?: string | null; // one line, fed back in to avoid repeats
+  shape_id?: string | null; // which session shape ran
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +51,11 @@ export type ConceptDomain =
   | "Storytelling & Narrative"
   | "Conversation & Memorability"
   | "Rapport & Relationship Engineering"
+  | "Empathy & Attunement"
+  | "Vulnerability & Intimacy"
+  | "Conflict & Repair"
+  | "Flirtation & Signalling"
+  | "Group Dynamics & Inclusion"
   // ── Persuasion & pressure ──
   | "Influence & Persuasion"
   | "Power Dynamics"
@@ -110,6 +112,11 @@ export const DOMAIN_DEFAULT_CONTEXTS: Record<ConceptDomain, LifeContext[]> = {
   "Storytelling & Narrative": ["groups", "friends", "dating", "work"],
   "Conversation & Memorability": ["groups", "friends", "dating", "work"],
   "Rapport & Relationship Engineering": ["friends", "dating", "groups", "family", "work"],
+  "Empathy & Attunement": ["friends", "family", "dating", "groups", "work"],
+  "Vulnerability & Intimacy": ["dating", "friends", "family"],
+  "Conflict & Repair": ["family", "friends", "dating", "work"],
+  "Flirtation & Signalling": ["dating"],
+  "Group Dynamics & Inclusion": ["groups", "friends", "work"],
   "Influence & Persuasion": ["work"],
   "Power Dynamics": ["work"],
   "Negotiation": ["work", "family"],
@@ -205,11 +212,21 @@ export interface Concept {
 // Character archetypes (PRD Section 3.4)
 // ---------------------------------------------------------------------------
 
+/**
+ * How the character meets you. Not a difficulty rating — a warm character can
+ * be harder than a hostile one, because connecting is a different skill from
+ * winning, and only training against resistance teaches the second.
+ */
+export type Disposition = "resistant" | "neutral" | "warm";
+
+export const DISPOSITIONS: Disposition[] = ["resistant", "neutral", "warm"];
+
 export interface CharacterArchetype {
   id: string;
   name: string;
   description: string; // 1 sentence
   contexts?: LifeContext[]; // settings this character belongs in
+  disposition?: Disposition; // defaults to "resistant" for legacy content
   personality: string; // detailed personality brief for system prompt
   communication_style: string; // how they talk
   hidden_motivation: string; // what they secretly want
@@ -252,27 +269,10 @@ export interface SessionState {
 export const MAX_INPUT_LENGTH = 10_000;
 export const MAX_TRANSCRIPT_LENGTH = 100;
 
-/** Clamp a score to the valid 1-5 range */
-export function clampScore(value: unknown): number {
-  const n = typeof value === "number" ? value : parseInt(String(value), 10);
-  if (isNaN(n)) return 3;
-  return Math.max(1, Math.min(5, Math.round(n)));
-}
-
-/** Validate and sanitize a SessionScores object */
-export function validateScores(raw: unknown): SessionScores | null {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
-  const hasAllKeys = SCORE_KEYS.every((k) => k in obj);
-  if (!hasAllKeys) return null;
-  return {
-    technique_application: clampScore(obj.technique_application),
-    tactical_awareness: clampScore(obj.tactical_awareness),
-    frame_control: clampScore(obj.frame_control),
-    emotional_regulation: clampScore(obj.emotional_regulation),
-    strategic_outcome: clampScore(obj.strategic_outcome),
-  };
-}
+// Score clamping and validation now live in lib/scoring-dimensions.ts, which
+// owns the per-context dimension sets. They are re-exported here so the many
+// existing `from "@/lib/types"` imports keep working.
+export { clampScore, validateScoresForSet } from "@/lib/scoring-dimensions";
 
 /** Validate a Message object */
 export function isValidMessage(msg: unknown): msg is Message {

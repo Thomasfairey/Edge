@@ -6,22 +6,17 @@
  */
 
 import { useMemo } from "react";
-import { SessionScores } from "@/lib/types";
+import { SessionScores, CONTEXT_LABELS, type LifeContext } from "@/lib/types";
+import { dimensionSetFor, DEFAULT_DIMENSION_SET } from "@/lib/scoring-dimensions";
 
 interface ScoreEntry {
   day: number;
   date: string;
   scores: SessionScores;
   concept: string;
+  /** Names the keys in `scores`. Missing on pre-migration rows. */
+  dimensionSet?: string | null;
 }
-
-const DIMS: { key: keyof SessionScores; label: string; fullName: string }[] = [
-  { key: "technique_application", label: "Technique", fullName: "Technique Application" },
-  { key: "tactical_awareness", label: "Tactical", fullName: "Tactical Awareness" },
-  { key: "frame_control", label: "Frame", fullName: "Frame Control" },
-  { key: "emotional_regulation", label: "Regulation", fullName: "Emotional Regulation" },
-  { key: "strategic_outcome", label: "Outcome", fullName: "Strategic Outcome" },
-];
 
 function Sparkline({ values, color, label }: { values: number[]; color: string; label: string }) {
   if (values.length < 2) return null;
@@ -83,16 +78,42 @@ function scoreColor(score: number): string {
 
 export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] }) {
   // Memoize dimension stats to avoid recalculation on re-renders
-  const dimStats = useMemo(() => {
-    if (allScores.length < 2) return [];
-    return DIMS.map(({ key, label, fullName }) => {
-      const values = allScores.map((e) => e.scores[key]);
+  // Sessions in different life contexts are scored on different dimensions, so
+  // a single sparkline across all of them would be comparing presence to frame
+  // control. Trend only the set the user has been practising most recently,
+  // and only across the sessions that actually used it.
+  const { dimStats, setId, sessionCount } = useMemo(() => {
+    if (allScores.length < 2) return { dimStats: [], setId: DEFAULT_DIMENSION_SET as string, sessionCount: 0 };
+
+    const setOf = (e: ScoreEntry) => e.dimensionSet ?? DEFAULT_DIMENSION_SET;
+    const activeSet = setOf(allScores[allScores.length - 1]);
+    const inSet = allScores.filter((e) => setOf(e) === activeSet);
+
+    if (inSet.length < 2) return { dimStats: [], setId: activeSet, sessionCount: inSet.length };
+
+    const stats = dimensionSetFor(activeSet).dimensions.map(({ key, label, short }) => {
+      const values = inSet
+        .map((e) => e.scores?.[key])
+        .filter((v): v is number => typeof v === "number");
+      if (values.length < 2) return null;
       const avg = values.reduce((a, b) => a + b, 0) / values.length;
-      const best = Math.max(...values);
-      const current = values[values.length - 1];
-      const trend = trendArrow(values);
-      return { key, label, fullName, values, avg, best, current, trend };
+      return {
+        key,
+        label: short,
+        fullName: label,
+        values,
+        avg,
+        best: Math.max(...values),
+        current: values[values.length - 1],
+        trend: trendArrow(values),
+      };
     });
+
+    return {
+      dimStats: stats.filter((d): d is NonNullable<typeof d> => d !== null),
+      setId: activeSet,
+      sessionCount: inSet.length,
+    };
   }, [allScores]);
 
   if (allScores.length < 2 || dimStats.length === 0) return null;
@@ -128,7 +149,9 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
       <div className="card">
         <div className="flex items-center justify-between mb-5">
           <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>Trend</p>
-          <p className="text-caption" style={{ color: "var(--text-tertiary)" }}>Last {allScores.length} sessions</p>
+          <p className="text-caption" style={{ color: "var(--text-tertiary)" }}>
+            Last {sessionCount} {CONTEXT_LABELS[setId as LifeContext]?.toLowerCase() ?? ""} sessions
+          </p>
         </div>
         <div className="space-y-4" role="list" aria-label="Score trends by dimension">
           {dimStats.map((d) => (

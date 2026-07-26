@@ -11,6 +11,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { LedgerEntry } from "@/lib/types";
+import { DEFAULT_DIMENSION_SET } from "@/lib/scoring-dimensions";
 import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
@@ -25,17 +26,18 @@ interface LedgerRow {
   domain: string;
   character: string;
   difficulty: number;
-  score_technique_application: number;
-  score_tactical_awareness: number;
-  score_frame_control: number;
-  score_emotional_regulation: number;
-  score_strategic_outcome: number;
+  scores: Record<string, number> | null;
+  dimension_set: string | null;
   behavioral_weakness_summary: string;
   key_moment: string;
   mission: string;
   mission_outcome: string;
   commands_used: string[];
   session_completed: boolean;
+  character_id: string | null;
+  context: string | null;
+  scenario_summary: string | null;
+  shape_id: string | null;
   user_id?: string;
 }
 
@@ -47,19 +49,18 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
     domain: row.domain,
     character: row.character,
     difficulty: row.difficulty,
-    scores: {
-      technique_application: row.score_technique_application,
-      tactical_awareness: row.score_tactical_awareness,
-      frame_control: row.score_frame_control,
-      emotional_regulation: row.score_emotional_regulation,
-      strategic_outcome: row.score_strategic_outcome,
-    },
+    scores: row.scores ?? {},
+    dimension_set: row.dimension_set ?? DEFAULT_DIMENSION_SET,
     behavioral_weakness_summary: row.behavioral_weakness_summary,
     key_moment: row.key_moment,
     mission: row.mission,
     mission_outcome: row.mission_outcome,
     commands_used: row.commands_used,
     session_completed: row.session_completed,
+    character_id: row.character_id ?? null,
+    context: (row.context as LedgerEntry["context"]) ?? null,
+    scenario_summary: row.scenario_summary ?? null,
+    shape_id: row.shape_id ?? null,
   };
 }
 
@@ -71,17 +72,18 @@ function entryToRow(entry: LedgerEntry, userId?: string | null): Omit<LedgerRow,
     domain: entry.domain,
     character: entry.character,
     difficulty: entry.difficulty,
-    score_technique_application: entry.scores.technique_application,
-    score_tactical_awareness: entry.scores.tactical_awareness,
-    score_frame_control: entry.scores.frame_control,
-    score_emotional_regulation: entry.scores.emotional_regulation,
-    score_strategic_outcome: entry.scores.strategic_outcome,
+    scores: entry.scores,
+    dimension_set: entry.dimension_set,
     behavioral_weakness_summary: entry.behavioral_weakness_summary,
     key_moment: entry.key_moment,
     mission: entry.mission,
     mission_outcome: entry.mission_outcome,
     commands_used: entry.commands_used,
     session_completed: entry.session_completed,
+    character_id: entry.character_id ?? null,
+    context: entry.context ?? null,
+    scenario_summary: entry.scenario_summary ?? null,
+    shape_id: entry.shape_id ?? null,
   };
   if (userId) row.user_id = userId;
   return row;
@@ -217,6 +219,35 @@ export async function getCompletedConcepts(userId?: string | null): Promise<stri
 
   if (error || !data) return [];
   return data.map((e: { concept: string }) => e.concept);
+}
+
+/**
+ * Return the last `count` entries, most recent first.
+ *
+ * History-aware selection needs a handful of recent sessions, not the whole
+ * ledger — getLedger() pulls every row a user has ever written.
+ */
+export async function getRecentEntries(
+  count: number = 5,
+  userId?: string | null
+): Promise<LedgerEntry[]> {
+  let query = supabase
+    .from("ledger")
+    .select("*")
+    .order("day", { ascending: false })
+    .limit(count);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
+
+  if (error || !data) {
+    if (error) {
+      logger.error(`Failed to read recent entries: ${error.message}`, { phase: "ledger" });
+    }
+    return [];
+  }
+  return (data as LedgerRow[]).map(rowToEntry);
 }
 
 /**

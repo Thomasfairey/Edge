@@ -9,30 +9,29 @@
  */
 
 import { useState } from "react";
+import { dimensionSetFor } from "@/lib/scoring-dimensions";
 
-const DIMENSIONS = [
-  { label: "TA", name: "Technique Application", desc: "How effectively you deploy each session\u2019s concept during practice." },
-  { label: "TW", name: "Tactical Awareness", desc: "Your ability to recognise the other party\u2019s tactics and adapt in real time." },
-  { label: "FC", name: "Frame Control", desc: "Who owns the conversation \u2014 and whether you hold or lose it under pressure." },
-  { label: "ER", name: "Emotional Regulation", desc: "Whether you stay strategic or become reactive when provoked." },
-  { label: "SO", name: "Strategic Outcome", desc: "Whether you achieve your objective and shift the other party\u2019s position." },
-];
+// Scoring dimensions depend on where you're practising — a family
+// conversation is scored on regulation and repair, a date on presence and
+// spark. Onboarding shows one context's five as an example rather than
+// claiming a single universal rubric.
+const EXAMPLE_DIMENSIONS = dimensionSetFor("friends").dimensions;
 
 const PHASES = [
-  { label: "Learn", color: "var(--phase-learn)", tint: "var(--phase-learn-tint)", desc: "Micro-lesson on today\u2019s concept, then a quick recall check" },
-  { label: "Simulate", color: "var(--phase-simulate)", tint: "var(--phase-simulate-tint)", desc: "Roleplay against a challenging character" },
-  { label: "Debrief", color: "var(--phase-debrief)", tint: "var(--phase-debrief-tint)", desc: "Blunt scoring across five dimensions" },
-  { label: "Deploy", color: "var(--phase-deploy)", tint: "var(--phase-deploy-tint)", desc: "Real-world mission for your next conversation" },
+  { label: "Learn", color: "var(--phase-learn)", tint: "var(--phase-learn-tint)", desc: "A short lesson on one idea, then a quick recall check" },
+  { label: "Simulate", color: "var(--phase-simulate)", tint: "var(--phase-simulate-tint)", desc: "A conversation with someone who has their own agenda" },
+  { label: "Debrief", color: "var(--phase-debrief)", tint: "var(--phase-debrief-tint)", desc: "An honest read on how it actually went" },
+  { label: "Deploy", color: "var(--phase-deploy)", tint: "var(--phase-deploy-tint)", desc: "One thing to try with a real person today" },
 ];
 
 const COMMITMENTS = [
-  { label: "10 minutes a day", desc: "That\u2019s all it takes to build elite influence skills" },
-  { label: "30-day challenge", desc: "Commit to 30 consecutive days and track your growth" },
-  { label: "Real-world deployment", desc: "Every session ends with a mission for your actual conversations" },
+  { label: "About ten minutes", desc: "Some days less \u2014 sessions vary in length and shape" },
+  { label: "30 days", desc: "Long enough for the difference to show up in real conversations" },
+  { label: "It ends in the real world", desc: "Every session finishes with something to try on an actual person" },
 ];
 
 const TOTAL_SCREENS = 4;
-const SCREEN_LABELS = ["Introduction", "How it works", "Your five dimensions", "Your commitment"];
+const SCREEN_LABELS = ["Introduction", "How it works", "How you\u2019re scored", "Your commitment"];
 
 export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [screen, setScreen] = useState(0);
@@ -75,17 +74,17 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
               <span style={{ color: "var(--accent)" }}>the</span> edge
             </h1>
             <p className="mt-2 text-body" style={{ color: "var(--text-secondary)" }}>
-              Daily influence training for your commute
+              Daily practice at being good with people
             </p>
             <div className="my-6 h-px" style={{ background: "var(--border)" }} role="separator" />
             <p className="text-lead leading-relaxed" style={{ color: "var(--text-primary)" }}>
-              Every day, you&apos;ll learn one influence technique, practise it in a realistic roleplay against a challenging character, and receive a blunt performance debrief.
+              Most of us get better with people by accident, if at all. There is no rehearsal room for the conversation with your father, the date that matters, or the friend you have quietly let drift.
             </p>
             <p className="mt-4 text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>
-              Then you&apos;ll deploy what you learned with a micro-mission designed for your real conversations.
+              This is that room. You practise one idea a day against someone with their own mood and agenda, find out honestly how it went, and take one specific thing into your actual life.
             </p>
             <p className="mt-5 text-caption font-medium" style={{ color: "var(--text-secondary)" }}>
-              10 minutes. No fluff. Measurable improvement.
+              Ten minutes. No flattery. Real conversations.
             </p>
           </div>
         )}
@@ -93,7 +92,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         {screen === 1 && (
           <div className="card" style={{ padding: "28px 24px" }}>
             <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>How it works</p>
-            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>Four phases, every session</p>
+            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>The shape varies day to day</p>
             <ol className="mt-6 space-y-3" aria-label="Session phases">
               {PHASES.map((p, idx) => (
                 <li key={p.label} className="flex items-center gap-3.5 rounded-[var(--radius-md)] p-3.5" style={{ backgroundColor: p.tint }}>
@@ -116,21 +115,21 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
         {screen === 2 && (
           <div className="card" style={{ padding: "28px 24px" }}>
-            <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>Your five dimensions</p>
-            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>Scored 1&ndash;5 after every roleplay</p>
+            <p className="text-center text-lead font-semibold" style={{ color: "var(--text-primary)" }}>How you&rsquo;re scored</p>
+            <p className="text-center text-caption mt-1" style={{ color: "var(--text-secondary)" }}>Five things, 1&ndash;5, and they change with the setting. These are the ones for friendships.</p>
             <div className="mt-6 space-y-4" role="list" aria-label="Score dimensions">
-              {DIMENSIONS.map((d) => (
-                <div key={d.label} className="flex items-start gap-3.5" role="listitem">
+              {EXAMPLE_DIMENSIONS.map((d) => (
+                <div key={d.key} className="flex items-start gap-3.5" role="listitem">
                   <div
                     className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-caption font-bold"
                     style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}
                     aria-hidden="true"
                   >
-                    {d.label}
+                    {d.short}
                   </div>
                   <div>
-                    <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>{d.name}</p>
-                    <p className="text-caption leading-relaxed" style={{ color: "var(--text-secondary)" }}>{d.desc}</p>
+                    <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>{d.label}</p>
+                    <p className="text-caption leading-relaxed" style={{ color: "var(--text-secondary)" }}>{d.prompt}</p>
                   </div>
                 </div>
               ))}
