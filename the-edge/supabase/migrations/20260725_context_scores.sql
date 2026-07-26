@@ -41,6 +41,25 @@ SET
   dimension_set = 'work'
 WHERE scores = '{}'::jsonb;
 
+-- The legacy columns are NOT NULL, and the new code no longer writes them. That
+-- combination fails EVERY insert from the new code for as long as the columns
+-- exist — which is the entire transition window this expand/contract split
+-- exists to create.
+--
+-- Caught by running a real session against a branch, not by any test:
+--
+--   Ledger write failed: null value in column "score_technique_application"
+--   of relation "ledger" violates not-null constraint
+--
+-- Dropping NOT NULL lets the old code keep writing them and the new code omit
+-- them. The columns go entirely in 20260726_drop_legacy_score_columns.sql.
+ALTER TABLE ledger
+  ALTER COLUMN score_technique_application DROP NOT NULL,
+  ALTER COLUMN score_tactical_awareness    DROP NOT NULL,
+  ALTER COLUMN score_frame_control         DROP NOT NULL,
+  ALTER COLUMN score_emotional_regulation  DROP NOT NULL,
+  ALTER COLUMN score_strategic_outcome     DROP NOT NULL;
+
 -- Range checks over the JSONB values: every entry must be an integer 1-5. An
 -- empty object passes, which is what a session that never reached the debrief
 -- should look like.
