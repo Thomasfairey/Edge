@@ -32,10 +32,14 @@ const DIP_LINES = [
   "A dip today, a spike tomorrow. Stay in it.",
 ];
 
+// Deliberately plain. The debrief above these is honest to the point of being
+// uncomfortable, and following "you offered nothing about yourself" with "this
+// is the session you'll look back on as a turning point" undercuts it. A hard
+// session should be acknowledged, not spun.
 const HARD_DAY_LINES = [
-  "Hard day. The best sessions often follow the worst.",
-  "This is the session you\u2019ll look back on as a turning point.",
-  "Discomfort is the price of growth. You paid it today.",
+  "That was a hard one.",
+  "Worth sitting with what came up in there.",
+  "Not every session is meant to feel good.",
 ];
 
 function pick(arr: string[]): string {
@@ -112,7 +116,7 @@ export default function MissionPhase({
     <div className="animate-challenge relative">
       <div className="text-center mb-5">
         <span className="badge" style={{ backgroundColor: "var(--score-high-bg)", color: "var(--score-high-text)" }}>
-          Field assignment
+          Try this today
         </span>
       </div>
 

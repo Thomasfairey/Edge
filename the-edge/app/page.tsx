@@ -148,7 +148,6 @@ function ProgressRing({ average, hasData, sessionCount }: { average: number; has
           </span>
           {average < 3 && (
             <span className="text-caption mt-0.5" style={{ color: "var(--text-secondary)" }}>
-              Most users hit 3.0 by Day 10
             </span>
           )}
         </>
@@ -470,7 +469,7 @@ export default function Home() {
             <span style={{ color: "var(--accent)" }}>the</span> edge
           </h1>
           <p className="mt-1 text-caption font-semibold tracking-widest uppercase" style={{ color: "var(--accent)", opacity: 0.6 }}>
-            Daily influence training
+            Daily practice at being good with people
           </p>
           <p className="mt-3 text-body font-medium" style={{ color: "var(--text-primary)" }} aria-live="polite">
             {loading ? "\u2014" : (

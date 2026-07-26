@@ -115,8 +115,10 @@ So if the scene involves a family member, a date, or a friend, ${character.name}
 RULES:
 - 80–120 words. No more.
 - Be specific. A named bar, a particular Tuesday, a thing that happened forty minutes ago. Specificity is what stops these feeling generic.
+- VARY THE MOMENT, not just the venue. Changing the name of the wine bar and leaving everything else identical produces the same scene twice — a user notices that on day two, and it is the fastest way to make this feel fake. Pick a different point in the encounter each time: mid-way through rather than the opening; the walk afterwards; a second or fifth meeting rather than a first; an interruption; one of them arriving late rather than early; standing rather than sitting; leaving rather than starting. Somebody arriving early at a bar and rehearsing an opener is one option among many, not the default.
 - ${CONTEXT_TEXTURE[context]}
 - Give ${character.name} something going on that has nothing to do with the learner. Real people arrive mid-life, not mid-scene.
+- Vary where that preoccupation comes from, and outside a work setting do NOT default to their job. A boss, a project, a promotion turns a date into a work debrief. Reach instead for the rest of a life: a sibling who has not called back, a landlord, a diagnosis in the family, a friend's wedding they cannot afford, a flat they are about to lose, something they read that unsettled them, a habit they are trying to break.
 - Do not describe the learner, give them a script, or state what they should do or want.
 - No stage directions, no headings, no preamble. Just the brief.
 

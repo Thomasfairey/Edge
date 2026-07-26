@@ -565,7 +565,10 @@ export default function SessionPage() {
       {s.showNewMessagePill && isRoleplay && (
         <button
           onClick={() => { s.chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); s.setShowNewMessagePill(false); }}
-          className="fixed bottom-28 left-1/2 z-40 -translate-x-1/2 rounded-full px-4 py-2 text-caption font-semibold"
+          // Sat at bottom-28, which overlapped the composer. Clicking the
+          // middle of the input hit the pill instead, the input never took
+          // focus, and everything typed after was silently dropped.
+          className="fixed bottom-40 left-1/2 z-40 -translate-x-1/2 rounded-full px-4 py-2 text-caption font-semibold"
           style={{ backgroundColor: "var(--accent)", color: "white", boxShadow: "var(--shadow-accent)" }}
         >
           &darr; New message

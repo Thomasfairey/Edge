@@ -193,7 +193,9 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
               title={d.fullName}
               aria-label={`${d.fullName}: score ${d.current}, trending ${d.trend.textLabel}${d.trend.delta !== 0 ? ` by ${Math.abs(d.trend.delta)}` : ""}`}
             >
-              <span className="w-20 text-caption font-medium truncate" style={{ color: "var(--text-secondary)" }}>{d.label}</span>
+              {/* Full name, matching the panel above. Two-letter codes here
+                  and words there read as two different vocabularies. */}
+              <span className="w-24 text-caption font-medium truncate" style={{ color: "var(--text-secondary)" }}>{d.fullName}</span>
               <Sparkline values={d.values} color={scoreColor(d.current)} label={d.fullName} />
               <span
                 className="w-7 text-center text-body font-bold"

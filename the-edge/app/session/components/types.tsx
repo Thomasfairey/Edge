@@ -14,13 +14,13 @@ export type { SessionPhase, Concept, CharacterArchetype, SessionScores, Message 
 // ---------------------------------------------------------------------------
 
 const PHASE_META: Record<SessionPhase, { label: string; color: string }> = {
-  checkin: { label: "Gate", color: "#B8E0C8" },
+  checkin: { label: "Catch up", color: "#B8E0C8" },
   lesson: { label: "Learn", color: "#B8D4E3" },
   // Retrieval is a beat within Learn and has never had its own pip.
   retrieval: { label: "Learn", color: "#B8D4E3" },
-  roleplay: { label: "Sim", color: "#F2C4C4" },
-  debrief: { label: "Brief", color: "#C5B8E8" },
-  mission: { label: "Deploy", color: "#B8E0C8" },
+  roleplay: { label: "Practise", color: "#F2C4C4" },
+  debrief: { label: "Review", color: "#C5B8E8" },
+  mission: { label: "Take away", color: "#B8E0C8" },
 };
 
 /**

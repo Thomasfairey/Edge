@@ -6,24 +6,63 @@ export function buildLessonPrompt(
   isReview: boolean = false,
   context?: LifeContext
 ): string {
-  const isSocial = isSocialContext(context ?? primaryContextForConcept(concept));
+  const resolved = context ?? primaryContextForConcept(concept);
+  const isSocial = isSocialContext(resolved);
+
+  // Knowing only "social vs work" was not enough. For a source whose canonical
+  // material is business — Carnegie above all — the model fell straight back to
+  // salespeople and mechanical engineers in a session the user had explicitly
+  // chosen Dating for. The setting has to be named, and business examples have
+  // to be ruled out explicitly rather than merely not requested.
+  const SETTING: Record<LifeContext, { audience: string; drawFrom: string; recallMoment: string }> = {
+    dating: {
+      audience: "someone who wants to be better on dates and in the early, uncertain part of romance",
+      drawFrom: "dates, courtship, flirtation, the beginnings and endings of relationships",
+      recallMoment: "on a date this weekend",
+    },
+    friends: {
+      audience: "someone who wants to be a better friend, and to have closer ones",
+      drawFrom: "friendships, long ones and new ones, and the ordinary moments that deepen or fail to deepen them",
+      recallMoment: "the next time they see a friend",
+    },
+    groups: {
+      audience: "someone who wants to be better in rooms full of people — parties, dinners, gatherings",
+      drawFrom: "parties, dinners, gatherings, and the social dynamics of groups",
+      recallMoment: "at the next gathering they walk into",
+    },
+    family: {
+      audience: "someone who wants to handle their family better, including the conversations they have been avoiding",
+      drawFrom: "families — parents, siblings, partners, and the long history between people who cannot walk away from each other",
+      recallMoment: "the next time they are in a room with their family",
+    },
+    work: {
+      audience: "an experienced professional who is well-read and can handle density",
+      drawFrom: "business, politics, negotiation, intelligence, and history",
+      recallMoment: "in a meeting later today",
+    },
+  };
+  const setting = SETTING[resolved];
 
   const engineLine = isSocial
-    ? "You are the Lesson Engine for The Edge — a daily training system for charisma, storytelling, and social presence."
+    ? "You are the Lesson Engine for The Edge — a daily training system for being genuinely good with people."
     : "You are the Lesson Engine for The Edge — a daily training system for the conversations that decide things at work.";
 
-  const audienceLine = isSocial
-    ? "Write for a sharp, curious adult who wants to be more magnetic, interesting, and memorable in real social life — dinners, parties, dates, new friendships. Precise language, no filler, no self-help fluff or clichés."
-    : "Write for an experienced professional: precise language, no filler, no condescension. The reader is well-read and can handle density.";
+  const audienceLine = `Write for ${setting.audience}. Precise language, no filler, no condescension, no self-help clichés.`;
+
+  const businessBan = isSocial
+    ? `
+- THIS SESSION IS ABOUT ${resolved.toUpperCase()}, NOT WORK. Do not use business, sales, negotiation, management or workplace examples, and do not describe the reader as a professional. If the source of this concept is best known for business writing, translate the idea into ${setting.drawFrom} rather than repeating their commercial framing — the reader chose this setting deliberately.
+- Do not reach for careers as a source of detail either. "Ask what makes a gear system fail" is a work example wearing a social costume.`
+    : "";
 
   const playExampleGuidance = isSocial
-    ? `- Name real people and real moments wherever possible (great storytellers, charismatic public figures, memorable hosts, a vivid scene from real social life).
-- The example must be so specific and vivid that the reader will recall it that evening at dinner or in a conversation.
-- Show the setup, the move, and the effect on the room or the other person.
+    ? `- Draw the example from ${setting.drawFrom}. Name real people and real moments where you can; a vivid invented scene is better than a real business one.
+- The example must be so specific that the reader will recall it ${setting.recallMoment}.
+- Show the setup, the move, and the effect on the other person.${businessBan}
 - BAD example: "A charismatic person told a good story and everyone liked them."
 - GOOD example: "At a dinner in 1963, a young journalist asked Cary Grant not 'what's it like being famous' but 'what's the strangest thing a stranger has ever said to you?' Grant paused, delighted, and talked for twenty minutes. She never asked a script question again — because the novelty of the question is what unlocked the man."`
     : `- Name real people and real situations wherever possible (historical, business, political, intelligence).
-- The example must be so specific and vivid that the reader will recall it 8 hours later during a meeting.
+- The example must be so specific and vivid that the reader will recall it ${setting.recallMoment}.
 - Show the setup, the move, and the outcome.
 - BAD example: "A CEO used anchoring in a negotiation to set a high price."
 - GOOD example: "When Steve Jobs unveiled the iPad in 2010, he opened by displaying '$999' on screen — the price analysts had predicted. He let it sit for ten seconds. Then he dropped it to $499, and the audience gasped. The $999 was never the real price. It was the anchor. Every reviewer wrote that the iPad was 'surprisingly affordable' — a phrase Jobs had engineered by manipulating their reference point before they ever touched the device."`;

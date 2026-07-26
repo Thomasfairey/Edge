@@ -142,7 +142,7 @@ export default function LoginPage() {
             className="mt-1 text-sm font-medium tracking-wide uppercase"
             style={{ color: "var(--accent)", opacity: 0.6 }}
           >
-            Daily influence training
+            Daily practice at being good with people
           </p>
         </div>
 
