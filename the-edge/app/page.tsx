@@ -620,12 +620,10 @@ export default function Home() {
           </h2>
           <div className="flex flex-col gap-2.5">
             {allScores.slice(-5).reverse().map((entry) => {
-              const avg =
-                (entry.scores.technique_application +
-                  entry.scores.tactical_awareness +
-                  entry.scores.frame_control +
-                  entry.scores.emotional_regulation +
-                  entry.scores.strategic_outcome) / 5;
+              // Summing five hardcoded work keys produced NaN for any session
+              // scored on another dimension set. Average whatever the session
+              // actually has.
+              const avg = averageScore(entry.scores);
               const formattedDate = new Date(entry.date + "T00:00:00").toLocaleDateString("en-GB", {
                 day: "numeric",
                 month: "short",

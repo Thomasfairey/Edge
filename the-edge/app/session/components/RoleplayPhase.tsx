@@ -88,14 +88,38 @@ export default function RoleplayPhase({
               ))}
             </div>
 
-            {scenarioContext && (
-              <div style={{ backgroundColor: "var(--phase-simulate-tint)", borderRadius: "var(--radius-md)", padding: "14px 16px" }}>
-                <p className="text-caption font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--phase-simulate-muted)" }}>Scene</p>
-                <p className="text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{scenarioContext}</p>
-              </div>
-            )}
           </div>
         </div>
+      )}
+
+      {/*
+        The scene, kept available for the whole conversation.
+
+        It used to sit inside the persona card above, which only renders while
+        the transcript is empty — and the character speaks first, so the scene
+        appeared and vanished within a second of the session starting. Nobody
+        could read it. It stays open until the first reply lands, then collapses
+        to a line the user can reopen at any point.
+      */}
+      {scenarioContext && (
+        <details
+          open={roleplayTranscript.length === 0}
+          className="mb-4"
+          style={{ backgroundColor: "var(--phase-simulate-tint)", borderRadius: "var(--radius-md)" }}
+        >
+          <summary
+            className="text-caption font-semibold uppercase tracking-wider cursor-pointer select-none"
+            style={{ color: "var(--phase-simulate-muted)", padding: "12px 16px", listStyle: "none" }}
+          >
+            Scene
+          </summary>
+          <p
+            className="text-body leading-relaxed"
+            style={{ color: "var(--text-primary)", padding: "0 16px 14px" }}
+          >
+            {scenarioContext}
+          </p>
+        </details>
       )}
 
       <div className="mb-4">

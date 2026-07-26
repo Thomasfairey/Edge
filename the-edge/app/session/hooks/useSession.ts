@@ -521,12 +521,17 @@ export function useSession() {
   }
 
   async function startRetrieval() {
-    if (!concept) return;
+    const activeConcept = await resolveConcept();
+    if (!activeConcept) {
+      setError("Couldn\u2019t load the recall check \u2014 tap to retry.");
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await fetchWithRetry(
         "/api/retrieval-bridge",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concept }),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concept: activeConcept }),
           signal: AbortSignal.timeout(30000) },
         3, 2000, (a, max) => { if (a > 1) setError(`Reconnecting\u2026 attempt ${a} of ${max}`); }
       );
@@ -574,8 +579,45 @@ export function useSession() {
     if (to) runPhase(to);
   }
 
+  /**
+   * Get the session's concept, fetching it if no lesson phase has run.
+   *
+   * Shapes that skip the lesson (drill, deep) still need a concept and a
+   * context before the roleplay can start. Without this, startRoleplay bailed
+   * on its `!concept` guard and left the user on a permanently blank screen
+   * with no error and no way out.
+   */
+  async function resolveConcept(): Promise<Concept | null> {
+    if (concept) return concept;
+    try {
+      const res = await fetchWithRequestId("/api/lesson", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conceptOnly: true }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data?.concept) throw new Error("no concept returned");
+      setConcept(data.concept);
+      if (data.context && (LIFE_CONTEXTS as string[]).includes(data.context)) {
+        setSessionContext(data.context as LifeContext);
+      }
+      setIsReviewSession(Boolean(data.isReview));
+      return data.concept as Concept;
+    } catch {
+      return null;
+    }
+  }
+
   async function startRoleplay() {
-    if (!concept) return;
+    // Resolve rather than bail: a shape with no lesson phase has no concept yet.
+    const activeConcept = await resolveConcept();
+    if (!activeConcept) {
+      setError("Couldn\u2019t start the conversation \u2014 tap to retry.");
+      setIsLoading(false);
+      return;
+    }
     // The character is chosen server-side, where the ledger is, so selection
     // can avoid whoever the user has faced in recent sessions.
     setIsLoading(true);
@@ -585,7 +627,7 @@ export function useSession() {
       try {
         const res = await fetchWithRequestId("/api/roleplay", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ concept, context: sessionContext, transcript: [], userMessage: null }),
+          body: JSON.stringify({ concept: activeConcept, context: sessionContext, transcript: [], userMessage: null }),
           signal: AbortSignal.timeout(30000),
         });
         if (!res.ok) throw new Error("API failed");

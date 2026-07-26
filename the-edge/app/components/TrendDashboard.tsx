@@ -77,18 +77,33 @@ function scoreColor(score: number): string {
 }
 
 export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] }) {
-  // Memoize dimension stats to avoid recalculation on re-renders
   // Sessions in different life contexts are scored on different dimensions, so
   // a single sparkline across all of them would be comparing presence to frame
-  // control. Trend only the set the user has been practising most recently,
-  // and only across the sessions that actually used it.
+  // control.
+  //
+  // Trend the set with the MOST sessions rather than the most recent one. The
+  // earlier version used the most recent, which meant one session in a new
+  // context silently hid an entire history — a user with twelve work sessions
+  // and one dating session lost the lot.
   const { dimStats, setId, sessionCount } = useMemo(() => {
     if (allScores.length < 2) return { dimStats: [], setId: DEFAULT_DIMENSION_SET as string, sessionCount: 0 };
 
     const setOf = (e: ScoreEntry) => e.dimensionSet ?? DEFAULT_DIMENSION_SET;
-    const activeSet = setOf(allScores[allScores.length - 1]);
+
+    // Count per set, tie-breaking toward whichever was used most recently.
+    const counts = new Map<string, number>();
+    for (const e of allScores) counts.set(setOf(e), (counts.get(setOf(e)) ?? 0) + 1);
+    const mostRecentSet = setOf(allScores[allScores.length - 1]);
+    let activeSet = mostRecentSet;
+    let best = counts.get(mostRecentSet) ?? 0;
+    for (const [set, n] of counts) {
+      if (n > best) { activeSet = set; best = n; }
+    }
+
     const inSet = allScores.filter((e) => setOf(e) === activeSet);
 
+    // Fewer than two sessions in any one set means there is genuinely nothing
+    // to trend yet. Say so rather than disappearing.
     if (inSet.length < 2) return { dimStats: [], setId: activeSet, sessionCount: inSet.length };
 
     const stats = dimensionSetFor(activeSet).dimensions.map(({ key, label, short }) => {
@@ -116,7 +131,23 @@ export default function TrendDashboard({ allScores }: { allScores: ScoreEntry[] 
     };
   }, [allScores]);
 
-  if (allScores.length < 2 || dimStats.length === 0) return null;
+  if (allScores.length < 2) return null;
+
+  // Two or more sessions but none comparable — explain rather than vanish.
+  if (dimStats.length === 0) {
+    return (
+      <div className="w-full max-w-sm" role="region" aria-label="Performance trends">
+        <div className="card">
+          <p className="text-body font-semibold" style={{ color: "var(--text-primary)" }}>Trends</p>
+          <p className="mt-2 text-caption leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+            Your recent sessions have been in different settings, which are scored
+            on different things. Two sessions in the same setting and your trends
+            appear here.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const weakest = dimStats.reduce((a, b) => (a.avg < b.avg ? a : b));
 

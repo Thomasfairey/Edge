@@ -235,7 +235,13 @@ export default function DebriefPhase({
               <div className="flex items-center justify-center gap-4">
                 {scoreDimsFor(dimensionSet).map(({ key, fullName }) => {
                   const s = scores[key];
-                  const prev = previousScores ? previousScores[key] : null;
+                  // A previous session scored on a different dimension set has
+                  // no value for this key. `undefined !== null` passed the old
+                  // guard and `s - undefined` rendered as NaN on every badge.
+                  // Where a dimension exists in both sets the comparison is
+                  // still meaningful, so compare on presence of a number.
+                  const prevRaw = previousScores?.[key];
+                  const prev = typeof prevRaw === "number" ? prevRaw : null;
                   const diff = prev !== null ? s - prev : null;
                   return (
                     <div key={key} className="flex flex-col items-center gap-2 animate-score-pop" style={{ opacity: 0 }}>

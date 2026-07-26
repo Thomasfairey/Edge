@@ -1,6 +1,9 @@
 /**
  * Phase 1: Micro-lesson generation.
- * POST { conceptId?: string, stream?: boolean }
+ * POST { conceptId?: string, stream?: boolean, conceptOnly?: boolean }
+ *
+ * conceptOnly=true returns { concept, isReview, context } with no generation —
+ * used by session shapes that skip the lesson but still need a concept.
  *
  * If stream=true (default): Returns streaming text with concept in X-Concept header.
  * If stream=false: Returns { concept, lessonContent } JSON (for pre-generation).
@@ -67,6 +70,13 @@ async function handlePost(req: NextRequest, userId: string | null) {
       concept = result.concept;
       isReview = result.isReview;
       sessionContext = result.context;
+    }
+
+    // Shapes that do not begin with a lesson (drill, deep) still need a concept
+    // and a session context before the roleplay can start. This returns both
+    // without generating a lesson — no model call, so it is fast and cheap.
+    if (body.conceptOnly === true) {
+      return NextResponse.json({ concept, isReview, context: sessionContext });
     }
 
     const lessonPrompt = buildLessonPrompt(concept, isReview, sessionContext);
