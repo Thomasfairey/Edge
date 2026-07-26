@@ -83,30 +83,41 @@ export function buildScenarioPrompt(
       ? `\n\nSCENARIOS THIS USER HAS ALREADY PRACTISED — do not repeat these situations, settings, or setups:\n${recentSummaries.map((s) => `- ${s}`).join("\n")}`
       : "";
 
+  // The bio describes the LEARNER, not the character. Saying so explicitly
+  // matters: without it the model hands the learner's job and life to the
+  // character — a first date who turns out to be the learner's own profession.
   const bioBlock = userBio
-    ? `\n\nABOUT THE USER (use it to make the scenario plausible for their actual life; do not name their employer or invent biographical facts):\n${userBio}`
+    ? `\n\nABOUT THE LEARNER — this is the OTHER PERSON in the scene, NOT ${character.name}:\n${userBio}\n\nUse this only to make the setting plausible for the kind of life the learner has. Do NOT give ${character.name} the learner's job, employer, or biography.`
     : "";
 
   return `You write the opening situation for a roleplay training scenario.
 
+There are two people in this scene:
+  • ${character.name} — the character. The brief you write is addressed TO them.
+  • The learner — a real person practising a skill. In the brief they are only ever "they" or "the other person". Never name them, never describe their job, never say what they want.
+
 THE SETTING: ${CONTEXT_LABELS[context]} — ${CONTEXT_SETTINGS[context]}.
 
-THE CHARACTER the user will face:
+THE CHARACTER YOU ARE BRIEFING:
 ${character.name} — ${character.description}
 Their hidden motivation: ${character.hidden_motivation}
 
-WHAT THE USER IS SECRETLY PRACTISING: ${concept.name} — ${concept.description}
-The character must NOT know this and the scenario must never hint at it. The situation should simply be one where that skill would help.${bioBlock}${avoidBlock}
+WHAT THE LEARNER IS SECRETLY PRACTISING: ${concept.name} — ${concept.description}
+${character.name} must NOT know this and the brief must never hint at it. The situation should simply be one where that skill would help.${bioBlock}${avoidBlock}
 
 YOUR TASK:
-Write the scenario as a brief addressed to the character in the second person — "You are...", "You have just..." — telling them where they are, what has happened immediately before this moment, what they want, and what would have to happen for them to open up or give ground.
+Write the brief in the second person, addressed to ${character.name}. Every "you" in what you write means ${character.name} and nobody else. Tell them where they are, what happened immediately before this moment, what they want, and what would have to happen for them to open up or give ground.
+
+CRITICAL — GET THE ROLES THE RIGHT WAY ROUND:
+${character.name} is ${character.description.charAt(0).toLowerCase() + character.description.slice(1)}
+So if the scene involves a family member, a date, or a friend, ${character.name} IS that person — do not write the brief from the point of view of the person meeting them. Before you finish, re-read your first sentence and check that "you" is ${character.name}.
 
 RULES:
 - 80–120 words. No more.
 - Be specific. A named bar, a particular Tuesday, a thing that happened forty minutes ago. Specificity is what stops these feeling generic.
 - ${CONTEXT_TEXTURE[context]}
-- Give the character something going on that has nothing to do with the user. Real people arrive mid-life, not mid-scene.
-- Do not describe the user, give them a script, or state what they should do.
+- Give ${character.name} something going on that has nothing to do with the learner. Real people arrive mid-life, not mid-scene.
+- Do not describe the learner, give them a script, or state what they should do or want.
 - No stage directions, no headings, no preamble. Just the brief.
 
 Then on a new line write "SUMMARY:" followed by a single clause of at most 12 words identifying the situation, so it can be avoided in future (e.g. "birthday drinks, friend cancelled, character already three drinks in").`;
