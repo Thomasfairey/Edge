@@ -28,6 +28,7 @@ import {
   primaryContextForConcept,
 } from "@/lib/types";
 import { dimensionKeys, dimensionSetFor } from "@/lib/scoring-dimensions";
+import { parseRehearsalBlock, selectRehearsalCue } from "@/lib/rehearsal";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { validateTranscript, validateConcept, validateCharacter, ValidationError } from "@/lib/validate";
 import { withAuth } from "@/lib/auth";
@@ -219,6 +220,9 @@ async function handlePost(req: NextRequest, userId: string | null) {
     // Parse structured output
     const scores = parseScores(debriefContent, dimensionSet);
     const { behavioralWeaknessSummary, keyMoment } = parseLedgerFields(debriefContent);
+    // The rehearsal phase replays this moment. Resolved against the transcript
+    // rather than trusted verbatim — see lib/rehearsal.ts.
+    const rehearsal = selectRehearsalCue(transcript, parseRehearsalBlock(debriefContent));
 
     log.info(
       `Scores (${dimensionSet}): ${dimensionSetFor(dimensionSet)
@@ -234,6 +238,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
       dimensionSet,
       behavioralWeaknessSummary,
       keyMoment,
+      rehearsal,
     });
   } catch (error) {
     if (error instanceof CircuitBreakerOpenError) {
@@ -262,6 +267,9 @@ async function handlePost(req: NextRequest, userId: string | null) {
       dimensionSet,
       behavioralWeaknessSummary: "Unable to generate analysis due to connection timeout.",
       keyMoment: "Unable to identify key moment.",
+      // No model output to nominate a moment, so take the last real exchange.
+      // Losing the debrief is bad; losing the rehearsal as well is worse.
+      rehearsal: selectRehearsalCue(transcript, {}),
     });
   }
 }

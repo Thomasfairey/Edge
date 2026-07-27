@@ -1,7 +1,10 @@
 "use client";
 
 import type { Concept, SessionScores } from "./types";
-import { scoreDimsFor, scoreCircleColor, scoreTextColor } from "./types";
+import { scoreDimsFor, scoreCircleColor, scoreTextColor, haptic } from "./types";
+
+/** Deliberately coarse. The point is to pick one, not to schedule it. */
+const COMMITMENT_OPTIONS = ["Today", "Tonight", "Tomorrow", "This week"];
 
 // ---------------------------------------------------------------------------
 // Motivational lines
@@ -86,6 +89,12 @@ interface MissionPhaseProps {
   dayNumber: number;
   keyMoment: string;
   showConfetti: boolean;
+  /** The if-then halves. Absent when the model returned unstructured prose. */
+  cue: string | null;
+  action: string | null;
+  tell: string | null;
+  commitment: string | null;
+  setCommitment: (value: string) => void;
   completeSession: () => void;
   onDone: () => void;
 }
@@ -105,6 +114,11 @@ export default function MissionPhase({
   dayNumber,
   keyMoment,
   showConfetti,
+  cue,
+  action,
+  tell,
+  commitment,
+  setCommitment,
   completeSession,
   onDone,
 }: MissionPhaseProps) {
@@ -121,20 +135,29 @@ export default function MissionPhase({
       </div>
 
       <div className="mb-5 card-tinted" style={{ backgroundColor: "var(--phase-deploy-tint)", padding: "24px" }}>
-        {(() => {
-          const sentenceEnd = mission.search(/[.!?]\s|[.!?]$/);
-          if (sentenceEnd > 0 && sentenceEnd < mission.length - 1) {
-            const headline = mission.slice(0, sentenceEnd + 1);
-            const detail = mission.slice(sentenceEnd + 1).trim();
-            return (
-              <>
-                <p className="text-lead font-bold leading-snug" style={{ color: "var(--text-primary)" }}>{headline}</p>
-                {detail && <p className="mt-2 text-body leading-relaxed" style={{ color: "var(--text-primary)", opacity: 0.8 }}>{detail}</p>}
-              </>
-            );
-          }
-          return <p className="text-lead font-bold leading-relaxed" style={{ color: "var(--text-primary)" }}>{mission}</p>;
-        })()}
+        {/*
+          Rendered as an explicit if-then rather than as prose. A plan bound to
+          a trigger the user will recognise in the moment gets acted on far more
+          often than the same plan phrased as an intention, and the two halves
+          have to be visibly separate for that to land. Prose missions fall back
+          to the old single-block rendering.
+        */}
+        {cue && action ? (
+          <>
+            <p className="text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--phase-deploy-muted)" }}>When</p>
+            <p className="mt-1 text-lead font-bold leading-snug" style={{ color: "var(--text-primary)" }}>{cue}</p>
+            <p className="mt-4 text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--phase-deploy-muted)" }}>I will</p>
+            <p className="mt-1 text-lead font-bold leading-snug" style={{ color: "var(--text-primary)" }}>{action}</p>
+            {tell && (
+              <div className="mt-4 pt-3" style={{ borderTop: "1px solid rgba(184,224,200,0.4)" }}>
+                <p className="text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--phase-deploy-muted)" }}>Watch for</p>
+                <p className="mt-1 text-body leading-relaxed" style={{ color: "var(--text-primary)" }}>{tell}</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-lead font-bold leading-relaxed" style={{ color: "var(--text-primary)" }}>{mission}</p>
+        )}
         {rationale && (
           <>
             <div className="my-4" style={{ borderTop: "1px solid rgba(184,224,200,0.3)" }} />
@@ -143,9 +166,53 @@ export default function MissionPhase({
         )}
       </div>
 
+      {/*
+        Committing to a when. The effect depends on the user forming the
+        intention rather than reading one, so this is a required tap — it is the
+        cheapest evidence-backed step in the whole session.
+      */}
+      {!showConfetti && (
+        <div className="mb-5">
+          <p className="mb-3 text-body font-medium" style={{ color: "var(--text-primary)" }}>
+            When are you going to do this?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {COMMITMENT_OPTIONS.map((option) => {
+              const selected = commitment === option;
+              return (
+                <button
+                  key={option}
+                  onClick={() => { haptic(); setCommitment(option); }}
+                  className="text-body font-medium transition-all"
+                  style={{
+                    backgroundColor: selected ? "var(--phase-deploy)" : "var(--surface, white)",
+                    color: selected ? "var(--score-high-text)" : "var(--text-secondary)",
+                    border: `1px solid ${selected ? "var(--phase-deploy)" : "var(--border)"}`,
+                    borderRadius: "var(--radius-md)",
+                    padding: "10px 16px",
+                  }}
+                  aria-pressed={selected}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {!showConfetti ? (
-        <button onClick={completeSession} className="btn-primary" style={{ backgroundColor: "var(--score-high)", boxShadow: "0 4px 16px rgba(107,201,160,0.3)" }}>
-          Session complete &#10003;
+        <button
+          onClick={completeSession}
+          disabled={!commitment}
+          className="btn-primary"
+          style={{
+            backgroundColor: commitment ? "var(--score-high)" : "var(--border)",
+            color: commitment ? undefined : "var(--text-tertiary)",
+            boxShadow: commitment ? "0 4px 16px rgba(107,201,160,0.3)" : "none",
+          }}
+        >
+          {commitment ? "Session complete ✓" : "Pick a when first"}
         </button>
       ) : (
         <div className="animate-fade-in-up space-y-5 relative">
@@ -308,8 +375,12 @@ export default function MissionPhase({
                     ctx.fillText(concept?.name || "", 32, 120);
 
                     if (scores) {
-                      const dims = ["TA", "TW", "FC", "ER", "SO"];
-                      const keys: (keyof SessionScores)[] = ["technique_application", "tactical_awareness", "frame_control", "emotional_regulation", "strategic_outcome"];
+                      // Derived from the session's own dimension set. These were
+                      // the five work keys, hardcoded, so a dating or family
+                      // session drew five circles reading "undefined".
+                      const shareDims = scoreDimsFor(dimensionSet);
+                      const dims = shareDims.map((d) => d.label);
+                      const keys = shareDims.map((d) => d.key);
                       keys.forEach((k, i) => {
                         const s = scores[k];
                         const cx = 64 + i * 72;

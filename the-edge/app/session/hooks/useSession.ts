@@ -16,7 +16,19 @@ import {
   LifeContext,
   LIFE_CONTEXTS,
   SOCIAL_CONTEXTS,
+  RehearsalCue,
+  MAX_REHEARSAL_ATTEMPTS,
 } from "@/lib/types";
+import type { RehearseResult } from "@/lib/prompts/rehearse";
+import { selectRehearsalCue } from "@/lib/rehearsal";
+import { REPS_PER_CONCEPT } from "@/lib/concepts";
+import {
+  EMPTY_CHECKIN,
+  canSubmitCheckin,
+  checkinStep,
+  serialiseCheckin,
+  type CheckinState,
+} from "@/lib/checkin";
 import { useVoice } from "@/app/hooks/useVoice";
 import { haptic, cleanForSpeech, stripStageDirections, splitLessonSections } from "../components/types";
 import type { VoiceProps } from "../components/types";
@@ -39,7 +51,7 @@ import { MENTOR_VOICE_ID } from "@/lib/voice-map";
 
 const SESSION_STORAGE_KEY = "edge-session-state";
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
-const SESSION_VERSION = 3; // Bump when the saved session blob changes shape
+const SESSION_VERSION = 4; // Bump when the saved session blob changes shape
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -181,15 +193,32 @@ export function useSession() {
   const [scores, setScores] = useState<SessionScores | null>(null);
   const [behavioralWeaknessSummary, setBehavioralWeaknessSummary] = useState("");
   const [keyMoment, setKeyMoment] = useState("");
+
+  // Rehearsal — the second go at the moment the debrief picked out.
+  const [rehearsalCue, setRehearsalCue] = useState<RehearsalCue | null>(null);
+  const [rehearsalAttempts, setRehearsalAttempts] = useState(0);
+  const [rehearsalResult, setRehearsalResult] = useState<RehearseResult | null>(null);
   const [mission, setMission] = useState<string | null>(null);
   const [rationale, setRationale] = useState<string | null>(null);
+  // The if-then halves of the mission, plus the when the user commits to.
+  const [missionCue, setMissionCue] = useState<string | null>(null);
+  const [missionAction, setMissionAction] = useState<string | null>(null);
+  const [missionTell, setMissionTell] = useState<string | null>(null);
+  const [missionCommitment, setMissionCommitment] = useState<string | null>(null);
   const [isReviewSession, setIsReviewSession] = useState(false);
+  // Which of this concept's three sessions today is. Surfaced in the header so
+  // a deliberate repeat never reads as the app having lost its place.
+  const [conceptRep, setConceptRep] = useState(1);
   const [previousScores, setPreviousScores] = useState<SessionScores | null>(null);
 
   // Check-in state
   const [checkinNeeded, setCheckinNeeded] = useState(false);
   const [checkinDone, setCheckinDone] = useState(false);
-  const [checkinPillSelected, setCheckinPillSelected] = useState<"completed" | "tried" | null>(null);
+  // The structured check-in: did the moment come up, did you do it, what did
+  // they do. Replaces a single three-way pill that could not tell "never got
+  // the chance" apart from "didn't take it".
+  const [checkin, setCheckin] = useState<CheckinState>(EMPTY_CHECKIN);
+  const [lastCommitment, setLastCommitment] = useState<string | null>(null);
   const [checkinResponse, setCheckinResponse] = useState<string | null>(null);
 
   // Retrieval bridge
@@ -337,10 +366,12 @@ export function useSession() {
         phase: currentPhase, concept, character, lessonContent,
         transcript: roleplayTranscript, turnCount,
         completedPhases: Array.from(completedPhases), commandsUsed,
-        checkinOutcome, checkinNeeded, checkinDone, checkinUserText,
+        checkinOutcome, checkinNeeded, checkinDone, checkinUserText, checkin, lastCommitment,
         dayNumber, scenarioContext, sessionContext, scenarioSummary, dimensionSet, shapeId, debriefContent, scores,
         behavioralWeaknessSummary, keyMoment, mission, rationale,
-        lastMission, coachAdvice, isReviewSession, previousScores,
+        missionCue, missionAction, missionTell, missionCommitment,
+        rehearsalCue, rehearsalAttempts, rehearsalResult,
+        lastMission, coachAdvice, isReviewSession, conceptRep, previousScores,
         timestamp: Date.now(),
       }));
     } catch {}
@@ -356,7 +387,7 @@ export function useSession() {
   useEffect(() => {
     if (!isLoading) saveSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPhase, lessonContent, roleplayTranscript.length, turnCount, debriefContent, scores, mission, checkinDone, coachAdvice, behavioralWeaknessSummary, keyMoment, rationale, isLoading]);
+  }, [currentPhase, lessonContent, roleplayTranscript.length, turnCount, debriefContent, scores, mission, checkinDone, coachAdvice, behavioralWeaknessSummary, keyMoment, rationale, rehearsalCue, rehearsalAttempts, rehearsalResult, isLoading]);
 
   // =========================================================================
   // Phase transition
@@ -423,6 +454,10 @@ export function useSession() {
           setLessonContent(parsed.lessonContent);
           setIsReviewSession(parsed.isReview ?? false);
           if (parsed.context) setSessionContext(parsed.context);
+          // The cached lesson was generated for a specific repetition. Without
+          // restoring it, a faded second-session lesson would render under a
+          // header claiming it was the first.
+          if (typeof parsed.rep === "number" && parsed.rep >= 1) setConceptRep(parsed.rep);
           setIsLoading(false);
           localStorage.removeItem("edge-pregenerated-lesson");
           return;
@@ -457,6 +492,9 @@ export function useSession() {
       if (contextHeader && (LIFE_CONTEXTS as string[]).includes(contextHeader)) {
         setSessionContext(contextHeader as LifeContext);
       }
+
+      const repHeader = Number(res.headers.get("X-Rep"));
+      if (Number.isFinite(repHeader) && repHeader >= 1) setConceptRep(repHeader);
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No stream body");
@@ -518,6 +556,7 @@ export function useSession() {
                 // representative context instead of the one the session was
                 // actually selected for.
                 context: data.context ?? null,
+                rep: data.rep ?? 1,
               })
             );
           }
@@ -626,6 +665,7 @@ export function useSession() {
         setSessionContext(data.context as LifeContext);
       }
       setIsReviewSession(Boolean(data.isReview));
+      if (typeof data.rep === "number" && data.rep >= 1) setConceptRep(data.rep);
       return data.concept as Concept;
     } catch {
       return null;
@@ -844,6 +884,13 @@ export function useSession() {
       setScores(normaliseScores(data.scores, returnedSet));
       setBehavioralWeaknessSummary(data.behavioralWeaknessSummary);
       setKeyMoment(data.keyMoment);
+      // The rehearsal phase replays this. The server derives it from the
+      // transcript when the model doesn't nominate one, so a null here means
+      // there was no answerable exchange at all — a scene the user never
+      // replied in — and the phase skips itself rather than rendering empty.
+      setRehearsalCue(
+        data.rehearsal && typeof data.rehearsal.cue === "string" ? data.rehearsal : null
+      );
       setError(null); setIsLoading(false);
       setDebriefRetryCount(0);
     } catch {
@@ -869,8 +916,91 @@ export function useSession() {
     setDebriefContent("Debrief unavailable due to connection issues. Default scores applied.");
     setBehavioralWeaknessSummary("Unable to generate analysis.");
     setKeyMoment("Unable to identify key moment.");
+    // The debrief is what normally nominates the moment, but the same choice
+    // can be made from the transcript we already hold. Losing the analysis is
+    // no reason to also lose the one part of the session where the user
+    // actually produces a better line.
+    setRehearsalCue(selectRehearsalCue(roleplayTranscript, {}));
     setCanSkipDebrief(false);
     setError(null);
+  }
+
+  // =========================================================================
+  // Phase 3b: Rehearse — say it again, properly
+  // =========================================================================
+
+  /**
+   * Entering the phase costs nothing: the cue already came back with the
+   * debrief and the user just needs to answer it. The model call happens on
+   * submit.
+   *
+   * A session with no answerable exchange in it — the user never replied —
+   * has nothing to replay, so the phase steps aside rather than showing an
+   * empty card.
+   */
+  function startRehearsal() {
+    setIsLoading(false);
+    setError(null);
+    if (!rehearsalCue) {
+      const to = advanceToNext("rehearse");
+      if (to) runPhase(to);
+    }
+  }
+
+  async function submitRehearsal(newReply: string) {
+    if (sessionLocked) { setError("Session is active in another tab."); return; }
+    if (!concept || !character || !rehearsalCue) return;
+    const trimmed = newReply.trim();
+    if (!trimmed) return;
+
+    setIsLoading(true); setError(null); setInputValue("");
+    const attempt = rehearsalAttempts + 1;
+    try {
+      const res = await fetchWithRequestId("/api/rehearse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          concept,
+          character,
+          cue: rehearsalCue.cue,
+          originalReply: rehearsalCue.originalReply,
+          newReply: trimmed,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!res.ok) throw new Error("Rehearsal API failed");
+      const data: RehearseResult = await res.json();
+      setRehearsalResult(data);
+      setRehearsalAttempts(attempt);
+      setIsLoading(false);
+      trackClientEvent("rehearsal_attempt", {
+        day: dayNumber,
+        attempt,
+        verdict: data.verdict,
+      });
+    } catch {
+      setError("Couldn’t play that back — tap to retry.");
+      setIsLoading(false);
+    }
+  }
+
+  /** Another go, if they have one left and it didn't land. */
+  function retryRehearsal() {
+    if (rehearsalAttempts >= MAX_REHEARSAL_ATTEMPTS) return;
+    setRehearsalResult(null);
+    setInputValue("");
+    haptic();
+  }
+
+  const canRetryRehearsal =
+    rehearsalAttempts > 0 &&
+    rehearsalAttempts < MAX_REHEARSAL_ATTEMPTS &&
+    rehearsalResult?.verdict !== "better";
+
+  function finishRehearsal() {
+    haptic();
+    const to = advanceToNext("rehearse");
+    if (to) runPhase(to);
   }
 
   // =========================================================================
@@ -882,17 +1012,26 @@ export function useSession() {
     if (to) runPhase(to);
   }
 
-  async function submitCheckin(outcomeType: "completed" | "tried" | "skipped", userOutcome?: string) {
+  async function submitCheckin(state: CheckinState) {
     if (sessionLocked) { setError("Session is active in another tab."); return; }
     if (!lastMission || submittingRef.current) return;
+    if (!canSubmitCheckin(state)) return;
     submittingRef.current = true;
+    setCheckin(state);
     setIsLoading(true);
     setInputValue("");
-    if (userOutcome) setCheckinUserText(userOutcome);
+    // The debrief reads this to connect yesterday's field result to today's
+    // performance, so it wants the whole answer, not just the free text.
+    setCheckinUserText(serialiseCheckin(state));
     try {
       const res = await fetchWithRequestId("/api/checkin", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ previousMission: lastMission, outcomeType, userOutcome }),
+        body: JSON.stringify({
+          previousMission: lastMission,
+          opportunity: state.opportunity,
+          enacted: state.enacted,
+          outcome: state.outcome,
+        }),
         signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) throw new Error("Check-in API failed");
@@ -929,6 +1068,9 @@ export function useSession() {
       );
       const data = await res.json();
       setMission(data.mission); setRationale(data.rationale);
+      setMissionCue(typeof data.cue === "string" && data.cue ? data.cue : null);
+      setMissionAction(typeof data.action === "string" && data.action ? data.action : null);
+      setMissionTell(typeof data.tell === "string" && data.tell ? data.tell : null);
       setError(null); setIsLoading(false);
       setMissionRetryCount(0);
     } catch {
@@ -972,6 +1114,8 @@ export function useSession() {
         const pick = pool[Math.floor(Math.random() * pool.length)];
         setMission(pick.mission);
         setRationale(pick.rationale);
+        // Fallback missions are prose — the card renders the plain form.
+        setMissionCue(null); setMissionAction(null); setMissionTell(null);
         setError(null);
       } else {
         setError("Couldn\u2019t load your mission \u2014 tap to retry.");
@@ -986,6 +1130,16 @@ export function useSession() {
   function completeSession() {
     if (sessionCompletedRef.current) return;
     sessionCompletedRef.current = true;
+    // Best-effort: the commitment has already done most of its work by being
+    // chosen, so a failed write must not block completing the session.
+    if (missionCommitment) {
+      fetchWithRequestId("/api/mission/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commitment: missionCommitment }),
+        keepalive: true,
+      }).catch(() => {});
+    }
     setCompletedPhases((p) => new Set([...p, "mission"]));
     setShowConfetti(true);
     clearSession();
@@ -1013,6 +1167,7 @@ export function useSession() {
       return;
     }
     if (phase === "debrief") { fetchDebrief(); return; }
+    if (phase === "rehearse") { startRehearsal(); return; }
     if (phase === "mission") { fetchMission(); return; }
   }
 
@@ -1068,8 +1223,8 @@ export function useSession() {
       } else if (currentPhase === "retrieval" && retrievalQuestion && !retrievalResponse) {
         submitRetrievalResponse(text);
         setInputValue("");
-      } else if (currentPhase === "checkin" && checkinPillSelected && !checkinDone) {
-        submitCheckin(checkinPillSelected, text);
+      } else if (currentPhase === "checkin" && checkinStep(checkin) === "outcome" && !checkinDone) {
+        submitCheckin({ ...checkin, outcome: text });
         setInputValue("");
       }
     }
@@ -1077,7 +1232,7 @@ export function useSession() {
     // intentionally excluded — they're called imperatively via the voiceAutoSubmitRef guard,
     // not reactively. Including them would trigger re-renders without purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputValue, isStreaming, isLoading, currentPhase, onboardingNeeded, onboardingStep, retrievalQuestion, retrievalResponse, checkinPillSelected, checkinDone]);
+  }, [inputValue, isStreaming, isLoading, currentPhase, onboardingNeeded, onboardingStep, retrievalQuestion, retrievalResponse, checkin, checkinDone]);
 
   // Auto-speak AI roleplay responses when voice mode is on
   const lastSpokenIndex = useRef(-1);
@@ -1306,16 +1461,28 @@ export function useSession() {
           setCommandsUsed(Array.isArray(s.commandsUsed) ? s.commandsUsed : []); setCheckinOutcome(s.checkinOutcome ?? null);
           setCheckinNeeded(s.checkinNeeded ?? false); setCheckinDone(s.checkinDone ?? false);
           setCheckinUserText(s.checkinUserText ?? null);
+          if (s.checkin && typeof s.checkin === "object") setCheckin(s.checkin);
+          if (typeof s.lastCommitment === "string") setLastCommitment(s.lastCommitment);
           setDayNumber(typeof s.dayNumber === "number" ? s.dayNumber : 1); setScenarioContext(s.scenarioContext ?? null);
           if (s.debriefContent) setDebriefContent(s.debriefContent);
           if (s.scores) setScores(normaliseScores(s.scores));
           if (s.behavioralWeaknessSummary) setBehavioralWeaknessSummary(s.behavioralWeaknessSummary);
           if (s.keyMoment) setKeyMoment(s.keyMoment);
+          // Without these a session resumed on the rehearse phase has nothing
+          // to replay and would render an empty card.
+          if (s.rehearsalCue && typeof s.rehearsalCue.cue === "string") setRehearsalCue(s.rehearsalCue);
+          if (typeof s.rehearsalAttempts === "number") setRehearsalAttempts(s.rehearsalAttempts);
+          if (s.rehearsalResult) setRehearsalResult(s.rehearsalResult);
           if (s.mission) setMission(s.mission);
           if (s.rationale) setRationale(s.rationale);
+          if (s.missionCue) setMissionCue(s.missionCue);
+          if (s.missionAction) setMissionAction(s.missionAction);
+          if (s.missionTell) setMissionTell(s.missionTell);
+          if (s.missionCommitment) setMissionCommitment(s.missionCommitment);
           if (s.lastMission) setLastMission(s.lastMission);
           if (s.coachAdvice) setCoachAdvice(s.coachAdvice);
           if (s.isReviewSession) setIsReviewSession(s.isReviewSession);
+          if (typeof s.conceptRep === "number") setConceptRep(s.conceptRep);
           if (s.previousScores) setPreviousScores(normaliseScores(s.previousScores));
           setIsLoading(false); setRestored(true);
           trackClientEvent("session_resumed", { phase: s.phase, day: s.dayNumber || 1, shape: restoredShape.id });
@@ -1344,6 +1511,7 @@ export function useSession() {
           setDayNumber(statusData.dayNumber);
           if (statusData.lastEntry) {
             setLastMission(statusData.lastEntry.mission);
+            setLastCommitment(statusData.lastEntry.mission_commitment ?? null);
             setCheckinNeeded(true);
             if (statusData.lastEntry.scores) {
               setPreviousScores(
@@ -1419,15 +1587,30 @@ export function useSession() {
     previousScores,
     behavioralWeaknessSummary,
     keyMoment,
+    missionCue,
+    missionAction,
+    missionTell,
+    missionCommitment,
+    setMissionCommitment,
+    rehearsalCue,
+    rehearsalAttempts,
+    rehearsalResult,
+    canRetryRehearsal,
+    submitRehearsal,
+    retryRehearsal,
+    finishRehearsal,
     mission,
     rationale,
     isReviewSession,
+    conceptRep,
+    repsPerConcept: REPS_PER_CONCEPT,
 
     // Check-in
     checkinNeeded,
     checkinDone,
-    checkinPillSelected,
-    setCheckinPillSelected,
+    checkin,
+    setCheckin,
+    lastCommitment,
     checkinResponse,
 
     // Retrieval

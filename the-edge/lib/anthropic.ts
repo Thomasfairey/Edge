@@ -89,6 +89,11 @@ export const PHASE_CONFIG = {
   // distinct from coach's FAST:300.
   scenario: { model: MODELS.FAST, max_tokens: 400, temperature: 1.0 },
   debrief: { model: MODELS.PRIMARY, max_tokens: 1500, temperature: 0.6 },
+  // The rehearsal has to sound like the same person the user just spent ten
+  // turns with, so it runs on the primary model at roleplay-ish temperature.
+  // NOTE: getPhaseLabel keys on `${model}:${max_tokens}`, so 500 must stay
+  // unique across this table.
+  rehearse: { model: MODELS.PRIMARY, max_tokens: 500, temperature: 0.85 },
   mission: { model: MODELS.PRIMARY, max_tokens: 400, temperature: 0.7 },
 } as const;
 

@@ -22,6 +22,7 @@ export type AnalyticsEvent =
   | "phase_completed"
   | "phase_skipped"
   | "roleplay_turn"
+  | "rehearsal_attempt"
   | "command_used"
   | "mission_outcome"
   | "voice_used"

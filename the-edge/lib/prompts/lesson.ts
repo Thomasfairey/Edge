@@ -4,7 +4,9 @@ import { LifeContext, isSocialContext, primaryContextForConcept } from '../types
 export function buildLessonPrompt(
   concept: Concept,
   isReview: boolean = false,
-  context?: LifeContext
+  context?: LifeContext,
+  /** Which of this concept's sessions this is. 1 teaches it; 2 and 3 do not. */
+  rep: number = 1
 ): string {
   const resolved = context ?? primaryContextForConcept(concept);
   const isSocial = isSocialContext(resolved);
@@ -111,6 +113,62 @@ ABSOLUTE CONSTRAINTS:
 - Write in prose paragraphs. No bullet points. No numbered lists.
 - Tone: dense, compelling, zero filler. The reader already knows this — make them see it differently.
 - The reader should feel sharper, not lectured.`;
+  }
+
+  // Sessions 2 and 3 of a concept must not re-teach it.
+  //
+  // The reader has had the full lesson and has already tried the technique on a
+  // real scene — re-explaining at that point is the expertise-reversal effect in
+  // action: the worked example that helped on day one actively gets in the way
+  // once there is a schema to hang things on. It is also, straightforwardly,
+  // what would make three sessions on one concept feel like the app repeating
+  // itself. So the teaching fades and the practice grows.
+  if (rep >= 3) {
+    return `${engineLine}
+
+THE CONCEPT: ${concept.name} (${concept.source})
+${concept.description}
+
+This is the reader's THIRD and final session on this concept. They have had the full lesson and practised it twice. They do not need teaching. They need pointing at the door.
+
+YOUR TASK:
+Write ONE short paragraph, 50-80 words, under this exact header:
+
+## The Cue
+
+State the technique as a single instruction they can hold in their head during the conversation that is about to start — the compressed version, the thing they say to themselves. Then one sentence on the failure mode they are most likely to fall into on a third attempt: getting mechanical with it, or over-applying it now that it is familiar.
+
+ABSOLUTE CONSTRAINTS:
+- 80 words maximum. HARD LIMIT.
+- Do NOT restate the mechanism, the evidence, the source, or an example. They have all of it.
+- No preamble. No "as you'll remember". Start with the instruction.
+- Prose. No bullets, no lists.
+- ${audienceLine}`;
+  }
+
+  if (rep === 2) {
+    return `${engineLine}
+
+THE CONCEPT: ${concept.name} (${concept.source})
+${concept.description}
+
+This is the reader's SECOND session on this concept. They had the full lesson yesterday and have practised it once, against a different person in a different situation. They are about to practise it again with someone new.
+
+YOUR TASK:
+Deliver a short refresher in this EXACT two-part structure. Use these headers exactly as written.
+
+## The Reminder
+50-70 words. The mechanism in one or two sentences — WHY this works on the other person, not what the move is. Nothing else. Assume they remember the technique and have forgotten why it functions, which is the part that decides whether they deploy it well or mechanically.
+
+## Where It Slips
+80-110 words. The specific way this technique degrades on a second attempt: the reader now knows the move and will be tempted to execute it as a move — visibly, on schedule, regardless of whether the moment called for it. Name what that looks like from the other side, and the adjustment that keeps it responsive rather than rehearsed. Give a concrete moment from ${setting.drawFrom}, not an abstraction.${businessBan}
+
+ABSOLUTE CONSTRAINTS:
+- Total output: 130-180 words. HARD LIMIT.
+- Do NOT re-teach the concept, restate the evidence, or repeat yesterday's example.
+- Prose paragraphs. No bullet points, no numbered lists.
+- ${audienceLine}
+- ${proseTone}`;
   }
 
   return `${engineLine}
