@@ -284,6 +284,8 @@ interface LessonPhaseProps {
   /** The life context this session runs in — shown instead of the domain. */
   sessionContext: string | null;
   isReviewSession: boolean;
+  conceptRep: number;
+  repsPerConcept: number;
   onboardingNeeded: boolean;
   onLessonCardChange: (current: number, total: number) => void;
   lessonCardAdvanceRef: React.MutableRefObject<((card: number) => void) | null>;
@@ -297,6 +299,8 @@ export default function LessonPhase({
   concept,
   sessionContext,
   isReviewSession,
+  conceptRep,
+  repsPerConcept,
   onboardingNeeded,
   onLessonCardChange,
   lessonCardAdvanceRef,
@@ -333,6 +337,17 @@ export default function LessonPhase({
                 {isReviewSession && (
                   <span className="badge" style={{ backgroundColor: "var(--score-mid-bg)", color: "var(--score-mid-text)" }}>
                     Review
+                  </span>
+                )}
+                {/*
+                  A concept runs for three sessions, and without this the second
+                  and third read as the app having lost its place rather than as
+                  deliberate practice. Saying which attempt it is turns a repeat
+                  into a progress marker.
+                */}
+                {!isReviewSession && conceptRep > 1 && (
+                  <span className="badge" style={{ backgroundColor: "var(--score-mid-bg)", color: "var(--score-mid-text)" }}>
+                    Attempt {conceptRep} of {repsPerConcept}
                   </span>
                 )}
               </div>

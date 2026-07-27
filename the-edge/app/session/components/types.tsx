@@ -20,6 +20,7 @@ const PHASE_META: Record<SessionPhase, { label: string; color: string }> = {
   retrieval: { label: "Learn", color: "#B8D4E3" },
   roleplay: { label: "Practise", color: "#F2C4C4" },
   debrief: { label: "Review", color: "#C5B8E8" },
+  rehearse: { label: "Again", color: "#F2C4C4" },
   mission: { label: "Take away", color: "#B8E0C8" },
 };
 
@@ -46,6 +47,8 @@ export const PHASE_BG: Record<string, string> = {
   retrieval: "#EFF6FA",
   roleplay: "#FDF2F2",
   debrief: "#F3F0FA",
+  // Same wash as the roleplay: this is the scene again, not more analysis.
+  rehearse: "#FDF2F2",
   mission: "#F0FAF4",
 };
 
@@ -258,17 +261,23 @@ export function renderMarkdown(text: string, context: "lesson" | "debrief" | "de
 
 export function splitLessonSections(text: string): { title: string; content: string }[] {
   const raw: { title: string; content: string }[] = [];
-  // "The Pitfall" is the social-context name for "The Counter" (see
-  // lib/prompts/lesson.ts). Omitting it here meant social lessons found only
-  // two headings, so the entire final section was swallowed into "The Play"
-  // and the character-count splitter below sliced it into cards that rendered
-  // with a heading and no body.
-  const pattern = /^## (The (?:Principle|Play|Counter|Pitfall|Refresher|Advanced Play))/gm;
-  const headings: { title: string; index: number }[] = [];
+  // Any `## ` heading, rather than a fixed list of the ones we happen to use
+  // today.
+  //
+  // This was an enum — Principle|Play|Counter|Refresher|Advanced Play — and
+  // adding "The Pitfall" to the prompts without adding it here meant every
+  // social lesson found only two headings and rendered a card with a title and
+  // no body. The repetition-fading lessons add three more headings ("The Cue",
+  // "The Reminder", "Where It Slips"), so the enum would have broken in exactly
+  // the same way a second time. Matching structurally removes the coupling.
+  const pattern = /^## (.{1,60})$/gm;
+  // `length` is the whole matched line, so the body offset stays right even
+  // when the model leaves trailing whitespace after a heading.
+  const headings: { title: string; index: number; length: number }[] = [];
   let match;
 
   while ((match = pattern.exec(text)) !== null) {
-    headings.push({ title: match[1], index: match.index });
+    headings.push({ title: match[1].trim(), index: match.index, length: match[0].length });
   }
 
   if (headings.length === 0) {
@@ -276,7 +285,7 @@ export function splitLessonSections(text: string): { title: string; content: str
   }
 
   for (let i = 0; i < headings.length; i++) {
-    const start = headings[i].index + headings[i].title.length + 3;
+    const start = headings[i].index + headings[i].length;
     const end = i + 1 < headings.length ? headings[i + 1].index : text.length;
     raw.push({
       title: headings[i].title,

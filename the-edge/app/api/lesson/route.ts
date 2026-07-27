@@ -16,9 +16,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateResponseViaStream, streamResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildPersistentContext, getUserContexts } from "@/lib/prompts/system-context";
 import { buildLessonPrompt } from "@/lib/prompts/lesson";
-import { CONCEPTS, selectConcept } from "@/lib/concepts";
+import { CONCEPTS, selectConcept, repsByConcept, REPS_PER_CONCEPT } from "@/lib/concepts";
 import { LifeContext, contextsForConcept, resolveSessionContext } from "@/lib/types";
-import { getCompletedConcepts } from "@/lib/ledger";
+import { getCompletedConcepts, getRecentEntries } from "@/lib/ledger";
 import { withRateLimit } from "@/lib/with-rate-limit";
 import { withAuth } from "@/lib/auth";
 import { createRequestLogger } from "@/lib/logger";
@@ -45,6 +45,9 @@ async function handlePost(req: NextRequest, userId: string | null) {
     // Resolve the concept: lookup by ID if provided, otherwise auto-select
     let concept;
     let isReview = false;
+    // Which of this concept's three sessions today is. Drives how much lesson
+    // gets delivered and what the session header tells the user.
+    let rep = 1;
 
     let sessionContext: LifeContext;
 
@@ -57,29 +60,36 @@ async function handlePost(req: NextRequest, userId: string | null) {
         );
       }
       concept = found;
-      sessionContext = resolveSessionContext(
-        contextsForConcept(found),
-        await getUserContexts(userId)
-      );
+      const [contexts, completedIds] = await Promise.all([
+        getUserContexts(userId),
+        getCompletedConcepts(userId),
+      ]);
+      sessionContext = resolveSessionContext(contextsForConcept(found), contexts);
+      // An explicitly requested concept is still somewhere in its cycle — the
+      // pre-generated lesson for tomorrow must not re-teach a concept the user
+      // is on their third session of.
+      rep = Math.min((repsByConcept(completedIds).get(found.id) ?? 0) + 1, REPS_PER_CONCEPT);
     } else {
-      const [completedIds, contexts] = await Promise.all([
+      const [completedIds, contexts, history] = await Promise.all([
         getCompletedConcepts(userId),
         getUserContexts(userId),
+        getRecentEntries(REPS_PER_CONCEPT * 2, userId),
       ]);
-      const result = await selectConcept(completedIds, userId, contexts);
+      const result = await selectConcept(completedIds, userId, contexts, history);
       concept = result.concept;
       isReview = result.isReview;
       sessionContext = result.context;
+      rep = result.rep;
     }
 
     // Shapes that do not begin with a lesson (drill, deep) still need a concept
     // and a session context before the roleplay can start. This returns both
     // without generating a lesson — no model call, so it is fast and cheap.
     if (body.conceptOnly === true) {
-      return NextResponse.json({ concept, isReview, context: sessionContext });
+      return NextResponse.json({ concept, isReview, context: sessionContext, rep });
     }
 
-    const lessonPrompt = buildLessonPrompt(concept, isReview, sessionContext);
+    const lessonPrompt = buildLessonPrompt(concept, isReview, sessionContext, rep);
     const systemPrompt = `${await buildPersistentContext(userId)}\n\n${lessonPrompt}`;
 
     const userMessage = {
@@ -100,6 +110,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
           "X-Concept": encodeURIComponent(JSON.stringify(concept)),
           "X-Is-Review": isReview ? "true" : "false",
           "X-Context": sessionContext,
+          "X-Rep": String(rep),
         },
       });
     } else {
@@ -113,7 +124,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
         PHASE_CONFIG.lesson
       );
 
-      return NextResponse.json({ concept, lessonContent, isReview, context: sessionContext });
+      return NextResponse.json({ concept, lessonContent, isReview, context: sessionContext, rep });
     }
   } catch (error) {
     if (error instanceof CircuitBreakerOpenError) {

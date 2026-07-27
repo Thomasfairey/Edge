@@ -229,10 +229,26 @@ export default function DebriefPhase({
 
       {debriefContent && !isLoading && (
         <>
-          {/* Score circles with deltas */}
+          {/*
+            Scores sit behind a tap, and the analysis leads.
+
+            A row of five 1-5 circles at the top of the debrief is feedback
+            about the person — "Vulnerability: 2" reads as a trait, not as
+            something you did — and self-directed feedback is the variable that
+            turns feedback interventions negative. The written analysis is
+            task-directed: it names what happened in a specific turn. So that
+            goes first, and the numbers are available to anyone who wants them.
+            They still drive spaced repetition either way.
+          */}
           {scores && (
-            <div className="mb-5 card">
-              <div className="flex items-center justify-center gap-4">
+            <details className="mb-5 card" style={{ padding: "16px 20px" }}>
+              <summary
+                className="cursor-pointer text-caption font-semibold uppercase tracking-wider"
+                style={{ color: "var(--text-tertiary)" }}
+              >
+                See scores
+              </summary>
+              <div className="mt-4 flex items-center justify-center gap-4">
                 {scoreDimsFor(dimensionSet).map(({ key, fullName }) => {
                   const s = scores[key];
                   // A previous session scored on a different dimension set has
@@ -272,7 +288,7 @@ export default function DebriefPhase({
                   );
                 })}
               </div>
-            </div>
+            </details>
           )}
 
           {/* Analysis card */}

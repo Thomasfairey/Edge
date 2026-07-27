@@ -685,24 +685,96 @@ export const CONCEPTS: Concept[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Select the next concept for today's session.
- * Returns { concept, isReview, context } — when reviews are due, 30% chance of
- * review session. `context` is the single life context the session runs in, and
- * drives scenario generation, coaching tone, and scoring dimensions downstream.
+ * How many sessions a concept gets before the curriculum moves on.
  *
- * Rules:
- * 1. Only ever surface concepts practisable in one of the user's active contexts.
- * 2. Never repeat a concept already in completedIds.
- * 3. Prefer a different domain than the most recently completed concept
- *    (enforces breadth before depth).
- * 4. If all concepts in other domains are exhausted, allow same-domain.
- * 5. If ALL in-context concepts are exhausted, reset the pool and pick randomly.
+ * One session per concept was coverage, not acquisition: a single eight-turn
+ * conversation cannot make a technique available to you under real social
+ * pressure, and 76 concepts at one a day is a tour, not training. Three
+ * sessions with the *situation* varying and the *skill* held constant is the
+ * shape the evidence actually supports, and it is also the right fix for the
+ * product feeling repetitive — novelty belongs in who you are talking to, not
+ * in what you are practising.
+ */
+export const REPS_PER_CONCEPT = 3;
+
+/** How many sessions each concept has had, keyed by concept id. */
+export function repsByConcept(completedIds: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of completedIds) {
+    const concept = conceptFromLedgerValue(value);
+    if (!concept) continue;
+    counts.set(concept.id, (counts.get(concept.id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * The concept the user is part-way through, if there is one.
+ *
+ * Reads the most recent session and asks whether that concept still has
+ * sessions left. `rep` is the number of the session about to happen — so the
+ * day after a concept's first session, this returns rep 2.
+ */
+export function conceptInProgress(
+  completedIds: string[],
+  contexts: LifeContext[] = SOCIAL_CONTEXTS
+): { concept: Concept; rep: number } | null {
+  if (completedIds.length === 0) return null;
+
+  const last = conceptFromLedgerValue(completedIds[completedIds.length - 1]);
+  if (!last) return null;
+
+  // A context change mid-cycle should not strand the user on a concept they can
+  // no longer practise anywhere they care about.
+  if (!matchesContexts(contextsForConcept(last), contexts)) return null;
+
+  const done = repsByConcept(completedIds).get(last.id) ?? 0;
+  if (done >= REPS_PER_CONCEPT) return null;
+
+  return { concept: last, rep: done + 1 };
+}
+
+/**
+ * Which contexts this concept has already been practised in.
+ *
+ * Used to push each repetition into a different setting — the same technique
+ * against a friend, then a stranger at a party, then your brother, is what
+ * makes it transfer rather than staying welded to one kind of room.
+ */
+function contextsUsedFor(
+  conceptId: string,
+  history: { concept: string; context?: LifeContext | null }[]
+): LifeContext[] {
+  const used: LifeContext[] = [];
+  for (const entry of history) {
+    if (conceptFromLedgerValue(entry.concept)?.id !== conceptId) continue;
+    if (entry.context && !used.includes(entry.context)) used.push(entry.context);
+  }
+  return used;
+}
+
+/**
+ * Select the next concept for today's session.
+ *
+ * Returns `{ concept, isReview, context, rep }` — `rep` is which of the
+ * concept's three sessions this is, and drives how much lesson gets delivered
+ * and how the header labels the day.
+ *
+ * Order of precedence:
+ * 1. A due spaced-repetition review, 30% of the time — long-term retention of
+ *    something already finished, which is a different job from the three-session
+ *    acquisition cycle below.
+ * 2. The concept currently mid-cycle, in a context it has not been practised in
+ *    yet where one is available.
+ * 3. A new concept, excluding any that has already had its three sessions,
+ *    preferring a domain the user has not seen recently.
  */
 export async function selectConcept(
   completedIds: string[],
   userId?: string | null,
-  contexts: LifeContext[] = SOCIAL_CONTEXTS
-): Promise<{ concept: Concept; isReview: boolean; context: LifeContext }> {
+  contexts: LifeContext[] = SOCIAL_CONTEXTS,
+  history: { concept: string; context?: LifeContext | null }[] = []
+): Promise<{ concept: Concept; isReview: boolean; context: LifeContext; rep: number }> {
   // Check for due reviews — 30% chance of review session.
   // Only surface a review the user can actually practise right now.
   try {
@@ -715,6 +787,7 @@ export async function selectConcept(
             concept: reviewConcept,
             isReview: true,
             context: resolveSessionContext(contextsForConcept(reviewConcept), contexts),
+            rep: repsByConcept(completedIds).get(reviewConcept.id) ?? 1,
           };
         }
       }
@@ -723,12 +796,39 @@ export async function selectConcept(
     // SR not available — continue with normal selection
   }
 
+  const inProgress = conceptInProgress(completedIds, contexts);
+  if (inProgress) {
+    return {
+      concept: inProgress.concept,
+      isReview: false,
+      context: nextContextFor(inProgress.concept, contexts, contextsUsedFor(inProgress.concept.id, history)),
+      rep: inProgress.rep,
+    };
+  }
+
   const concept = selectNewConcept(completedIds, contexts);
   return {
     concept,
     isReview: false,
     context: resolveSessionContext(contextsForConcept(concept), contexts),
+    rep: 1,
   };
+}
+
+/**
+ * A context for this concept that it has not been practised in yet.
+ *
+ * Falls back to the normal resolution once every eligible context has been
+ * used — repeating a setting beats refusing to run the session.
+ */
+export function nextContextFor(
+  concept: Concept,
+  contexts: LifeContext[],
+  alreadyUsed: LifeContext[]
+): LifeContext {
+  const eligible = contextsForConcept(concept).filter((c) => contexts.includes(c));
+  const fresh = eligible.find((c) => !alreadyUsed.includes(c));
+  return fresh ?? resolveSessionContext(contextsForConcept(concept), contexts);
 }
 
 /** Resolve a concept from either an id or a formatted ledger name. */
@@ -741,16 +841,15 @@ export function selectNewConcept(
   contexts: LifeContext[] = SOCIAL_CONTEXTS,
   pick: Picker = (n) => Math.floor(Math.random() * n)
 ): Concept {
-  // completedIds may contain either concept IDs (e.g. "mirroring") or
-  // formatted ledger names (e.g. "Mirroring (Voss)"). Match against both.
-  const completedSet = new Set(completedIds);
+  // A concept is only spent once it has had all REPS_PER_CONCEPT sessions.
+  // Excluding anything merely *seen* is what the one-a-day curriculum did, and
+  // it is exactly the behaviour the three-session cycle replaces.
+  const reps = repsByConcept(completedIds);
   // Restrict the entire pool to the active contexts before anything else.
   const inContext = CONCEPTS.filter((c) => matchesContexts(contextsForConcept(c), contexts));
   // Guard: a context selection with no matching content must not wedge the app.
   const pool = inContext.length > 0 ? inContext : CONCEPTS;
-  const available = pool.filter(
-    (c) => !completedSet.has(c.id) && !completedSet.has(`${c.name} (${c.source})`)
-  );
+  const available = pool.filter((c) => (reps.get(c.id) ?? 0) < REPS_PER_CONCEPT);
 
   // All in-context concepts exhausted — reset the pool (still in context)
   if (available.length === 0) {

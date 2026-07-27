@@ -51,7 +51,7 @@ You do not soften. You do not encourage. You do not say "good effort." The user 
         : d.key === "tactical_awareness"
         ? `Did the user recognise what the character was doing (${character.tactics.slice(0, 2).join(', ')})? Did they adapt? Reference specific turns.`
         : d.prompt;
-      return `**${d.label.toUpperCase()}**\n1-2 sentences. ${detail}`;
+      return `**${d.label.toUpperCase()}**\nOpen with the OBSERVABLE EVIDENCE — what they actually did, counted or quoted, from this transcript. "You asked four questions and followed up on none of them." "She offered Kyoto twice; you went to your own point both times." Then 1-2 sentences of read. ${detail}`;
     })
     .join('\n\n');
 
@@ -105,5 +105,9 @@ MANDATORY STRUCTURED OUTPUT — end your response with this EXACT block on new l
 ${set.dimensions.map((d) => `${d.key}: [1-5]`).join('\n')}
 ---LEDGER---
 behavioral_weakness_summary: [Exactly 2 sentences. Be specific. Reference turns and patterns. This gets stored and shown to future sessions.]
-key_moment: [Exactly 1 sentence. The single most important turn — what happened and what should have happened.]`;
+key_moment: [Exactly 1 sentence. The single most important turn — what happened and what should have happened.]
+---REHEARSAL---
+rehearsal_cue: [The single line ${character.name.toUpperCase()} said that the user handled worst. Copy it VERBATIM from the transcript above — exact words, no paraphrase, no quotation marks, no turn number. It must be a line the CHARACTER spoke, never one the user spoke.]
+rehearsal_original: [The user's actual reply to that line, VERBATIM from the transcript. No paraphrase.]
+rehearsal_brief: [Max 20 words. What to do differently, stated as the PRINCIPLE ONLY — "acknowledge what she just gave you before you add anything of your own". NEVER supply the words to say. The user is about to write their own reply and handing them the phrasing turns it into copying.]`;
 }

@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateResponse, PHASE_CONFIG, CircuitBreakerOpenError } from "@/lib/anthropic";
 import { buildPersistentContext } from "@/lib/prompts/system-context";
-import { buildMissionPrompt } from "@/lib/prompts/mission";
+import { buildMissionPrompt, parseMission } from "@/lib/prompts/mission";
 import { serialiseForPrompt, appendEntry, getLedgerCount } from "@/lib/ledger";
 import { updateSREntry } from "@/lib/spaced-repetition";
 import {
@@ -96,18 +96,14 @@ async function handlePost(req: NextRequest, userId: string | null) {
       PHASE_CONFIG.mission
     );
 
-    // Parse mission text and rationale (case-insensitive split on "RATIONALE:")
-    const rationaleIndex = rawMission.toUpperCase().indexOf("RATIONALE:");
-    let mission: string;
-    let rationale: string;
-
-    if (rationaleIndex !== -1) {
-      mission = rawMission.slice(0, rationaleIndex).trim();
-      rationale = rawMission.slice(rationaleIndex + "RATIONALE:".length).trim();
-    } else {
-      mission = rawMission.trim();
-      rationale = "";
-      log.warn("Could not parse RATIONALE: section from response", { phase: "mission" });
+    // Missions are if-then plans: a trigger the user will recognise in the
+    // moment, and one behaviour attached to it. parseMission never throws — a
+    // malformed response degrades to plain prose rather than losing the row.
+    const parsed = parseMission(rawMission);
+    const mission = parsed.text;
+    const rationale = parsed.rationale;
+    if (!parsed.cue || !parsed.action) {
+      log.warn("Mission came back without a cue/action pair", { phase: "mission" });
     }
 
     // Assemble the complete ledger entry
@@ -125,6 +121,8 @@ async function handlePost(req: NextRequest, userId: string | null) {
       behavioral_weakness_summary: behavioralWeaknessSummary,
       key_moment: keyMoment,
       mission,
+      mission_cue: parsed.cue || null,
+      mission_action: parsed.action || null,
       mission_outcome: "",
       commands_used: commandsUsed,
       session_completed: true,
@@ -166,7 +164,7 @@ async function handlePost(req: NextRequest, userId: string | null) {
       log.warn(`Failed to update SR entry: ${e instanceof Error ? e.message : "Unknown error"}`, { phase: "mission" });
     }
 
-    return NextResponse.json({ mission, rationale, ledgerEntry });
+    return NextResponse.json({ mission, rationale, ledgerEntry, cue: parsed.cue, action: parsed.action, tell: parsed.tell });
   } catch (error) {
     if (error instanceof CircuitBreakerOpenError) {
       return NextResponse.json(

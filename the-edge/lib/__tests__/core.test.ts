@@ -9,6 +9,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
+import { selectRehearsalCue, parseRehearsalBlock } from "../rehearsal";
+import { repsByConcept, conceptInProgress, nextContextFor, REPS_PER_CONCEPT } from "../concepts";
+import { parseRehearseResponse } from "../prompts/rehearse";
+import { parseMission } from "../prompts/mission";
+import {
+  EMPTY_CHECKIN,
+  canSubmitCheckin,
+  checkinStep,
+  enactmentStats,
+  outcomeTypeFor,
+  serialiseCheckin,
+} from "../checkin";
+
 // ---------------------------------------------------------------------------
 // Imports from lib/validate.ts (using relative paths to avoid @/ alias issues)
 // ---------------------------------------------------------------------------
@@ -1898,6 +1911,12 @@ describe("Session shapes", () => {
       assert.ok(at("lesson") < at("roleplay"), `${shape.id}: roleplay before lesson`);
       assert.ok(at("roleplay") < at("debrief"), `${shape.id}: debrief before roleplay`);
       assert.ok(at("debrief") < at("mission"), `${shape.id}: mission before debrief`);
+      // The rehearsal replays the moment the debrief picked out, so it cannot
+      // run before it; and the mission still writes the ledger row, so it
+      // cannot run before the rehearsal either.
+      assert.ok(shape.phases.includes("rehearse"), `${shape.id}: no rehearsal`);
+      assert.ok(at("debrief") < at("rehearse"), `${shape.id}: rehearse before debrief`);
+      assert.ok(at("rehearse") < at("mission"), `${shape.id}: mission before rehearse`);
       if (shape.phases.includes("retrieval")) {
         assert.ok(at("lesson") < at("retrieval"), `${shape.id}: retrieval before lesson`);
         assert.ok(at("retrieval") < at("roleplay"), `${shape.id}: roleplay before retrieval`);
@@ -1935,6 +1954,7 @@ describe("Session shapes", () => {
       "retrieval",
       "roleplay",
       "debrief",
+      "rehearse",
       "mission",
     ]);
   });
@@ -1970,7 +1990,8 @@ describe("Session shapes", () => {
     it("sends a drill from roleplay to the debrief, not straight to the mission", () => {
       // It used to skip the debrief, which left the mission with no scores.
       assert.equal(nextPhase(shapeById("drill"), "roleplay"), "debrief");
-      assert.equal(nextPhase(shapeById("drill"), "debrief"), "mission");
+      assert.equal(nextPhase(shapeById("drill"), "debrief"), "rehearse");
+      assert.equal(nextPhase(shapeById("drill"), "rehearse"), "mission");
     });
   });
 
@@ -2061,5 +2082,363 @@ describe("Session shapes", () => {
       const shape = selectShape();
       assert.ok(shape.phases.length > 0);
     });
+  });
+});
+
+// ===========================================================================
+// Rehearsal — cue selection and block parsing
+// ===========================================================================
+
+describe("rehearsal cue selection", () => {
+  const transcript = [
+    { role: "assistant" as const, content: "So what do you actually do all day?" },
+    { role: "user" as const, content: "I'm an engineer. Mostly backend stuff." },
+    { role: "assistant" as const, content: "I spent a summer in Kyoto once. Changed how I think about quiet." },
+    { role: "user" as const, content: "Nice. Anyway, what got you into your line of work?" },
+  ];
+
+  it("uses the transcript's own wording when the model paraphrases the cue", () => {
+    // The model is told to quote verbatim and routinely doesn't. Only the
+    // identification is trusted; the words come from the transcript.
+    const result = selectRehearsalCue(transcript, {
+      cue: "she mentioned spending a summer in Kyoto",
+      brief: "Answer what she offered.",
+    });
+    assert.equal(result?.cue, "I spent a summer in Kyoto once. Changed how I think about quiet.");
+    assert.equal(result?.originalReply, "Nice. Anyway, what got you into your line of work?");
+  });
+
+  it("falls back to the last real exchange when the model nominates nothing", () => {
+    const result = selectRehearsalCue(transcript, {});
+    assert.equal(result?.cue, "I spent a summer in Kyoto once. Changed how I think about quiet.");
+    assert.ok(result?.brief, "must still carry a usable brief");
+  });
+
+  it("ignores an invented cue that matches no turn", () => {
+    const result = selectRehearsalCue(transcript, {
+      cue: "Completely fabricated line about badminton tournaments in Peru",
+    });
+    // Falls back rather than replaying a line nobody said.
+    assert.equal(result?.cue, "I spent a summer in Kyoto once. Changed how I think about quiet.");
+  });
+
+  it("never nominates a character line the user did not reply to", () => {
+    // A trailing character turn has no original reply to improve on.
+    const trailing = [
+      ...transcript,
+      { role: "assistant" as const, content: "Right. Sure." },
+    ];
+    const result = selectRehearsalCue(trailing, { cue: "Right. Sure." });
+    assert.notEqual(result?.cue, "Right. Sure.");
+  });
+
+  it("returns null when there is nothing to replay", () => {
+    assert.equal(selectRehearsalCue([], {}), null);
+    assert.equal(
+      selectRehearsalCue([{ role: "assistant" as const, content: "Hello?" }], {}),
+      null,
+      "a scene the user never answered has no rehearsable moment"
+    );
+  });
+});
+
+describe("parseRehearsalBlock", () => {
+  it("pulls all three fields out of a well-formed block", () => {
+    const text = `Some debrief prose.
+
+---SCORES---
+presence: 3
+
+---LEDGER---
+key_moment: The Kyoto turn.
+
+---REHEARSAL---
+rehearsal_cue: I spent a summer in Kyoto once.
+rehearsal_original: Nice. Anyway, what got you into your work?
+rehearsal_brief: Answer what she gave you before you add your own.`;
+    const parsed = parseRehearsalBlock(text);
+    assert.equal(parsed.cue, "I spent a summer in Kyoto once.");
+    assert.equal(parsed.original, "Nice. Anyway, what got you into your work?");
+    assert.equal(parsed.brief, "Answer what she gave you before you add your own.");
+  });
+
+  it("strips the quotation marks the model adds despite being told not to", () => {
+    const parsed = parseRehearsalBlock(
+      `---REHEARSAL---\nrehearsal_cue: "I spent a summer in Kyoto."\nrehearsal_brief: Thread it.`
+    );
+    assert.equal(parsed.cue, "I spent a summer in Kyoto.");
+  });
+
+  it("returns an empty object rather than throwing when the block is missing", () => {
+    assert.deepEqual(parseRehearsalBlock("No structured output at all."), {});
+  });
+});
+
+describe("parseRehearseResponse", () => {
+  it("reads the character reaction, verdict and comparison", () => {
+    const parsed = parseRehearseResponse(
+      `<response>Oh — you actually listened. Most people don't.</response>
+<verdict>better</verdict>
+<comparison>You answered the Kyoto line instead of resetting to your own question.</comparison>`
+    );
+    assert.equal(parsed.response, "Oh — you actually listened. Most people don't.");
+    assert.equal(parsed.verdict, "better");
+    assert.ok(parsed.comparison.startsWith("You answered"));
+  });
+
+  it("defaults an unrecognised verdict to 'same' rather than rewarding the attempt", () => {
+    const parsed = parseRehearseResponse(`<response>Hm.</response><verdict>excellent!</verdict>`);
+    assert.equal(parsed.verdict, "same");
+  });
+
+  it("still shows something when the model ignores the format", () => {
+    // A blank rehearsal card is worse than a plain one.
+    const parsed = parseRehearseResponse("She shrugs and looks at her drink.");
+    assert.equal(parsed.response, "She shrugs and looks at her drink.");
+    assert.ok(parsed.comparison.length > 0);
+  });
+});
+
+// ===========================================================================
+// Concept pacing — three sessions per concept
+// ===========================================================================
+
+describe("concept pacing", () => {
+  const MIRRORING = "Mirroring (Voss)";
+  const LABELLING = "Labelling (Voss)";
+
+  it("runs a three-session cycle", () => {
+    // The tests below hardcode three sessions per concept; this is the guard
+    // that they and the implementation are talking about the same number.
+    assert.equal(REPS_PER_CONCEPT, 3);
+  });
+
+  describe("repsByConcept", () => {
+    it("counts repeats and ignores anything it can't resolve", () => {
+      const counts = repsByConcept([MIRRORING, LABELLING, MIRRORING, "Not A Real Concept"]);
+      assert.equal(counts.get("mirroring"), 2);
+      assert.equal(counts.get("labelling"), 1);
+      assert.equal(counts.size, 2);
+    });
+
+    it("resolves bare concept ids as well as ledger names", () => {
+      assert.equal(repsByConcept(["mirroring", MIRRORING]).get("mirroring"), 2);
+    });
+  });
+
+  describe("conceptInProgress", () => {
+    it("keeps the user on a concept until it has had its three sessions", () => {
+      assert.equal(conceptInProgress([MIRRORING])?.concept.id, "mirroring");
+      assert.equal(conceptInProgress([MIRRORING])?.rep, 2);
+      assert.equal(conceptInProgress([MIRRORING, MIRRORING])?.rep, 3);
+    });
+
+    it("releases the concept once the cycle is done", () => {
+      assert.equal(conceptInProgress([MIRRORING, MIRRORING, MIRRORING]), null);
+    });
+
+    it("counts non-consecutive sessions on the same concept", () => {
+      // A spaced-repetition review can land between reps; it still counts.
+      assert.equal(conceptInProgress([MIRRORING, LABELLING, MIRRORING])?.rep, 3);
+    });
+
+    it("has nothing in progress on day one", () => {
+      assert.equal(conceptInProgress([]), null);
+    });
+
+    it("does not strand the user on a concept outside their chosen contexts", () => {
+      // Mirroring is not a `groups` concept, so a user who narrows to groups
+      // must not be held on it for two more sessions.
+      assert.equal(conceptInProgress([MIRRORING], ["groups"]), null);
+    });
+  });
+
+  describe("selectNewConcept", () => {
+    it("still offers a concept that has sessions left in its cycle", () => {
+      // The old rule excluded anything seen once, which is precisely what the
+      // three-session cycle replaces.
+      const picked = selectNewConcept([MIRRORING], ["dating", "friends", "family", "work"], () => 0);
+      assert.ok(picked, "returned nothing");
+      const stillAvailable = repsByConcept([MIRRORING]).get("mirroring")!;
+      assert.ok(stillAvailable < 3, "test premise: mirroring is mid-cycle");
+    });
+
+    it("excludes a concept that has had all three", () => {
+      const spent = [MIRRORING, MIRRORING, MIRRORING];
+      for (let i = 0; i < 40; i++) {
+        const picked = selectNewConcept(spent, ["dating", "friends", "family", "work"]);
+        assert.notEqual(picked.id, "mirroring", "offered a finished concept");
+      }
+    });
+  });
+
+  describe("nextContextFor", () => {
+    const mirroring = CONCEPTS.find((c) => c.id === "mirroring")!;
+
+    it("moves the same technique into a setting it hasn't been practised in", () => {
+      const chosen = nextContextFor(mirroring, ["dating", "friends", "family"], ["dating"]);
+      assert.notEqual(chosen, "dating");
+      assert.ok(["friends", "family"].includes(chosen));
+    });
+
+    it("repeats a setting rather than failing once they're all used", () => {
+      const chosen = nextContextFor(mirroring, ["dating"], ["dating"]);
+      assert.equal(chosen, "dating");
+    });
+
+    it("never returns a context the user hasn't opted into", () => {
+      const chosen = nextContextFor(mirroring, ["family"], []);
+      assert.equal(chosen, "family");
+    });
+  });
+});
+
+// ===========================================================================
+// Missions as implementation intentions
+// ===========================================================================
+
+describe("parseMission", () => {
+  const WELL_FORMED = `CUE: When someone at the table asks what I do
+ACTION: I will skip the job title and name the one thing I'm actually excited about
+TELL: whether they ask a follow-up instead of nodding
+RATIONALE: You defaulted to your CV twice in the scene and lost her both times.`;
+
+  it("splits the trigger from the behaviour", () => {
+    const m = parseMission(WELL_FORMED);
+    assert.equal(m.cue, "someone at the table asks what I do");
+    assert.equal(
+      m.action,
+      "skip the job title and name the one thing I'm actually excited about"
+    );
+    assert.equal(m.tell, "whether they ask a follow-up instead of nodding");
+    assert.ok(m.rationale.startsWith("You defaulted"));
+  });
+
+  it("strips the stems so the UI can supply its own", () => {
+    // The card renders "WHEN" and "I WILL" as labels; leaving the stems in the
+    // values renders "When when someone asks".
+    const m = parseMission(WELL_FORMED);
+    assert.ok(!/^when\b/i.test(m.cue));
+    assert.ok(!/^i will\b/i.test(m.action));
+  });
+
+  it("composes a single line for the ledger", () => {
+    const m = parseMission(WELL_FORMED);
+    assert.ok(m.text.startsWith("When someone at the table asks what I do, I will skip"));
+    assert.ok(m.text.includes("Watch for:"));
+  });
+
+  it("tolerates markdown bolding around the labels", () => {
+    const m = parseMission("**CUE:** When my brother brings up the house\n**ACTION:** I will ask what he wants to happen");
+    assert.equal(m.cue, "my brother brings up the house");
+    assert.equal(m.action, "ask what he wants to happen");
+  });
+
+  it("degrades to prose rather than losing the mission", () => {
+    // This phase writes the ledger row. A malformed response must still yield
+    // something the user can act on.
+    const m = parseMission(
+      "Ask one person today what the best part of their week was.\nRATIONALE: You never asked a single question."
+    );
+    assert.equal(m.cue, "");
+    assert.ok(m.action.startsWith("Ask one person"));
+    assert.ok(m.text.length > 0);
+    assert.ok(m.rationale.startsWith("You never asked"));
+  });
+
+  it("never returns empty text for a non-empty response", () => {
+    const m = parseMission("Just do the thing.");
+    assert.ok(m.text.length > 0);
+  });
+});
+
+// ===========================================================================
+// The structured check-in
+// ===========================================================================
+
+describe("checkin state machine", () => {
+  it("asks about the opportunity first", () => {
+    assert.equal(checkinStep(EMPTY_CHECKIN), "opportunity");
+  });
+
+  it("stops asking once the moment never came up", () => {
+    // Asking "did you do it?" after "it never came up" implies they should
+    // have engineered the moment.
+    const state = { opportunity: false, enacted: null, outcome: "" };
+    assert.equal(checkinStep(state), "ready");
+    assert.equal(canSubmitCheckin(state), true);
+  });
+
+  it("asks what they did, then what the other person did", () => {
+    assert.equal(checkinStep({ opportunity: true, enacted: null, outcome: "" }), "enacted");
+    assert.equal(checkinStep({ opportunity: true, enacted: "yes", outcome: "" }), "outcome");
+    assert.equal(checkinStep({ opportunity: true, enacted: "partly", outcome: "" }), "outcome");
+  });
+
+  it("does not ask how they reacted to something that never happened", () => {
+    assert.equal(checkinStep({ opportunity: true, enacted: "no", outcome: "" }), "ready");
+  });
+
+  it("will not submit half-answered", () => {
+    assert.equal(canSubmitCheckin(EMPTY_CHECKIN), false);
+    assert.equal(canSubmitCheckin({ opportunity: true, enacted: null, outcome: "" }), false);
+  });
+
+  it("treats the free-text detail as optional", () => {
+    assert.equal(canSubmitCheckin({ opportunity: true, enacted: "yes", outcome: "" }), true);
+  });
+});
+
+describe("outcomeTypeFor", () => {
+  it("maps the structured answers onto the legacy outcome", () => {
+    assert.equal(outcomeTypeFor({ opportunity: true, enacted: "yes", outcome: "" }), "completed");
+    assert.equal(outcomeTypeFor({ opportunity: true, enacted: "partly", outcome: "" }), "tried");
+    assert.equal(outcomeTypeFor({ opportunity: true, enacted: "no", outcome: "" }), "skipped");
+    assert.equal(outcomeTypeFor({ opportunity: false, enacted: null, outcome: "" }), "skipped");
+  });
+});
+
+describe("serialiseCheckin", () => {
+  it("distinguishes never having the chance from not taking it", () => {
+    const never = serialiseCheckin({ opportunity: false, enacted: null, outcome: "" });
+    const ducked = serialiseCheckin({ opportunity: true, enacted: "no", outcome: "" });
+    assert.notEqual(never, ducked);
+    assert.match(never, /never came up/i);
+  });
+
+  it("keeps the described reaction", () => {
+    const text = serialiseCheckin({ opportunity: true, enacted: "yes", outcome: "She asked two follow-ups." });
+    assert.match(text, /She asked two follow-ups/);
+  });
+});
+
+describe("enactmentStats", () => {
+  it("counts opportunities and enactments separately", () => {
+    const stats = enactmentStats([
+      { mission_opportunity: true, mission_enacted: "yes" },
+      { mission_opportunity: true, mission_enacted: "partly" },
+      { mission_opportunity: true, mission_enacted: "no" },
+      { mission_opportunity: false, mission_enacted: null },
+    ]);
+    assert.equal(stats.answered, 4);
+    assert.equal(stats.opportunities, 3);
+    assert.equal(stats.enacted, 2);
+  });
+
+  it("ignores sessions with no check-in rather than counting them as failures", () => {
+    // An unanswered check-in means the user didn't come back, which is a
+    // different fact from having failed the mission.
+    const stats = enactmentStats([
+      { mission_opportunity: true, mission_enacted: "yes" },
+      { mission_opportunity: null, mission_enacted: null },
+      {},
+    ]);
+    assert.equal(stats.answered, 1);
+    assert.equal(stats.opportunities, 1);
+    assert.equal(stats.enacted, 1);
+  });
+
+  it("returns zeroes for an empty ledger", () => {
+    assert.deepEqual(enactmentStats([]), { answered: 0, opportunities: 0, enacted: 0 });
   });
 });

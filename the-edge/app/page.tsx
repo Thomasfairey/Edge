@@ -34,6 +34,7 @@ interface StatusData {
   streakCount: number;
   srSummary?: { totalConcepts: number; dueForReview: number; masteredCount: number };
   allScores?: ScoreEntry[];
+  enactment?: { answered: number; opportunities: number; enacted: number };
 }
 
 /**
@@ -332,6 +333,7 @@ export default function Home() {
   const streakCount = status?.streakCount ?? 0;
   const latestScores = recentScores.length > 0 ? recentScores[recentScores.length - 1] : null;
   const allScores = status?.allScores ?? [];
+  const enactment = status?.enactment;
 
   // The set the most recent session was scored on names its dimensions.
   const latestSet = allScores.length > 0
@@ -561,9 +563,47 @@ export default function Home() {
           })}
         </div>
 
-        {/* Trend Dashboard */}
+        {/*
+          What actually happened, instead of a score trend.
+
+          The trend line was plotting model-assigned 1-5 scores across sessions
+          where the character, concept, difficulty and context all changed
+          between points — so it moved with scenario difficulty and rater noise
+          at least as much as with the user, and presenting that as progress is
+          presenting noise. These two numbers are about the world: how often the
+          moment arrived, and how often it got taken. The scores are still there
+          for anyone who wants them, one tap down.
+        */}
+        {enactment && enactment.answered > 0 && (
+          <div className="card" style={{ padding: "24px" }}>
+            <p className="mb-3 text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
+              Out in the world
+            </p>
+            <p className="text-lead font-semibold leading-snug" style={{ color: "var(--text-primary)" }}>
+              The moment came up {enactment.opportunities} {enactment.opportunities === 1 ? "time" : "times"} in {enactment.answered}.
+            </p>
+            {enactment.opportunities > 0 && (
+              <p className="mt-1 text-lead font-semibold leading-snug" style={{ color: "var(--text-primary)" }}>
+                You did it {enactment.enacted} of those.
+              </p>
+            )}
+            {enactment.opportunities === 0 && (
+              <p className="mt-2 text-body leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                None of them landed a moment yet — that&rsquo;s the week, not you.
+              </p>
+            )}
+          </div>
+        )}
+
         {allScores.length >= 2 && (
-          <TrendDashboard allScores={allScores} />
+          <details className="card" style={{ padding: "16px 20px" }}>
+            <summary className="cursor-pointer text-caption font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
+              See score trend
+            </summary>
+            <div className="mt-4">
+              <TrendDashboard allScores={allScores} />
+            </div>
+          </details>
         )}
 
         {/* Empty state message */}

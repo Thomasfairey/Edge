@@ -31,7 +31,12 @@ interface LedgerRow {
   behavioral_weakness_summary: string;
   key_moment: string;
   mission: string;
+  mission_cue: string | null;
+  mission_action: string | null;
+  mission_commitment: string | null;
   mission_outcome: string;
+  mission_opportunity: boolean | null;
+  mission_enacted: string | null;
   commands_used: string[];
   session_completed: boolean;
   character_id: string | null;
@@ -54,7 +59,12 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
     behavioral_weakness_summary: row.behavioral_weakness_summary,
     key_moment: row.key_moment,
     mission: row.mission,
+    mission_cue: row.mission_cue ?? null,
+    mission_action: row.mission_action ?? null,
+    mission_commitment: row.mission_commitment ?? null,
     mission_outcome: row.mission_outcome,
+    mission_opportunity: row.mission_opportunity ?? null,
+    mission_enacted: (row.mission_enacted as LedgerEntry["mission_enacted"]) ?? null,
     commands_used: row.commands_used,
     session_completed: row.session_completed,
     character_id: row.character_id ?? null,
@@ -77,7 +87,12 @@ function entryToRow(entry: LedgerEntry, userId?: string | null): Omit<LedgerRow,
     behavioral_weakness_summary: entry.behavioral_weakness_summary,
     key_moment: entry.key_moment,
     mission: entry.mission,
+    mission_cue: entry.mission_cue ?? null,
+    mission_action: entry.mission_action ?? null,
+    mission_commitment: entry.mission_commitment ?? null,
     mission_outcome: entry.mission_outcome,
+    mission_opportunity: entry.mission_opportunity ?? null,
+    mission_enacted: entry.mission_enacted ?? null,
     commands_used: entry.commands_used,
     session_completed: entry.session_completed,
     character_id: entry.character_id ?? null,
@@ -145,9 +160,18 @@ export async function getLastEntry(userId?: string | null): Promise<LedgerEntry 
 }
 
 /**
- * Update the mission_outcome of the most recent entry.
+ * Update the mission outcome of the most recent entry.
+ *
+ * `structured` carries the two facts the prose cannot: whether the cue occurred
+ * at all, and whether the user acted on it. Those are the product's real
+ * outcome measures, and keeping them apart from the free text is what stops a
+ * mission that never got its moment being counted as a failure.
  */
-export async function updateLastMissionOutcome(outcome: string, userId?: string | null): Promise<void> {
+export async function updateLastMissionOutcome(
+  outcome: string,
+  userId?: string | null,
+  structured?: { opportunity?: boolean | null; enacted?: string | null }
+): Promise<void> {
   let query = supabase
     .from("ledger")
     .select("id")
@@ -160,9 +184,15 @@ export async function updateLastMissionOutcome(outcome: string, userId?: string 
 
   if (!data || data.length === 0) return;
 
+  const patch: Record<string, unknown> = { mission_outcome: outcome };
+  if (structured) {
+    if (structured.opportunity !== undefined) patch.mission_opportunity = structured.opportunity;
+    if (structured.enacted !== undefined) patch.mission_enacted = structured.enacted;
+  }
+
   let updateQuery = supabase
     .from("ledger")
-    .update({ mission_outcome: outcome })
+    .update(patch)
     .eq("id", data[0].id);
 
   // Defence-in-depth: re-filter by user_id on updates, not just the initial SELECT
@@ -172,6 +202,40 @@ export async function updateLastMissionOutcome(outcome: string, userId?: string 
 
   if (error) {
     logger.error(`Failed to update mission_outcome: ${error.message}`, { phase: "ledger" });
+  }
+}
+
+/**
+ * Record when the user said they would run the most recent mission.
+ *
+ * Written after the row exists, because the mission is generated before the
+ * user chooses a when.
+ */
+export async function updateLastMissionCommitment(
+  commitment: string,
+  userId?: string | null
+): Promise<void> {
+  let query = supabase
+    .from("ledger")
+    .select("id")
+    .order("day", { ascending: false })
+    .limit(1);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data } = await query;
+  if (!data || data.length === 0) return;
+
+  let updateQuery = supabase
+    .from("ledger")
+    .update({ mission_commitment: commitment })
+    .eq("id", data[0].id);
+
+  if (userId) updateQuery = updateQuery.eq("user_id", userId);
+
+  const { error } = await updateQuery;
+  if (error) {
+    logger.error(`Failed to update mission_commitment: ${error.message}`, { phase: "ledger" });
   }
 }
 
@@ -206,12 +270,18 @@ export async function serialiseForPrompt(count: number = 7, userId?: string | nu
 }
 
 /**
- * Return concept names from all ledger entries (for de-duplication).
+ * Concept names from every ledger entry, oldest first, duplicates kept.
+ *
+ * Order matters and is explicit: selection reads backwards from the end to find
+ * which concept is mid-practice and which domains are stale, and repeats are
+ * the signal for how far through a concept's three sessions the user is. An
+ * unordered read made both of those quietly wrong.
  */
 export async function getCompletedConcepts(userId?: string | null): Promise<string[]> {
   let query = supabase
     .from("ledger")
-    .select("concept");
+    .select("concept")
+    .order("day", { ascending: true });
 
   if (userId) query = query.eq("user_id", userId);
 

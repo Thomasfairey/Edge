@@ -26,6 +26,14 @@
  * the debrief never recorded at all. Both shipped. See the tests, which now
  * enforce this.
  *
+ * EVERY SHAPE ALSO REHEARSES, between the debrief and the mission. The debrief
+ * handing over the exact words you should have said and then ending is the
+ * single largest hole in this product: reading a correction gets you
+ * recognition, and the skill being trained is production under pressure. So the
+ * pivotal moment is replayed and you answer it again. It sits after the debrief
+ * because it consumes the debrief's cue, and before the mission because the
+ * mission still closes the session and writes the row.
+ *
  * Variation therefore comes from the recall check and the length of the scene:
  * 2-6 turns for a drill, 8-20 for a deep one.
  *
@@ -55,7 +63,7 @@ export const SESSION_SHAPES: SessionShape[] = [
     id: "full",
     label: "Full session",
     description: "Learn the idea, check you have it, practise it, get it pulled apart, take it into the world.",
-    phases: ["lesson", "retrieval", "roleplay", "debrief", "mission"],
+    phases: ["lesson", "retrieval", "roleplay", "debrief", "rehearse", "mission"],
     minTurns: 4,
     maxTurns: 12,
   },
@@ -63,7 +71,7 @@ export const SESSION_SHAPES: SessionShape[] = [
     id: "drill",
     label: "Quick drill",
     description: "The idea, a short scene to try it in, a straight read on how it went, and one thing for today.",
-    phases: ["lesson", "roleplay", "debrief", "mission"],
+    phases: ["lesson", "roleplay", "debrief", "rehearse", "mission"],
     minTurns: 2,
     maxTurns: 6,
   },
@@ -71,7 +79,7 @@ export const SESSION_SHAPES: SessionShape[] = [
     id: "deep",
     label: "Deep scene",
     description: "One long conversation, played out properly and taken apart in detail.",
-    phases: ["lesson", "retrieval", "roleplay", "debrief", "mission"],
+    phases: ["lesson", "retrieval", "roleplay", "debrief", "rehearse", "mission"],
     minTurns: 8,
     maxTurns: 20,
   },
@@ -79,7 +87,7 @@ export const SESSION_SHAPES: SessionShape[] = [
     id: "review",
     label: "Review",
     description: "Something you've done before, at a depth you weren't ready for the first time.",
-    phases: ["lesson", "roleplay", "debrief", "mission"],
+    phases: ["lesson", "roleplay", "debrief", "rehearse", "mission"],
     minTurns: 4,
     maxTurns: 12,
   },
@@ -87,7 +95,7 @@ export const SESSION_SHAPES: SessionShape[] = [
     id: "story",
     label: "Storytelling",
     description: "The idea, then you tell it, someone real reacts, and it gets rebuilt.",
-    phases: ["lesson", "roleplay", "debrief", "mission"],
+    phases: ["lesson", "roleplay", "debrief", "rehearse", "mission"],
     minTurns: 3,
     maxTurns: 10,
   },

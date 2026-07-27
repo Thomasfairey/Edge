@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getLedger, getLastEntry, getLedgerCount } from "@/lib/ledger";
+import { enactmentStats } from "@/lib/checkin";
 import { getSRSummary } from "@/lib/spaced-repetition";
 import type { SessionScores } from "@/lib/types";
 import { withRateLimit } from "@/lib/with-rate-limit";
@@ -86,6 +87,12 @@ async function handleGet(_req: NextRequest, userId: string | null) {
       weakness: e.behavioral_weakness_summary,
     }));
 
+    // What actually happened in the world. These are the product's real outcome
+    // measures — whether the cue occurred, and whether the user acted on it —
+    // and unlike the score trend they are not confounded by which character the
+    // session happened to draw.
+    const enactment = enactmentStats(entries);
+
     return NextResponse.json({
       dayNumber,
       lastEntry,
@@ -94,6 +101,7 @@ async function handleGet(_req: NextRequest, userId: string | null) {
       srSummary,
       recentShapeIds,
       allScores,
+      enactment,
     });
   } catch (error) {
     log.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`, { phase: "status" });

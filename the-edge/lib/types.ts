@@ -30,8 +30,20 @@ export interface LedgerEntry {
   dimension_set: string; // names the keys in `scores`
   behavioral_weakness_summary: string; // 2 sentences, AI-generated
   key_moment: string; // most important roleplay turn
-  mission: string; // the deployed mission
+  mission: string; // the deployed mission, composed for display
   mission_outcome: string; // qualitative extraction or "NOT EXECUTED"
+  // Implementation-intention structure. A plan bound to a recognisable trigger
+  // gets enacted far more often than the same plan stated as a goal, so the
+  // trigger and the behaviour are stored apart from the prose.
+  mission_cue?: string | null;
+  mission_action?: string | null;
+  /** When the user said they would do it — chosen after the row is written. */
+  mission_commitment?: string | null;
+  // What actually happened, captured at the next check-in. `opportunity` is
+  // whether the cue occurred at all — a moment that never came up is not a
+  // failure and must never be scored as one.
+  mission_opportunity?: boolean | null;
+  mission_enacted?: "yes" | "partly" | "no" | null;
   commands_used: string[]; // /coach, /reset, /skip
   session_completed: boolean;
   // Session provenance — all optional so pre-migration rows still map cleanly.
@@ -238,7 +250,14 @@ export interface CharacterArchetype {
 // Session state (PRD Section 3.1)
 // ---------------------------------------------------------------------------
 
-export type SessionPhase = "checkin" | "lesson" | "retrieval" | "roleplay" | "debrief" | "mission";
+export type SessionPhase =
+  | "checkin"
+  | "lesson"
+  | "retrieval"
+  | "roleplay"
+  | "debrief"
+  | "rehearse"
+  | "mission";
 
 export interface Message {
   role: "user" | "assistant";
@@ -260,6 +279,28 @@ export interface SessionState {
   scores: SessionScores | null;
   mission: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Rehearsal — the second attempt at the moment that went wrong
+// ---------------------------------------------------------------------------
+
+/**
+ * What the debrief hands the rehearsal phase.
+ *
+ * `cue` is the character's line, verbatim, so the moment can be replayed
+ * exactly as it happened. `brief` states the principle to apply and
+ * deliberately withholds the phrasing — the user has to generate the words,
+ * because generating them is the thing being trained. `originalReply` is what
+ * they said the first time, shown alongside so the contrast is visible.
+ */
+export interface RehearsalCue {
+  cue: string;
+  brief: string;
+  originalReply: string;
+}
+
+/** How many goes the user gets before the session moves on. */
+export const MAX_REHEARSAL_ATTEMPTS = 2;
 
 // ---------------------------------------------------------------------------
 // Validation helpers — runtime type guards for API input

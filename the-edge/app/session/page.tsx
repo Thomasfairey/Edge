@@ -22,6 +22,7 @@ import LessonPhase from "./components/LessonPhase";
 import RetrievalPhase from "./components/RetrievalPhase";
 import RoleplayPhase from "./components/RoleplayPhase";
 import DebriefPhase from "./components/DebriefPhase";
+import RehearsePhase from "./components/RehearsePhase";
 import MissionPhase from "./components/MissionPhase";
 import CheckinPhase from "./components/CheckinPhase";
 import SessionToolbar from "./components/SessionToolbar";
@@ -371,10 +372,11 @@ export default function SessionPage() {
             <CheckinPhase
               checkinNeeded={s.checkinNeeded}
               checkinDone={s.checkinDone}
-              checkinPillSelected={s.checkinPillSelected}
-              setCheckinPillSelected={s.setCheckinPillSelected}
+              checkin={s.checkin}
+              setCheckin={s.setCheckin}
               checkinResponse={s.checkinResponse}
               lastMission={s.lastMission}
+              lastCommitment={s.lastCommitment}
               isLoading={s.isLoading}
               mission={null}
               inputValue={s.inputValue}
@@ -395,6 +397,8 @@ export default function SessionPage() {
               concept={s.concept}
               sessionContext={s.sessionContext}
               isReviewSession={s.isReviewSession}
+              conceptRep={s.conceptRep}
+              repsPerConcept={s.repsPerConcept}
               onboardingNeeded={s.onboardingNeeded}
               onLessonCardChange={s.onLessonCardChange}
               lessonCardAdvanceRef={s.lessonCardAdvanceRef}
@@ -454,6 +458,25 @@ export default function SessionPage() {
           )}
 
           {/* ============================================================== */}
+          {/* REHEARSE                                                        */}
+          {/* ============================================================== */}
+          {s.currentPhase === "rehearse" && (
+            <RehearsePhase
+              isLoading={s.isLoading}
+              character={s.character}
+              rehearsalCue={s.rehearsalCue}
+              rehearsalResult={s.rehearsalResult}
+              canRetryRehearsal={s.canRetryRehearsal}
+              inputValue={s.inputValue}
+              setInputValue={s.setInputValue}
+              submitRehearsal={s.submitRehearsal}
+              retryRehearsal={s.retryRehearsal}
+              finishRehearsal={s.finishRehearsal}
+              voice={s.voice}
+            />
+          )}
+
+          {/* ============================================================== */}
           {/* DEPLOY (mission only — check-in is now Phase 0)               */}
           {/* ============================================================== */}
           {s.currentPhase === "mission" && (
@@ -470,6 +493,11 @@ export default function SessionPage() {
                   dayNumber={s.dayNumber}
                   keyMoment={s.keyMoment}
                   showConfetti={s.showConfetti}
+                  cue={s.missionCue}
+                  action={s.missionAction}
+                  tell={s.missionTell}
+                  commitment={s.missionCommitment}
+                  setCommitment={s.setMissionCommitment}
                   completeSession={s.completeSession}
                   onDone={() => s.router.push("/")}
                 />
@@ -535,7 +563,9 @@ export default function SessionPage() {
         <div className="flex-shrink-0 px-5 pt-3 pb-3 pb-safe" style={{ backgroundColor: PHASE_BG.debrief, borderTop: "1px solid var(--border-subtle)" }}>
           <div className="mx-auto max-w-lg">
             <button onClick={s.enterDeploy} className="btn-primary" style={{ backgroundColor: "var(--phase-debrief-muted)" }}>
-              Your mission &rarr;
+              {/* The rehearsal comes next unless this session had no moment
+                  worth replaying, in which case it steps aside for the mission. */}
+              {s.rehearsalCue ? "Now say it properly →" : "Your mission →"}
             </button>
           </div>
         </div>
