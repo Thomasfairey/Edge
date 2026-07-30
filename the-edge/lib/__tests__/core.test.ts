@@ -10,7 +10,15 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { selectRehearsalCue, parseRehearsalBlock } from "../rehearsal";
-import { repsByConcept, conceptInProgress, nextContextFor, REPS_PER_CONCEPT } from "../concepts";
+import {
+  repsByConcept,
+  conceptInProgress,
+  nextContextFor,
+  practisedRecently,
+  eligibleForReview,
+  selectConcept,
+  REPS_PER_CONCEPT,
+} from "../concepts";
 import { parseRehearseResponse } from "../prompts/rehearse";
 import { parseMission } from "../prompts/mission";
 import {
@@ -2206,6 +2214,9 @@ describe("parseRehearseResponse", () => {
 describe("concept pacing", () => {
   const MIRRORING = "Mirroring (Voss)";
   const LABELLING = "Labelling (Voss)";
+  // Another domain entirely — used where the test needs recent history that
+  // does not drag Mirroring's domain out of selection with it.
+  const RECIPROCITY = "Reciprocity (Cialdini)";
 
   it("runs a three-session cycle", () => {
     // The tests below hardcode three sessions per concept; this is the guard
@@ -2269,6 +2280,94 @@ describe("concept pacing", () => {
         const picked = selectNewConcept(spent, ["dating", "friends", "family", "work"]);
         assert.notEqual(picked.id, "mirroring", "offered a finished concept");
       }
+    });
+  });
+
+  describe("practisedRecently", () => {
+    it("sees a concept from the last few sessions", () => {
+      assert.equal(practisedRecently("mirroring", [MIRRORING, LABELLING]), true);
+    });
+
+    it("stops seeing it once the window has moved past", () => {
+      const later = [MIRRORING, LABELLING, LABELLING, LABELLING];
+      assert.equal(practisedRecently("mirroring", later), false);
+    });
+
+    it("has nothing to see on day one", () => {
+      assert.equal(practisedRecently("mirroring", []), false);
+    });
+  });
+
+  describe("eligibleForReview", () => {
+    const mirroring = CONCEPTS.find((c) => c.id === "mirroring")!;
+    const ALL: LifeContext[] = ["dating", "friends", "family", "work"];
+    // Enough unrelated sessions to clear the recency window.
+    const SINCE = [LABELLING, LABELLING, LABELLING];
+
+    it("will not review a concept the user is still mid-cycle on", () => {
+      // Spaced repetition writes a row after the FIRST session, and a session
+      // scoring below 3 sets the interval to one day — so a concept one session
+      // old is due tomorrow. Serving it abandons the cycle two sessions early.
+      assert.equal(eligibleForReview(mirroring, [MIRRORING, ...SINCE], ALL), false);
+      assert.equal(eligibleForReview(mirroring, [MIRRORING, MIRRORING, ...SINCE], ALL), false);
+    });
+
+    it("will not review what they were just doing", () => {
+      const finishedYesterday = [MIRRORING, MIRRORING, MIRRORING];
+      assert.equal(eligibleForReview(mirroring, finishedYesterday, ALL), false);
+    });
+
+    it("reviews a finished concept once it has had time to fade", () => {
+      const finishedAndMovedOn = [MIRRORING, MIRRORING, MIRRORING, ...SINCE];
+      assert.equal(eligibleForReview(mirroring, finishedAndMovedOn, ALL), true);
+    });
+
+    it("will not review something outside the user's contexts", () => {
+      const finishedAndMovedOn = [MIRRORING, MIRRORING, MIRRORING, ...SINCE];
+      assert.equal(eligibleForReview(mirroring, finishedAndMovedOn, ["groups"]), false);
+    });
+  });
+
+  describe("selectConcept", () => {
+    const ALL: LifeContext[] = ["dating", "friends", "family", "work"];
+
+    it("resumes a stranded concept at the repetition it reached", async () => {
+      // Reciprocity has finished, so nothing is formally in progress — but
+      // mirroring was interrupted after one session and is still in the pool.
+      // (Reciprocity is deliberately from another domain: three Negotiation
+      // sessions would push mirroring's whole domain out of selection and the
+      // sweep below would never reach it.)
+      //
+      // Whatever comes back, its repetition has to match its history. Restarting
+      // at 1 re-delivers the full teaching lesson to someone who has already read
+      // it, which is the most literal form of the app repeating itself.
+      const completed = [MIRRORING, RECIPROCITY, RECIPROCITY, RECIPROCITY];
+      const reps = repsByConcept(completed);
+      let sawStranded = false;
+
+      // Sweep the picker across every position in the pool rather than trusting
+      // Math.random to land on the one concept that carries history.
+      for (let i = 0; i < 100; i++) {
+        // No userId, so spaced repetition returns nothing and the review branch
+        // is skipped — this exercises the new-concept path deliberately.
+        const result = await selectConcept(completed, null, ALL, [], (n) => i % n);
+        if (result.concept.id === "mirroring") sawStranded = true;
+        assert.equal(
+          result.rep,
+          (reps.get(result.concept.id) ?? 0) + 1,
+          `${result.concept.id} restarted its cycle`
+        );
+        assert.ok(result.rep <= REPS_PER_CONCEPT, "offered a repetition past the cycle");
+      }
+
+      assert.ok(sawStranded, "test premise: the sweep never reached the stranded concept");
+    });
+
+    it("stays on the concept in progress", async () => {
+      const result = await selectConcept([MIRRORING], null, ALL);
+      assert.equal(result.concept.id, "mirroring");
+      assert.equal(result.rep, 2);
+      assert.equal(result.isReview, false);
     });
   });
 
