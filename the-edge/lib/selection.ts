@@ -93,4 +93,11 @@ export const HISTORY_WINDOWS = {
   domain: 3,
   shape: 3,
   disposition: 2,
+  /**
+   * How many recent sessions block a spaced-repetition review of the same
+   * concept. A session scoring below 3 sets the review interval to a single
+   * day, so without this the concept practised yesterday is the one offered
+   * back today — which reads as the app repeating itself, not as revision.
+   */
+  review: 3,
 } as const;

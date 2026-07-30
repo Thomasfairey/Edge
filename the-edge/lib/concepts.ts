@@ -754,6 +754,47 @@ function contextsUsedFor(
 }
 
 /**
+ * Whether this concept was one of the last few sessions.
+ *
+ * Reads backwards over the ledger rather than checking only the final entry,
+ * because a concept can be interrupted and still be fresh in the user's mind.
+ */
+export function practisedRecently(
+  conceptId: string,
+  completedIds: string[],
+  window: number = HISTORY_WINDOWS.review
+): boolean {
+  const recent = completedIds.slice(-window);
+  return recent.some((value) => conceptFromLedgerValue(value)?.id === conceptId);
+}
+
+/**
+ * Whether a due concept is a fair thing to offer as a review.
+ *
+ * Being due is not sufficient, and treating it as though it were is what made
+ * the app feel stuck. Spaced repetition rows are written after every session,
+ * including the first, and a session scoring below 3 sets the interval to a
+ * single day — so the concept the user is one session into is due tomorrow
+ * morning. Serving it takes them off a three-session cycle they had barely
+ * started, and hands the concept back to selection as though it were new.
+ */
+export function eligibleForReview(
+  concept: Concept,
+  completedIds: string[],
+  contexts: LifeContext[],
+  reps: Map<string, number> = repsByConcept(completedIds)
+): boolean {
+  // A review is revision of something finished, not a shortcut through the
+  // acquisition cycle.
+  if ((reps.get(concept.id) ?? 0) < REPS_PER_CONCEPT) return false;
+  // Revision the morning after is not spaced repetition, it is the same lesson
+  // twice.
+  if (practisedRecently(concept.id, completedIds)) return false;
+  // And it has to be practisable where the user actually lives.
+  return matchesContexts(contextsForConcept(concept), contexts);
+}
+
+/**
  * Select the next concept for today's session.
  *
  * Returns `{ concept, isReview, context, rep }` — `rep` is which of the
@@ -763,7 +804,9 @@ function contextsUsedFor(
  * Order of precedence:
  * 1. A due spaced-repetition review, 30% of the time — long-term retention of
  *    something already finished, which is a different job from the three-session
- *    acquisition cycle below.
+ *    acquisition cycle below. "Already finished" is enforced here rather than
+ *    assumed: SR rows are written after every session, including the first, so
+ *    a concept the user is one session into is due for review the next morning.
  * 2. The concept currently mid-cycle, in a context it has not been practised in
  *    yet where one is available.
  * 3. A new concept, excluding any that has already had its three sessions,
@@ -773,8 +816,12 @@ export async function selectConcept(
   completedIds: string[],
   userId?: string | null,
   contexts: LifeContext[] = SOCIAL_CONTEXTS,
-  history: { concept: string; context?: LifeContext | null }[] = []
+  history: { concept: string; context?: LifeContext | null }[] = [],
+  /** Injectable for tests; production passes nothing and gets Math.random. */
+  pick?: Picker
 ): Promise<{ concept: Concept; isReview: boolean; context: LifeContext; rep: number }> {
+  const reps = repsByConcept(completedIds);
+
   // Check for due reviews — 30% chance of review session.
   // Only surface a review the user can actually practise right now.
   try {
@@ -782,12 +829,13 @@ export async function selectConcept(
     if (dueReviews.length > 0 && Math.random() < 0.3) {
       for (const review of dueReviews) {
         const reviewConcept = CONCEPTS.find((c) => c.id === review.conceptId);
-        if (reviewConcept && matchesContexts(contextsForConcept(reviewConcept), contexts)) {
+        if (!reviewConcept) continue;
+        if (eligibleForReview(reviewConcept, completedIds, contexts, reps)) {
           return {
             concept: reviewConcept,
             isReview: true,
             context: resolveSessionContext(contextsForConcept(reviewConcept), contexts),
-            rep: repsByConcept(completedIds).get(reviewConcept.id) ?? 1,
+            rep: Math.min(reps.get(reviewConcept.id) ?? 1, REPS_PER_CONCEPT),
           };
         }
       }
@@ -806,12 +854,22 @@ export async function selectConcept(
     };
   }
 
-  const concept = selectNewConcept(completedIds, contexts);
+  // Not necessarily a concept with no history. selectNewConcept keeps anything
+  // short of its full three sessions in the pool, so this branch also picks up
+  // concepts stranded mid-cycle — by a review, or by a context change. Those
+  // resume at the repetition they reached; assuming rep 1 here re-delivered the
+  // full teaching lesson to someone who had already read it, which is the most
+  // literal form of the app repeating itself.
+  const concept = selectNewConcept(completedIds, contexts, pick);
+  const priorReps = reps.get(concept.id) ?? 0;
   return {
     concept,
     isReview: false,
-    context: resolveSessionContext(contextsForConcept(concept), contexts),
-    rep: 1,
+    context:
+      priorReps > 0
+        ? nextContextFor(concept, contexts, contextsUsedFor(concept.id, history))
+        : resolveSessionContext(contextsForConcept(concept), contexts),
+    rep: Math.min(priorReps + 1, REPS_PER_CONCEPT),
   };
 }
 
