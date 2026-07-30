@@ -6,6 +6,7 @@
  * {
  *   status: "ok" | "degraded",
  *   version: string,
+ *   build: { commit: string, branch: string, env: string },
  *   uptime_s: number,
  *   environment: string,
  *   timestamp: string,
@@ -34,6 +35,24 @@ try {
 } catch {
   // package.json not resolvable at runtime (edge runtime, etc.)
 }
+
+/**
+ * Which build is actually serving.
+ *
+ * `version` comes from package.json and has read 0.1.0 since the repo was
+ * created, so it cannot distinguish two deploys — asking this endpoint which
+ * commit was live meant going to the GitHub deployments API instead, which is
+ * the wrong place to have to look. Vercel sets these on the function runtime;
+ * off Vercel they are absent and the fields read "unknown", which is honest
+ * rather than misleading.
+ */
+const build = {
+  commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "unknown",
+  branch: process.env.VERCEL_GIT_COMMIT_REF ?? "unknown",
+  // production | preview | development. Distinguishes the live app from a
+  // preview build serving the same code.
+  env: process.env.VERCEL_ENV ?? "unknown",
+};
 
 export async function GET() {
   const uptimeS = Math.floor((Date.now() - startedAt) / 1000);
@@ -71,6 +90,7 @@ export async function GET() {
   return NextResponse.json({
     status: overallStatus,
     version: appVersion,
+    build,
     uptime_s: uptimeS,
     environment: process.env.NODE_ENV ?? "unknown",
     timestamp: new Date().toISOString(),
